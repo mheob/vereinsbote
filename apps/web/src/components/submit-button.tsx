@@ -11,12 +11,17 @@ const buttonClass =
  *
  * @param props The button's props.
  * @param props.children The label.
+ * @param props.isPending The pending state of a form submitted through `onSubmit` instead of a
+ *   form action, which `useFormStatus` does not see.
  * @returns The button.
  */
-export function SubmitButton({ children }: Readonly<{ children: ReactNode }>): ReactNode {
+export function SubmitButton({
+	children,
+	isPending,
+}: Readonly<{ children: ReactNode; isPending?: boolean }>): ReactNode {
 	const { pending } = useFormStatus();
 	return (
-		<Button className={buttonClass} isPending={pending} type="submit">
+		<Button className={buttonClass} isPending={isPending ?? pending} type="submit">
 			{children}
 		</Button>
 	);

@@ -1,10 +1,12 @@
 import { betterAuth } from 'better-auth';
-import type { SocialProviders } from 'better-auth';
+import type { BetterAuthPlugin, SocialProviders } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { isAPIError } from 'better-auth/api';
+import { APIError, createAuthEndpoint, isAPIError } from 'better-auth/api';
+import { setSessionCookie } from 'better-auth/cookies';
 import { magicLink } from 'better-auth/plugins/magic-link';
 import { tanstackStartCookies } from 'better-auth/tanstack-start';
 import { sql } from 'drizzle-orm';
+import { z } from 'zod';
 
 import type { Locale } from '@/i18n/locale';
 import { translate } from '@/i18n/translate';
@@ -82,6 +84,9 @@ const DISABLED_PATHS = [
 	'/verify-email',
 	'/verify-password',
 ];
+
+/** The message of `createSessionFor` when the user gets no session. */
+const SESSION_NOT_CREATED = 'No session was opened for the user.';
 
 /** Keeps a promise running after the response, like `waitUntil`. */
 type BackgroundRunner = (promise: Promise<unknown>) => void;
@@ -227,6 +232,29 @@ function socialProviders(microsoftLogin: Readonly<Env['microsoftLogin']>): Socia
 	};
 }
 
+/**
+ * A server-only endpoint that opens a session for a user the app has identified itself (the
+ * first admin, right after the setup). Better Auth never routes it over HTTP. It sets the
+ * session cookie the way a sign-in does; the session hooks apply, so a disabled user gets none.
+ */
+const sessionForUser = {
+	endpoints: {
+		createSessionForUser: createAuthEndpoint.serverOnly(
+			{ body: z.object({ userId: z.string() }), method: 'POST' },
+			async (ctx) => {
+				const { internalAdapter } = ctx.context;
+				const found = await internalAdapter.findUserById(ctx.body.userId);
+				// `createSession` returns null when the session hook refuses the user.
+				const created = found === null ? null : await internalAdapter.createSession(found.id);
+				if (found === null || created === null) throw new APIError('FORBIDDEN');
+				await setSessionCookie(ctx, { session: created, user: found });
+				return ctx.json({ userId: found.id });
+			},
+		),
+	},
+	id: 'session-for-user',
+} satisfies BetterAuthPlugin;
+
 // The instance type is inferred from these options; `Auth` is derived from this function.
 // oxlint-disable-next-line typescript/explicit-function-return-type -- see above; Drizzle clients are mutable
 function buildAuth(deps: AuthDeps, secret: string, windowKey: CryptoKey) {
@@ -273,6 +301,7 @@ function buildAuth(deps: AuthDeps, secret: string, windowKey: CryptoKey) {
 				sendMagicLink: createLinkSender(deps, windowKey),
 				storeToken: 'hashed',
 			}),
+			sessionForUser,
 			// Must stay last: forwards cookies of server-side calls (session refresh) to the response.
 			tanstackStartCookies(),
 		],
@@ -364,5 +393,37 @@ async function verifyLoginLink(
 	}
 }
 
-export { LoginLinkInvalidError, createAuth, requestLoginLink, verifyLoginLink };
+/**
+ * Opens a session for a user without a login link, for a user the app has identified itself (the
+ * first admin, right after the setup). Inside a TanStack Start request the `tanstackStartCookies`
+ * plugin also puts the cookie on the response. On Cloudflare, pass the request's auth instance.
+ *
+ * @param auth The auth instance.
+ * @param userId The id of the user.
+ * @returns The `Set-Cookie` header of the new session.
+ * @throws {Error} `SESSION_NOT_CREATED` when the user is unknown or disabled.
+ */
+async function createSessionFor(auth: Auth, userId: string): Promise<{ setCookie: string }> {
+	let setCookie: string | null = null;
+	try {
+		const { headers } = await auth.api.createSessionForUser({
+			body: { userId },
+			returnHeaders: true,
+		});
+		setCookie = headers.get('set-cookie');
+	} catch (error) {
+		if (!isAPIError(error)) throw error;
+	}
+	if (setCookie === null) throw new Error(SESSION_NOT_CREATED);
+	return { setCookie };
+}
+
+export {
+	LoginLinkInvalidError,
+	SESSION_NOT_CREATED,
+	createAuth,
+	createSessionFor,
+	requestLoginLink,
+	verifyLoginLink,
+};
 export type { Auth, BackgroundRunner };

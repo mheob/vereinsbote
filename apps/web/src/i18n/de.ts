@@ -22,4 +22,13 @@ export const de = {
 	'mail.login.subject': 'Dein Anmeldelink für den Vereinsbote',
 	'mail.login.text':
 		'Hallo,\n\nhier ist dein Anmeldelink:\n{link}\n\nDer Link ist 15 Minuten gültig und funktioniert einmal.',
+	'setup.disabled': 'Die Einrichtung ist nicht freigeschaltet. Setze SETUP_TOKEN.',
+	'setup.done': 'Die Einrichtung ist abgeschlossen.',
+	'setup.emailLabel': 'E-Mail',
+	'setup.nameLabel': 'Name',
+	'setup.submit': 'Einrichtung abschließen',
+	'setup.title': 'Ersteinrichtung',
+	'setup.toLogin': 'Zur Anmeldung',
+	'setup.tokenInvalid': 'Das Einrichtungs-Token stimmt nicht.',
+	'setup.tokenLabel': 'Einrichtungs-Token',
 } as const;

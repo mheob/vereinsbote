@@ -13,7 +13,14 @@ import type { SystemMail, SystemMailer } from '@/server/mail/system-mailer';
 import { CapturingMailer } from '@/server/mail/testing';
 import { findUserByEmail, insertUser, revokeSessions } from '@/server/users/repo';
 
-import { createAuth, LoginLinkInvalidError, requestLoginLink, verifyLoginLink } from './auth';
+import {
+	createAuth,
+	createSessionFor,
+	LoginLinkInvalidError,
+	requestLoginLink,
+	SESSION_NOT_CREATED,
+	verifyLoginLink,
+} from './auth';
 import type { Auth } from './auth';
 import { getSessionUser } from './session';
 
@@ -418,6 +425,77 @@ describe('passwordless sign-in', () => {
 			await expect(findUserByEmail(db, 'anna@verein.de')).resolves.toMatchObject({
 				status: 'disabled',
 			});
+		});
+	});
+
+	describe(createSessionFor, () => {
+		it('opens a session for an active user without a login link', async () => {
+			const { auth, db, mailer } = await setupCapturing();
+			const { id } = await insertUser(db, {
+				email: 'alex@verein.de',
+				isAdmin: true,
+				name: 'Alex',
+				status: 'active',
+			});
+			const { setCookie } = await createSessionFor(auth, id);
+			await expect(getSessionUser(auth, db, cookieHeaders(setCookie))).resolves.toStrictEqual({
+				email: 'alex@verein.de',
+				id,
+				isAdmin: true,
+				name: 'Alex',
+			});
+			await expect(db.select().from(session).where(eq(session.userId, id))).resolves.toHaveLength(
+				1,
+			);
+			expect(mailer.sent).toHaveLength(0);
+		});
+
+		it('sets an HttpOnly, SameSite=Lax, Secure cookie for an https APP_URL', async () => {
+			const { auth, db } = await setup();
+			const { id } = await insertUser(db, {
+				email: 'alex@verein.de',
+				name: 'Alex',
+				status: 'active',
+			});
+			const { setCookie } = await createSessionFor(auth, id);
+			expect(setCookie).toMatch(/^__Secure-better-auth\.session_token=[^;]+;/u);
+			expect(setCookie).toMatch(/; Secure(?:;|$)/u);
+			expect(setCookie).toContain('HttpOnly');
+			expect(setCookie).toContain('SameSite=Lax');
+		});
+
+		it('sets a plain session cookie for a local http APP_URL', async () => {
+			const { auth, db } = await setup({ extraEnv: { APP_URL: 'http://localhost:3000' } });
+			const { id } = await insertUser(db, {
+				email: 'alex@verein.de',
+				name: 'Alex',
+				status: 'active',
+			});
+			const { setCookie } = await createSessionFor(auth, id);
+			expect(setCookie).toMatch(/^better-auth\.session_token=[^;]+;/u);
+			expect(setCookie).not.toMatch(/; Secure(?:;|$)/u);
+			await expect(getSessionUser(auth, db, cookieHeaders(setCookie))).resolves.toMatchObject({
+				id,
+			});
+		});
+
+		it('opens no session for a disabled user', async () => {
+			const { auth, db } = await setup();
+			const { id } = await insertUser(db, {
+				email: 'kim@verein.de',
+				name: 'Kim',
+				status: 'disabled',
+			});
+			await expect(createSessionFor(auth, id)).rejects.toThrow(SESSION_NOT_CREATED);
+			await expect(db.select().from(session)).resolves.toHaveLength(0);
+		});
+
+		it('opens no session for an unknown user', async () => {
+			const { auth, db } = await setup();
+			await expect(createSessionFor(auth, crypto.randomUUID())).rejects.toThrow(
+				SESSION_NOT_CREATED,
+			);
+			await expect(db.select().from(session)).resolves.toHaveLength(0);
 		});
 	});
 
