@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm';
 import type { Db } from './db/client';
 import { systemState } from './db/schema';
 
-type StateKey = 'last_tick' | 'setup_completed_at' | 'tick_lock';
+type StateKey = 'last_tick' | 'setup_completed_at' | 'setup_session_opened_at' | 'tick_lock';
 
 /**
  * Reads a state value.

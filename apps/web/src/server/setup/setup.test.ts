@@ -6,6 +6,7 @@ import { areaMemberships, areas, auditLog, systemState, user } from '@/server/db
 import { createTestDb } from '@/server/db/test-db';
 import { canAccessArea, loadPrincipal } from '@/server/permissions/principal';
 import type { Principal } from '@/server/permissions/principal';
+import { getState } from '@/server/system-state';
 import { findUserByEmail } from '@/server/users/repo';
 
 import {
@@ -48,6 +49,18 @@ async function rowCounts(db: Db): Promise<typeof NOTHING> {
 		state: state.length,
 		users: users.length,
 	};
+}
+
+/**
+ * The value under `setup_completed_at`.
+ *
+ * @param db The database.
+ * @returns The marker.
+ */
+async function setupMarker(db: Db): Promise<{ adminUserId: string; at: string }> {
+	const marker = await getState<{ adminUserId: string; at: string }>(db, 'setup_completed_at');
+	if (marker === null) throw new Error('The setup marker is missing.');
+	return marker;
 }
 
 async function principalOf(db: Db, userId: string): Promise<Principal> {
@@ -158,6 +171,15 @@ describe(completeSetup, () => {
 		expect(audit.map((r) => r.action)).toStrictEqual(['setup.completed']);
 		expect(audit[0]).toMatchObject({ actorUserId: adminUserId, target: `user:${adminUserId}` });
 		expect(JSON.stringify(audit)).not.toContain('admin@verein.de');
+	});
+
+	it('records the admin in the setup marker', async () => {
+		const db = await createTestDb();
+		const { adminUserId } = await completeSetup(db, input);
+		const marker = await setupMarker(db);
+		expect(Object.keys(marker).toSorted()).toStrictEqual(['adminUserId', 'at']);
+		expect(marker.adminUserId).toBe(adminUserId);
+		expect(new Date(marker.at).toISOString()).toBe(marker.at);
 	});
 
 	it('stores the language of the setup request as the admin language', async () => {

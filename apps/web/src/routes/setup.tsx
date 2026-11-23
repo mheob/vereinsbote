@@ -17,81 +17,128 @@ import { z } from 'zod';
 import { SubmitButton } from '@/components/submit-button';
 import type { MessageKey } from '@/i18n/translate';
 import { useT } from '@/i18n/use-t';
+import {
+	MAX_EMAIL_LENGTH,
+	MAX_NAME_LENGTH,
+	MAX_TOKEN_LENGTH,
+	invalidSetupFields,
+	isValidAdminEmail,
+	isValidAdminName,
+} from '@/server/setup/form';
+import type { SetupField } from '@/server/setup/form';
 
 /** Where the first admin goes after the setup: the user management. */
 const ADMIN_HOME_PATH = '/admin/users';
-/** Limits that no real input reaches; they keep oversized requests away from the database. */
-const MAX_TOKEN_LENGTH = 1024;
-const MAX_NAME_LENGTH = 200;
-const MAX_EMAIL_LENGTH = 254;
 
 const inputClass =
 	'rounded-md border border-gray-600 px-3 py-2 data-focused:outline-2 data-focused:outline-offset-2 data-focused:outline-blue-700 data-invalid:border-red-700';
 
-/** Why the last attempt failed. `done` shows the completed setup instead of the form. */
-type SetupFailure = 'disabled' | 'done' | 'failed' | 'tokenInvalid';
-
-/** The result of the last attempt: a new object per failed attempt, null before the first. */
-type SetupState = Readonly<{ failure: SetupFailure }> | null;
+/**
+ * Why the server refused a submission: `fields` names the refused fields (a wrong token is one),
+ * `done` shows the completed setup. A successful submission redirects instead.
+ */
+type SetupRefusal = Readonly<{
+	failure: 'disabled' | 'done' | 'fields';
+	fields: readonly SetupField[];
+}>;
 
 /**
- * The message above the button for a failure; a wrong token is shown at its field instead.
+ * The result of the last attempt, numbered so that a repeated failure is a new message; null
+ * before the first. `failed` is any other error, with no detail from the server.
+ */
+type SetupState = Readonly<{
+	attempt: number;
+	failure: SetupRefusal['failure'] | 'failed';
+	fields: readonly SetupField[];
+}> | null;
+
+/** The message at each refused field. */
+const FIELD_MESSAGES: Readonly<Record<SetupField, MessageKey>> = {
+	email: 'setup.emailInvalid',
+	name: 'setup.nameInvalid',
+	token: 'setup.tokenInvalid',
+};
+
+/**
+ * The message above the button for a failure that belongs to no field.
  *
  * @param failure The reason of the last failed attempt, or null.
  * @returns The key of the message, or null for none.
  */
-function formMessageKey(failure: SetupFailure | null): MessageKey | null {
+function formMessageKey(failure: NonNullable<SetupState>['failure'] | null): MessageKey | null {
 	if (failure === 'disabled') return 'setup.disabled';
 	// A generic message: the server tells nothing about unexpected failures.
 	if (failure === 'failed') return 'auth.requestFailed';
 	return null;
 }
 
-const setupForm = z.object({
-	email: z.string().trim().max(MAX_EMAIL_LENGTH).pipe(z.email()),
-	name: z.string().trim().min(1).max(MAX_NAME_LENGTH),
-	token: z.string().min(1).max(MAX_TOKEN_LENGTH),
-});
+/** The transport shape; the rules of each field are checked by `invalidSetupFields`. */
+const setupRequest = z.object({ email: z.string(), name: z.string(), token: z.string() });
 
 // Server modules are imported inside the handlers, so they stay out of the client bundle.
+// The form stays until the admin's first session exists, so a failed opening can be retried.
 const loadSetupState = createServerFn({ method: 'GET' }).handler(async () => {
-	const [{ getAppContext }, { isSetupDone }] = await Promise.all([
+	const [{ getAppContext }, { hasSetupSession }] = await Promise.all([
 		import('@/platform/context'),
 		import('@/server/setup/setup'),
 	]);
 	const { db } = await getAppContext();
-	return { done: await isSetupDone(db) };
+	return { done: await hasSetupSession(db) };
 });
 
 /**
- * Completes the setup, signs the new admin in (the session cookie goes out with this response)
- * and redirects to the user management. A failure comes back as its reason, never with a token.
+ * Completes the setup, signs the admin in and redirects to the user management. If the setup is
+ * done but its session could not be opened, the same token and the admin's address open it now
+ * (see `completeSetupAndSignIn`). A refusal comes back as its reason, never with a token.
  */
 const submitSetup = createServerFn({ method: 'POST' })
-	.validator(setupForm)
-	.handler(async ({ data }): Promise<Readonly<{ failure: SetupFailure }>> => {
-		const [{ getRequest }, { getAppContext }, setup, { createSessionFor }, { getRequestLocale }] =
-			await Promise.all([
-				import('@tanstack/react-start/server'),
-				import('@/platform/context'),
-				import('@/server/setup/setup'),
-				import('@/server/auth/auth'),
-				import('@/server/i18n/request-locale'),
-			]);
+	.validator(setupRequest)
+	.handler(async ({ data }): Promise<SetupRefusal> => {
+		const fields = invalidSetupFields(data);
+		if (fields.length > 0) return { failure: 'fields', fields };
+		const [
+			{ appendResponseHeader, getRequest, getResponseHeaders },
+			{ getAppContext },
+			setup,
+			{ createSessionFor },
+			{ forwardSetCookie },
+			{ getRequestLocale },
+		] = await Promise.all([
+			import('@tanstack/react-start/server'),
+			import('@/platform/context'),
+			import('@/server/setup/setup'),
+			import('@/server/auth/auth'),
+			import('@/server/auth/forward-cookies'),
+			import('@/server/i18n/request-locale'),
+		]);
 		const { auth, db, env } = await getAppContext();
 		try {
-			const { adminUserId } = await setup.completeSetup(db, {
-				adminEmail: data.email,
-				adminLocale: getRequestLocale(getRequest().headers),
-				adminName: data.name,
-				expectedToken: env.setupToken,
-				token: data.token,
-			});
-			await createSessionFor(auth, adminUserId);
+			await setup.completeSetupAndSignIn(
+				db,
+				{
+					adminEmail: data.email,
+					adminLocale: getRequestLocale(getRequest().headers),
+					adminName: data.name,
+					expectedToken: env.setupToken,
+					token: data.token,
+				},
+				async (adminUserId) => {
+					const { setCookie } = await createSessionFor(auth, adminUserId);
+					// Better Auth's TanStack plugin forwards the cookie too, but ignores failures; here a
+					// cookie that does not reach the response fails the opening, so it can be retried.
+					forwardSetCookie(setCookie, {
+						append(cookies) {
+							appendResponseHeader('set-cookie', [...cookies]);
+						},
+						current: () => getResponseHeaders().getSetCookie(),
+					});
+				},
+			);
 		} catch (error) {
-			if (error instanceof setup.SetupTokenInvalidError) return { failure: 'tokenInvalid' };
-			if (error instanceof setup.SetupDisabledError) return { failure: 'disabled' };
-			if (error instanceof setup.SetupAlreadyDoneError) return { failure: 'done' };
+			if (error instanceof setup.SetupTokenInvalidError)
+				return { failure: 'fields', fields: ['token'] };
+			if (error instanceof setup.SetupDisabledError) return { failure: 'disabled', fields: [] };
+			if (error instanceof setup.SetupAlreadyDoneError) return { failure: 'done', fields: [] };
 			throw error;
 		}
 		// `href`: the user management is a route of a later step.
@@ -106,14 +153,14 @@ const submitSetup = createServerFn({ method: 'POST' })
  * @param name The field name.
  * @returns The value, or an empty string.
  */
-function field(formData: FormData, name: string): string {
+function field(formData: FormData, name: SetupField): string {
 	const value = formData.get(name);
 	return typeof value === 'string' ? value : '';
 }
 
 type SubmitSetup = (
-	options: Readonly<{ data: z.input<typeof setupForm> }>,
-) => Promise<Readonly<{ failure: SetupFailure }> | undefined>;
+	options: Readonly<{ data: z.input<typeof setupRequest> }>,
+) => Promise<SetupRefusal | undefined>;
 
 export const Route = createFileRoute('/setup')({
 	// The name gives React a component (hooks rules, DevTools); TanStack Router names the property.
@@ -122,23 +169,27 @@ export const Route = createFileRoute('/setup')({
 		const t = useT();
 		const headingId = useId();
 		const messageId = useId();
+		const headingRef = useRef<HTMLHeadingElement>(null);
 		const tokenRef = useRef<HTMLInputElement>(null);
+		const nameRef = useRef<HTMLInputElement>(null);
+		const emailRef = useRef<HTMLInputElement>(null);
 		const { done } = useLoaderData({ from: '/setup' });
 		// After following the redirect, `useServerFn` resolves without a result.
 		const submit: SubmitSetup = useServerFn(submitSetup);
 		const [state, submitForm, isPending] = useActionState(
-			async (_previous: SetupState, formData: FormData): Promise<SetupState> => {
+			async (previous: SetupState, formData: FormData): Promise<SetupState> => {
+				const attempt = (previous?.attempt ?? 0) + 1;
 				try {
-					const result = await submit({
+					const refusal = await submit({
 						data: {
 							email: field(formData, 'email'),
 							name: field(formData, 'name'),
 							token: field(formData, 'token'),
 						},
 					});
-					return result ?? null;
+					return refusal === undefined ? null : { ...refusal, attempt };
 				} catch {
-					return { failure: 'failed' };
+					return { attempt, failure: 'failed', fields: [] };
 				}
 			},
 			null,
@@ -155,34 +206,53 @@ export const Route = createFileRoute('/setup')({
 			},
 			[submitForm],
 		);
-		const failure = state?.failure ?? null;
-		// A new object per attempt, so a wrong token shows again after the field was edited.
+		// The browser checks the server's rules before sending; empty fields are left to `isRequired`.
+		const validateName = useCallback(
+			(value: string) => (value === '' || isValidAdminName(value) ? null : t('setup.nameInvalid')),
+			[t],
+		);
+		const validateEmail = useCallback(
+			(value: string) =>
+				value === '' || isValidAdminEmail(value) ? null : t('setup.emailInvalid'),
+			[t],
+		);
+		// A new object per attempt, so a refused field shows its error again after it was edited.
 		const validationErrors = useMemo(
 			(): Readonly<Record<string, string>> =>
-				state?.failure === 'tokenInvalid' ? { token: t('setup.tokenInvalid') } : {},
+				Object.fromEntries((state?.fields ?? []).map((name) => [name, t(FIELD_MESSAGES[name])])),
 			[state, t],
 		);
+		const showDone = done || state?.failure === 'done';
 		useEffect(() => {
-			// Focus moves to the field, so a screen reader reads it together with its error.
-			if (state?.failure === 'tokenInvalid') tokenRef.current?.focus();
+			if (state === null) return;
+			if (state.failure === 'done') {
+				// The form is gone: focus moves to the top of the page, the status region says why.
+				headingRef.current?.focus();
+				return;
+			}
+			// Focus moves to the first refused field, so a screen reader reads it with its error.
+			const [first] = state.fields;
+			if (first !== undefined)
+				({ email: emailRef, name: nameRef, token: tokenRef })[first].current?.focus();
 		}, [state]);
-		const messageKey = formMessageKey(failure);
+		const messageKey = formMessageKey(state?.failure ?? null);
 
 		return (
 			<div className="mx-auto flex max-w-md flex-col gap-6 p-6">
-				<h1 className="text-2xl font-bold" id={headingId}>
+				<h1 className="text-2xl font-bold" id={headingId} ref={headingRef} tabIndex={-1}>
 					{t('setup.title')}
 				</h1>
-				{done || failure === 'done' ? (
-					<>
-						<p>{t('setup.done')}</p>
-						<Link
-							className="self-start font-semibold text-blue-700 underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
-							to="/login"
-						>
-							{t('setup.toLogin')}
-						</Link>
-					</>
+				{/* Always present, so switching to the completed setup is announced. */}
+				<output aria-live="polite" className={showDone ? 'block' : 'sr-only'}>
+					{showDone ? t('setup.done') : null}
+				</output>
+				{showDone ? (
+					<Link
+						className="self-start font-semibold text-blue-700 underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
+						to="/login"
+					>
+						{t('setup.toLogin')}
+					</Link>
 				) : (
 					<Form
 						aria-describedby={messageKey === null ? undefined : messageId}
@@ -191,7 +261,14 @@ export const Route = createFileRoute('/setup')({
 						onSubmit={onSubmit}
 						validationErrors={validationErrors}
 					>
-						<TextField autoComplete="off" className="flex flex-col gap-1" isRequired name="token">
+						<TextField
+							autoComplete="one-time-code"
+							className="flex flex-col gap-1"
+							isRequired
+							maxLength={MAX_TOKEN_LENGTH}
+							name="token"
+							type="password"
+						>
 							<Label className="font-semibold">{t('setup.tokenLabel')}</Label>
 							<Input
 								autoCapitalize="off"
@@ -201,24 +278,34 @@ export const Route = createFileRoute('/setup')({
 							/>
 							<FieldError className="text-sm text-red-700" />
 						</TextField>
-						<TextField autoComplete="name" className="flex flex-col gap-1" isRequired name="name">
+						<TextField
+							autoComplete="name"
+							className="flex flex-col gap-1"
+							isRequired
+							maxLength={MAX_NAME_LENGTH}
+							name="name"
+							validate={validateName}
+						>
 							<Label className="font-semibold">{t('setup.nameLabel')}</Label>
-							<Input className={inputClass} />
+							<Input className={inputClass} ref={nameRef} />
 							<FieldError className="text-sm text-red-700" />
 						</TextField>
 						<TextField
 							autoComplete="email"
 							className="flex flex-col gap-1"
 							isRequired
+							maxLength={MAX_EMAIL_LENGTH}
 							name="email"
 							type="email"
+							validate={validateEmail}
 						>
 							<Label className="font-semibold">{t('setup.emailLabel')}</Label>
-							<Input className={inputClass} />
+							<Input className={inputClass} ref={emailRef} />
 							<FieldError className="text-sm text-red-700" />
 						</TextField>
 						{messageKey === null ? null : (
-							<p className="text-red-700" id={messageId} role="alert">
+							// A new element per attempt, so a repeated message is announced again.
+							<p className="text-red-700" id={messageId} key={state?.attempt} role="alert">
 								{t(messageKey)}
 							</p>
 						)}

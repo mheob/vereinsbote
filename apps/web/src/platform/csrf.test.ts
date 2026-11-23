@@ -175,6 +175,20 @@ describe('csrf protection of server functions', () => {
 			});
 		});
 
+		it('rejects the opaque origin null', async () => {
+			await expect(runCsrf({ origin: 'null' })).resolves.toStrictEqual({
+				handled: false,
+				status: FORBIDDEN,
+			});
+		});
+
+		it('rejects the APP_URL host on another port', async () => {
+			await expect(runCsrf({ origin: 'https://bote.example.org:8443' })).resolves.toStrictEqual({
+				handled: false,
+				status: FORBIDDEN,
+			});
+		});
+
 		it('rejects a request without Origin and Referer', async () => {
 			await expect(runCsrf({})).resolves.toStrictEqual({ handled: false, status: FORBIDDEN });
 		});
