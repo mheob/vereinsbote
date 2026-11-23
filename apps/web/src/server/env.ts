@@ -28,17 +28,36 @@ const MS_LOGIN_VARIABLES = [
 	'MS_LOGIN_TENANT_ID',
 ] as const;
 
-const parseUrl = (value: string): URL | null => URL.parse(value);
-
-const decodeBase64 = (value: string): Uint8Array | null => {
-	if (!z.base64().safeParse(value).success) return null;
-	return Uint8Array.from(atob(value), (char) => char.codePointAt(0) ?? 0);
+const parseUrl = (value: string): URL | null => {
+	try {
+		return new URL(value);
+	} catch {
+		return null;
+	}
 };
 
-const isAppUrl = (value: string): boolean => {
+// Decodes and validates once; the schema output is the 32-byte key itself.
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- zod passes a mutable refinement context
+const toSecretBytes = (value: string, ctx: z.RefinementCtx): Uint8Array => {
+	if (z.base64().safeParse(value).success) {
+		const bytes = Uint8Array.from(atob(value), (char) => char.codePointAt(0) ?? 0);
+		if (bytes.length === SECRET_BYTES) return bytes;
+	}
+	ctx.addIssue({ code: 'custom', message: 'invalid' });
+	return z.NEVER;
+};
+
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- zod passes a mutable refinement context
+const toAppUrl = (value: string, ctx: z.RefinementCtx): URL => {
 	const url = parseUrl(value);
-	if (!url) return false;
-	return url.protocol === 'https:' || (url.protocol === 'http:' && LOCAL_HOSTS.has(url.hostname));
+	if (
+		url &&
+		(url.protocol === 'https:' || (url.protocol === 'http:' && LOCAL_HOSTS.has(url.hostname)))
+	) {
+		return url;
+	}
+	ctx.addIssue({ code: 'custom', message: 'invalid' });
+	return z.NEVER;
 };
 
 const isHttpsUrl = (value: string): boolean => parseUrl(value)?.protocol === 'https:';
@@ -59,8 +78,8 @@ const withoutEmptyValues = (
 
 // Every variable has its own rule; the cross-variable MS_LOGIN_* rule lives in `missingMsLogin`.
 const schema = z.object({
-	APP_SECRET: z.string().refine((value) => decodeBase64(value)?.length === SECRET_BYTES),
-	APP_URL: z.string().refine(isAppUrl),
+	APP_SECRET: z.string().transform(toSecretBytes),
+	APP_URL: z.string().transform(toAppUrl),
 	CRON_SECRET: z.string().min(MIN_CRON_SECRET_LENGTH),
 	DATABASE_URL: z.string().regex(/^postgres(?:ql)?:\/\//u),
 	DEV_SMTP_URL: z.string().startsWith('smtp://').optional(),
@@ -117,9 +136,8 @@ export function parseEnv(source: Readonly<Record<string, string | undefined>>): 
 	const { MS_LOGIN_CLIENT_ID: clientId, MS_LOGIN_CLIENT_SECRET: clientSecret } = data;
 	const { MS_LOGIN_TENANT_ID: tenantId } = data;
 	return {
-		// Validated above; the fallbacks are unreachable.
-		appSecret: decodeBase64(data.APP_SECRET) ?? new Uint8Array(SECRET_BYTES),
-		appUrl: parseUrl(data.APP_URL) ?? new URL('http://localhost'),
+		appSecret: data.APP_SECRET,
+		appUrl: data.APP_URL,
 		cronSecret: data.CRON_SECRET,
 		databaseUrl: data.DATABASE_URL,
 		devSmtpUrl: data.DEV_SMTP_URL ?? null,

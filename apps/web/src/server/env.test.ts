@@ -29,6 +29,13 @@ describe(parseEnv, () => {
 		expect(env.appSecret).toHaveLength(32);
 	});
 
+	it('derives appUrl as URL and appSecret as decoded bytes', () => {
+		const env = parseEnv(valid);
+		expect(env.appUrl).toBeInstanceOf(URL);
+		expect(env.appUrl.host).toBe('bote.example.org');
+		expect(env.appSecret).toStrictEqual(new Uint8Array(32).fill(7));
+	});
+
 	it('leaves optional integrations unset by default', () => {
 		const env = parseEnv(valid);
 		expect(env.devSmtpUrl).toBeNull();
