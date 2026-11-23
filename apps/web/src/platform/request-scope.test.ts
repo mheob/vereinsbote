@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 
-import { createRequestScope } from './request-scope';
+import { createRequestScope, releaseWhenBodyDone } from './request-scope';
 import type { RequestScope } from './request-scope';
 
 interface Setup {
@@ -70,12 +70,71 @@ describe('request scope', () => {
 		expect(waited).toHaveLength(0);
 	});
 
-	it('opens a new resource after the release', async () => {
+	it('throws on get after release and opens no new resource', async () => {
 		const { opened, scope } = setup();
 		const request = {};
 		await scope.get(request);
 		await scope.release(request);
-		await scope.get(request);
-		expect(opened).toHaveLength(2);
+		await expect(scope.get(request)).rejects.toThrow('ended');
+		expect(opened).toHaveLength(1);
+	});
+});
+
+function noop(): void {
+	// nothing to release
+}
+
+describe('response body release', () => {
+	const encoder = new TextEncoder();
+	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- rest array of a test helper
+	const streamOf = (...chunks: string[]): ReadableStream<Uint8Array> =>
+		new ReadableStream({
+			// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- stream callback of the platform API
+			pull(controller) {
+				const chunk = chunks.shift();
+				if (chunk === undefined) controller.close();
+				else controller.enqueue(encoder.encode(chunk));
+			},
+		});
+
+	it('releases only after the body is fully read', async () => {
+		let calls = 0;
+		const response = releaseWhenBodyDone(
+			new Response(streamOf('a', 'b'), { headers: { 'x-test': '1' }, status: 201 }),
+			() => {
+				calls += 1;
+			},
+		);
+		expect(response.status).toBe(201);
+		expect(response.headers.get('x-test')).toBe('1');
+		const reader = response.body?.getReader();
+		await reader?.read();
+		expect(calls).toBe(0);
+		await reader?.read();
+		expect(calls).toBe(0);
+		await reader?.read();
+		expect(calls).toBe(1);
+	});
+
+	it('passes the body through unchanged', async () => {
+		const response = releaseWhenBodyDone(new Response(streamOf('ab', 'cd')), noop);
+		await expect(response.text()).resolves.toBe('abcd');
+	});
+
+	it('releases once when the body is cancelled', async () => {
+		let calls = 0;
+		const response = releaseWhenBodyDone(new Response(streamOf('a', 'b')), () => {
+			calls += 1;
+		});
+		await response.body?.cancel();
+		expect(calls).toBe(1);
+	});
+
+	it('releases at once for a response without a body', () => {
+		let calls = 0;
+		releaseWhenBodyDone(new Response(null, { status: 204 }), () => {
+			calls += 1;
+		});
+		expect(calls).toBe(1);
 	});
 });

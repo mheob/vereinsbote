@@ -115,13 +115,19 @@ async function getAppContext(): Promise<AppContext> {
 }
 
 /**
- * Ends the database of the current request. Called by the request middleware after the response;
- * does nothing outside Cloudflare, where the database is shared.
+ * Binds the end of the current request's database to a function the request middleware calls
+ * once the response body is done (the request is looked up now, the body finishes outside the
+ * request context).
+ *
+ * @returns The release function, or null outside Cloudflare, where the database is shared.
  */
-async function releaseRequestDb(): Promise<void> {
-	if (import.meta.env.VITE_VB_PLATFORM !== 'cloudflare') return;
-	await requestDb.release(getRequest());
+function requestDbReleaser(): (() => Promise<void>) | null {
+	if (import.meta.env.VITE_VB_PLATFORM !== 'cloudflare') return null;
+	const request = getRequest();
+	return async () => {
+		await requestDb.release(request);
+	};
 }
 
-export { getAppContext, releaseRequestDb };
+export { getAppContext, requestDbReleaser };
 export type { AppContext, PlatformName };
