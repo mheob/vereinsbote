@@ -98,4 +98,11 @@ const decryptSecret = async (token: string, key: CryptoKey): Promise<string> => 
 	}
 };
 
-export { SecretDecryptError, decryptSecret, deriveAuthSecret, deriveSecretsKey, encryptSecret };
+export {
+	SecretDecryptError,
+	decryptSecret,
+	deriveAuthSecret,
+	deriveSecretsKey,
+	encryptSecret,
+	toBase64Url,
+};

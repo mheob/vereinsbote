@@ -1,7 +1,7 @@
 import { getRequest } from '@tanstack/react-start/server';
 
 import { createAuth } from '../server/auth/auth';
-import type { Auth } from '../server/auth/auth';
+import type { Auth, BackgroundRunner } from '../server/auth/auth';
 import { openDb } from '../server/db/client';
 import type { Db, DbHandle } from '../server/db/client';
 import { parseEnv } from '../server/env';
@@ -21,10 +21,12 @@ interface AppContext {
 	mailer: SystemMailer;
 }
 
-/** What all requests of an isolate share: the environment and the stateless mailer. */
+/** What all requests of an isolate share: the environment, the stateless mailer and the runner. */
 interface IsolateServices {
 	env: Env;
 	mailer: SystemMailer;
+	/** Keeps work (sending a login link) alive after the response. */
+	runInBackground: BackgroundRunner;
 }
 
 /** A database and the auth instance bound to it; on Cloudflare, what one request owns. */
@@ -70,12 +72,47 @@ async function loadWorkers(): Promise<CloudflareWorkers> {
 }
 
 /**
+ * The request being handled.
+ *
+ * @returns The request, or null outside a request.
+ */
+function currentRequest(): Request | null {
+	try {
+		return getRequest();
+	} catch {
+		return null;
+	}
+}
+
+interface WaitUntilRequest {
+	waitUntil: BackgroundRunner;
+}
+
+function hasWaitUntil(request: object): request is WaitUntilRequest {
+	return 'waitUntil' in request && typeof request.waitUntil === 'function';
+}
+
+/**
+ * Node and Vercel: hands the promise to the runtime's `waitUntil`, which Nitro puts on the
+ * request (Vercel's function context; srvx on Node). Without one the promise simply runs on,
+ * which a Node process allows.
+ *
+ * @param promise The work to finish after the response.
+ */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- a promise cannot be made readonly
+function runAfterResponse(promise: Promise<unknown>): void {
+	const request = currentRequest();
+	if (request !== null && hasWaitUntil(request)) request.waitUntil(promise);
+}
+
+/**
  * Creates the auth instance for an opened database. Ends the database when that fails, so a
  * failed attempt leaves no pool behind.
  *
- * @param isolate The environment and the mailer.
+ * @param isolate The environment, the mailer and the background runner.
  * @param isolate.env The environment.
  * @param isolate.mailer The mailer.
+ * @param isolate.runInBackground Keeps the sending of login links alive after the response.
  * @param handle The opened database.
  * @param handle.db The database client.
  * @param handle.end Closes the database.
@@ -83,12 +120,12 @@ async function loadWorkers(): Promise<CloudflareWorkers> {
  */
 async function bindAuth(
 	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Env holds a URL and a Uint8Array, which cannot be readonly
-	{ env, mailer }: Readonly<IsolateServices>,
+	{ env, mailer, runInBackground }: Readonly<IsolateServices>,
 	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Drizzle clients are mutable class instances
 	{ db, end }: Readonly<DbHandle>,
 ): Promise<DbServices> {
 	try {
-		return { auth: await createAuth({ db, env, mailer }), db };
+		return { auth: await createAuth({ db, env, mailer, runInBackground }), db };
 	} catch (error) {
 		await end();
 		throw error;
@@ -101,10 +138,11 @@ const cache: { promise?: Promise<AppContext> } = {};
 async function createSharedContext(): Promise<AppContext> {
 	try {
 		const env = parseEnv({ ...readProcessEnv() });
-		const isolate = { env, mailer: createSystemMailer(env) };
+		const mailer = createSystemMailer(env);
+		const isolate = { env, mailer, runInBackground: runAfterResponse };
 		const driver = import.meta.env.VITE_VB_PLATFORM === 'vercel' ? 'neon' : 'pg';
-		const services = await bindAuth(isolate, await openDb(env.databaseUrl, driver));
-		return { ...isolate, ...services };
+		const { auth, db } = await bindAuth(isolate, await openDb(env.databaseUrl, driver));
+		return { auth, db, env, mailer };
 	} catch (error) {
 		// Do not keep a failed attempt, the next call retries.
 		cache.promise = undefined;
@@ -113,10 +151,10 @@ async function createSharedContext(): Promise<AppContext> {
 }
 
 /*
- * Cloudflare: the parsed env and the mailer are cached per isolate, the database is not. A Neon
- * pool holds WebSockets, which belong to the request that opened them, so each request gets its
- * own pool, which `requestDbReleaser` ends via `waitUntil` once the response is done. The auth
- * instance holds that pool, so it is created per request as well.
+ * Cloudflare: env, mailer and the `waitUntil` runner are cached per isolate, the database is
+ * not. A Neon pool holds WebSockets, which belong to the request that opened them, so each
+ * request gets its own pool, which `requestDbReleaser` ends via `waitUntil` once the response is
+ * done. The auth instance holds that pool, so it is created per request as well.
  */
 const cloudflare: { isolate?: Promise<IsolateServices> } = {};
 
@@ -124,7 +162,14 @@ async function createIsolateServices(): Promise<IsolateServices> {
 	try {
 		const workers = await loadWorkers();
 		const env = parseEnv({ ...workers.env });
-		return { env, mailer: createSystemMailer(env) };
+		return {
+			env,
+			mailer: createSystemMailer(env),
+			// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- a promise cannot be made readonly
+			runInBackground(promise) {
+				workers.waitUntil(promise);
+			},
+		};
 	} catch (error) {
 		cloudflare.isolate = undefined;
 		throw error;

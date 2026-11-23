@@ -1,10 +1,20 @@
 /* oxlint-disable typescript/prefer-readonly-parameter-types -- Drizzle passes mutable table and relation builders to the schema callbacks */
-import { boolean, check, index, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
+import {
+	bigint,
+	boolean,
+	check,
+	index,
+	integer,
+	pgTable,
+	text,
+	timestamp,
+	uniqueIndex,
+} from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm/relations';
 import { sql } from 'drizzle-orm/sql';
 
 /*
- * The tables of Better Auth (user, session, account, verification) with the columns it expects,
+ * The tables of Better Auth (user, session, account, verification, rate_limit) with the columns it expects,
  * plus the app's own user columns `is_admin` and `status`. Better Auth reads and writes these
  * through its Drizzle adapter; it can never set `is_admin` or `status` (see `createAuth`).
  */
@@ -98,6 +108,15 @@ export const verification = pgTable(
 	},
 	(table) => [index('verification_identifier_idx').on(table.identifier)],
 );
+
+/** Better Auth's rate limiter, one row per client IP and path; shared by all isolates. */
+export const rateLimit = pgTable('rate_limit', {
+	count: integer('count').notNull(),
+	id: text('id').primaryKey(),
+	key: text('key').notNull().unique(),
+	/** Milliseconds since the epoch. */
+	lastRequest: bigint('last_request', { mode: 'number' }).notNull(),
+});
 
 // Better Auth joins users with their accounts and sessions through these relations; without
 // them it cannot find the owner of a linked Microsoft account.

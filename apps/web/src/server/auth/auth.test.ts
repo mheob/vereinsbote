@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import { t } from '../../i18n/t';
 import type { Db } from '../db/client';
-import { session, user } from '../db/schema';
+import { session, user, verification } from '../db/schema';
 import { createTestDb } from '../db/test-db';
 import { parseEnv } from '../env';
 import { MailerNotConfiguredError } from '../mail/system-mailer';
@@ -30,19 +30,42 @@ interface Setup {
 	mailer: CapturingMailer;
 }
 
-async function setup(
-	extraEnv: Readonly<Record<string, string>> = {},
-	mailer: Readonly<SystemMailer> = new CapturingMailer(),
-): Promise<Omit<Setup, 'mailer'>> {
+interface SetupOptions {
+	extraEnv?: Readonly<Record<string, string>>;
+	mailer?: Readonly<SystemMailer>;
+	runInBackground?: (promise: Readonly<Promise<unknown>>) => void;
+}
+
+async function setup(options: Readonly<SetupOptions> = {}): Promise<Omit<Setup, 'mailer'>> {
 	const db = await createTestDb();
-	const env = parseEnv({ ...baseEnv, ...extraEnv });
-	const auth = await createAuth({ db, env, mailer });
+	const env = parseEnv({ ...baseEnv, ...options.extraEnv });
+	const { mailer = new CapturingMailer(), runInBackground } = options;
+	const auth = await createAuth({ db, env, mailer, runInBackground });
 	return { auth, db };
 }
 
 async function setupCapturing(extraEnv: Readonly<Record<string, string>> = {}): Promise<Setup> {
 	const mailer = new CapturingMailer();
-	return { ...(await setup(extraEnv, mailer)), mailer };
+	return { ...(await setup({ extraEnv, mailer })), mailer };
+}
+
+/**
+ * Requests a login link through Better Auth's HTTP endpoint, as the login page does.
+ *
+ * @param auth The auth instance.
+ * @param email The address as sent by the client.
+ * @param ip The client address the proxy reports.
+ * @returns The HTTP status of the response.
+ */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- the Better Auth instance is mutable
+async function requestLinkOverHttp(auth: Auth, email: string, ip = '203.0.113.7'): Promise<number> {
+	const request = new Request(`${APP_URL}/api/auth/sign-in/magic-link`, {
+		body: JSON.stringify({ email }),
+		headers: { 'content-type': 'application/json', 'x-forwarded-for': ip },
+		method: 'POST',
+	});
+	const response = await auth.handler(request);
+	return response.status;
 }
 
 function tokenFrom(text: string): string {
@@ -61,6 +84,25 @@ function lastToken(sent: readonly Readonly<SystemMail>[]): string {
 	const mail = sent.at(-1);
 	if (mail === undefined) throw new Error('No mail was sent.');
 	return tokenFrom(mail.text);
+}
+
+/**
+ * Lists the paths Better Auth routes over HTTP that are neither used nor disabled.
+ *
+ * @param auth The auth instance.
+ * @param used The paths the app serves on purpose.
+ * @returns The paths that are open without a reason.
+ */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- the Better Auth instance is mutable
+function openUnusedPaths(auth: Auth, used: ReadonlySet<string>): string[] {
+	const disabled = new Set(auth.options.disabledPaths);
+	const open: string[] = [];
+	for (const endpoint of Object.values(auth.api)) {
+		// Server-only endpoints have no path.
+		const { path }: { path?: unknown } = endpoint;
+		if (typeof path === 'string' && !used.has(path) && !disabled.has(path)) open.push(path);
+	}
+	return open;
 }
 
 const cookieHeaders = (setCookie: string): Headers =>
@@ -139,15 +181,81 @@ describe('passwordless sign-in', () => {
 					throw new MailerNotConfiguredError();
 				},
 			};
-			const { auth, db } = await setup({}, failingMailer);
+			const background: Readonly<Promise<unknown>>[] = [];
+			const { auth, db } = await setup({
+				mailer: failingMailer,
+				runInBackground(promise) {
+					background.push(promise);
+				},
+			});
 			const logged = vi.spyOn(console, 'error').mockReturnValue();
 			await insertUser(db, { email: 'anna@verein.de', name: 'Anna' });
 
 			await expect(requestLoginLink(auth, 'anna@verein.de')).resolves.toBeUndefined();
+			await Promise.all(background);
 
+			expect(background).toHaveLength(1);
 			expect(attempted).toHaveLength(1);
 			expect(logged).toHaveBeenCalledWith('login link not sent', 'MailerNotConfiguredError');
 			expect(JSON.stringify(logged.mock.calls)).not.toContain(lastToken(attempted));
+		});
+
+		it('does not wait for the mail to be sent', async () => {
+			const attempted: SystemMail[] = [];
+			const stuckMailer: SystemMailer = {
+				async send(mail) {
+					attempted.push({ ...mail });
+					// A mail server that never answers: this promise never settles.
+					await Promise.withResolvers<never>().promise;
+				},
+			};
+			const { auth, db } = await setup({ mailer: stuckMailer });
+			await insertUser(db, { email: 'anna@verein.de', name: 'Anna' });
+			await expect(requestLoginLink(auth, 'anna@verein.de')).resolves.toBeUndefined();
+			expect(attempted).toHaveLength(1);
+		});
+
+		it('sends at most one link per address within 60 seconds', async () => {
+			vi.useFakeTimers({ toFake: ['Date'] });
+			const { db, mailer, auth } = await setupCapturing();
+			await insertUser(db, { email: 'anna@verein.de', name: 'Anna' });
+			await insertUser(db, { email: 'kim@verein.de', name: 'Kim' });
+
+			await requestLoginLink(auth, 'anna@verein.de');
+			// The HTTP endpoint gets the address as typed; the cooldown must still match it.
+			await expect(requestLinkOverHttp(auth, 'Anna@Verein.DE')).resolves.toBe(200);
+			await requestLoginLink(auth, 'kim@verein.de');
+			expect(mailer.sent).toMatchObject([{ to: 'anna@verein.de' }, { to: 'kim@verein.de' }]);
+
+			vi.setSystemTime(Date.now() + 61_000);
+			await requestLoginLink(auth, 'anna@verein.de');
+			expect(mailer.sent).toHaveLength(3);
+			expect(mailer.sent[2]).toMatchObject({ to: 'anna@verein.de' });
+		});
+
+		it('answers 429 once one client exceeds the link request limit', async () => {
+			const { auth } = await setup();
+			const statuses: number[] = [];
+			for (let attempt = 1; attempt <= 6; attempt += 1) {
+				// oxlint-disable-next-line no-await-in-loop -- the requests must count one after the other
+				statuses.push(await requestLinkOverHttp(auth, 'fremd@example.org'));
+			}
+			expect(statuses).toStrictEqual([200, 200, 200, 200, 200, 429]);
+			await expect(requestLinkOverHttp(auth, 'fremd@example.org', '203.0.113.8')).resolves.toBe(
+				200,
+			);
+		});
+
+		it('stores only a hash of the link token', async () => {
+			const { db, mailer, auth } = await setupCapturing();
+			const { id } = await insertUser(db, { email: 'anna@verein.de', name: 'Anna' });
+			await requestLoginLink(auth, 'anna@verein.de');
+			const token = lastToken(mailer.sent);
+			const rows = await db.select({ identifier: verification.identifier }).from(verification);
+			expect(rows).toHaveLength(1);
+			expect(rows[0]?.identifier).toMatch(/^magic-link:/u);
+			expect(rows[0]?.identifier).not.toContain(token);
+			await expect(verifyLoginLink(auth, token)).resolves.toMatchObject({ userId: id });
 		});
 	});
 
@@ -254,26 +362,41 @@ describe('passwordless sign-in', () => {
 	});
 
 	describe(createAuth, () => {
-		it('does not let a user set the admin flag or the status', async () => {
+		it('does not serve /update-user, so a user cannot touch the admin flag or the status', async () => {
 			const context = await setupCapturing();
 			const { headers } = await signIn(context, { email: 'anna@verein.de' });
 			headers.set('content-type', 'application/json');
 			headers.set('origin', APP_URL);
-			const updateUser = async (body: Readonly<Record<string, unknown>>): Promise<number> => {
-				const request = new Request(`${APP_URL}/api/auth/update-user`, {
-					body: JSON.stringify(body),
-					headers,
-					method: 'POST',
-				});
-				const response = await context.auth.handler(request);
-				return response.status;
-			};
-			await expect(updateUser({ isAdmin: true })).resolves.toBe(400);
-			await expect(updateUser({ status: 'disabled' })).resolves.toBe(400);
+			const request = new Request(`${APP_URL}/api/auth/update-user`, {
+				body: JSON.stringify({ isAdmin: true, status: 'active' }),
+				headers,
+				method: 'POST',
+			});
+			const response = await context.auth.handler(request);
+			expect(response.status).toBe(404);
 			await expect(findUserByEmail(context.db, 'anna@verein.de')).resolves.toMatchObject({
 				isAdmin: false,
 				status: 'active',
 			});
+		});
+
+		it('disables every routed endpoint the app does not use', async () => {
+			const { auth } = await setup();
+			const used = new Set([
+				'/callback/:id',
+				'/error',
+				'/get-session',
+				'/magic-link/verify',
+				'/ok',
+				// `disabledPaths` matches exact paths only, so a route with a parameter cannot be
+				// listed. No reset token is ever issued (no passwords), so it only answers with an error.
+				'/reset-password/:token',
+				'/sign-in/magic-link',
+				'/sign-in/social',
+				'/sign-out',
+			]);
+			expect(openUnusedPaths(auth, used)).toStrictEqual([]);
+			expect(auth.options.disabledPaths).toContain('/update-user');
 		});
 
 		it('offers no sign-up with email and password', async () => {
@@ -295,9 +418,11 @@ describe('passwordless sign-in', () => {
 
 		it('restricts the Microsoft provider to the configured tenant', async () => {
 			const { auth } = await setup({
-				MS_LOGIN_CLIENT_ID: 'client-id',
-				MS_LOGIN_CLIENT_SECRET: 'client-secret',
-				MS_LOGIN_TENANT_ID: 'verein-tenant',
+				extraEnv: {
+					MS_LOGIN_CLIENT_ID: 'client-id',
+					MS_LOGIN_CLIENT_SECRET: 'client-secret',
+					MS_LOGIN_TENANT_ID: 'verein-tenant',
+				},
 			});
 			const { url } = await auth.api.signInSocial({
 				body: { callbackURL: '/', provider: 'microsoft' },
