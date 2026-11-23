@@ -54,3 +54,4 @@ allowBuilds:
 
 minimumReleaseAgeExclude:
   - "@electric-sql/pglite@0.6.0"
+  - "@mheob/*"
