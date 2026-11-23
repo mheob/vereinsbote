@@ -39,7 +39,8 @@
 - **Sicherheit und Lieferkette** (Wunsch des Projekts, hohe Priorität):
   - GitHub Actions werden per vollständigem Commit-SHA gepinnt (`uses: owner/action@<sha> # vX.Y.Z`), nie per Tag oder Branch.
   - Container-Images werden per Digest gepinnt (`image:tag@sha256:…`) – im Dockerfile, in Compose-Dateien und in CI-Services.
-  - Dependabot hält SHA-, Digest- und Catalog-Pins aktuell.
+  - Renovate (`.github/renovate.json`, `extends: ["github>mheob/renovate-config"]`) hält SHA-, Digest- und Catalog-Pins aktuell.
+  - CI nutzt `voidzero-dev/setup-vp` (per SHA gepinnt) mit `node-version-file: .node-version` und `cache: true`, siehe https://viteplus.dev/guide/ci#github-actions.
   - CI mit minimalen Rechten (`permissions: contents: read`, `persist-credentials: false`, kein `pull_request_target`).
   - pnpm-Lieferkettenschutz, soweit von pnpm 12 unterstützt: `minimumReleaseAge`, `trustPolicy: no-downgrade`, `strictDepBuilds`, `blockExoticSubdeps`.
   - Container laufen als Nicht-Root-Benutzer ohne Dev-Abhängigkeiten.

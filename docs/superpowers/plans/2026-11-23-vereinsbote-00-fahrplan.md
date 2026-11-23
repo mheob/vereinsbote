@@ -24,7 +24,7 @@ Die Spec umfasst mehrere eigenständige Teilsysteme. Sie wird deshalb in acht Te
 ## Werkzeuge (gelten für alle Teilpläne)
 
 - **Versionen:** immer die neueste stabile Version von Node (derzeit 26 LTS), pnpm, TypeScript, allen Abhängigkeiten und Docker-Images.
-- **Sicherheit:** GitHub Actions per Commit-SHA und Container-Images per Digest gepinnt, Dependabot hält die Pins aktuell; CI mit minimalen Rechten; pnpm-Lieferkettenschutz. Sicherheit hat in allen Teilplänen hohe Priorität.
+- **Sicherheit:** GitHub Actions per Commit-SHA und Container-Images per Digest gepinnt, Renovate (Preset `github>mheob/renovate-config`) hält die Pins aktuell; CI über `voidzero-dev/setup-vp`; CI mit minimalen Rechten; pnpm-Lieferkettenschutz. Sicherheit hat in allen Teilplänen hohe Priorität.
 - **Vite+** (`vite-plus`, CLI `vp`) ist die einzige Toolchain: Dev, Build, Test, Lint, Format, Typprüfung und Task-Runner. Konfiguriert wird nur in `vite.config.ts`.
 - **pnpm** mit `catalogMode: strict`. Alle Versionen stehen im Catalog in `pnpm-workspace.yaml`, die `package.json`-Dateien nutzen `"catalog:"`.
 - **Lint und Format:** `@mheob/oxlint-config` und `@mheob/oxfmt-config`, eingebunden in die `lint`- und `fmt`-Blöcke von Vite+.
