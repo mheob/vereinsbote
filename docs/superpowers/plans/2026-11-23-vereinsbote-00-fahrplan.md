@@ -39,6 +39,12 @@ Die Details stehen in Teilplan 1 unter „Global Constraints“ und „Task 1“
 
 - **Sprache der Mails an Mitglieder und Partner:** Die Oberfläche ist zweisprachig. Ob Kontakte eine Sprache bekommen und Vorlagen Sprachvarianten haben, wird beim Schreiben von Teilplan 2 bzw. 3 geklärt.
 
+- **Aus dem Abschluss-Review von Teilplan 1** (verbindlich für die genannten Teilpläne):
+  - Teilplan 3: vollständige Content-Security-Policy, bevor Editor, HTML-Import und Vorschau kommen.
+  - Teilplan 4: Tageslimit pro Adresse für Anmeldelinks (Schutz des Versandkontingents); Bestätigungsschritt für Magic Links, damit Mail-Scanner sie nicht verbrauchen; AES-GCM mit zugeordneten Daten (AAD) pro gespeicherter Einstellung; fehlgeschlagene Einladungen erneut senden.
+  - Teilplan 7: Aufbewahrungsfristen inkl. Aktivitätsprotokoll.
+  - Später: automatisierter Smoke-Test der Cloudflare-Laufzeit in CI.
+
 ## Glossar: Fachbegriff und Name im Code
 
 Alles, was Code ist, ist englisch: Bezeichner, Dateinamen, URL-Pfade, HTML-IDs, CSS-Klassen, Cookie-Namen und Testtitel. Die Oberfläche ist zweisprachig (Deutsch als Standard, Englisch). Diese Zuordnung gilt für alle Teilpläne.
