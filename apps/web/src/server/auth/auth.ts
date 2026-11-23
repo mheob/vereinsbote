@@ -4,13 +4,12 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { isAPIError } from 'better-auth/api';
 import { magicLink } from 'better-auth/plugins/magic-link';
 import { tanstackStartCookies } from 'better-auth/tanstack-start';
-import { and, eq, gt, like, lte, ne, sql } from 'drizzle-orm';
-import { alias } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 
 import { t } from '../../i18n/t';
-import { deriveAuthSecret, toBase64Url } from '../crypto/secrets';
+import { deriveAuthSecret, deriveLoginWindowKey, hashLoginWindowEmail } from '../crypto/secrets';
 import type { Db } from '../db/client';
-import { account, rateLimit, session, user, verification } from '../db/schema';
+import { account, loginLinkWindow, rateLimit, session, user, verification } from '../db/schema';
 import type { Env } from '../env';
 import type { SystemMailer } from '../mail/system-mailer';
 import { activateInvitedUser, findUserByEmail, findUserById } from '../users/repo';
@@ -25,13 +24,11 @@ const SESSION_REFRESH_AGE_SECONDS = 86_400;
 /** Where a login link leads after a successful check, and where it leads after a failed one. */
 const AFTER_SIGN_IN_PATH = '/';
 const LOGIN_PATH = '/login';
-/** At most one login link per address and minute; further requests send nothing. */
-const LOGIN_LINK_COOLDOWN_MS = 60_000;
+/** At most one login link per address and window; requests inside an open window send nothing. */
+const LOGIN_LINK_WINDOW_SECONDS = 60;
 /** Login link requests per client address and window, enforced by Better Auth's rate limiter. */
 const LINK_REQUESTS_PER_WINDOW = 5;
 const LINK_REQUEST_WINDOW_SECONDS = 60;
-/** Better Auth's prefix for magic link rows in `verification.identifier`. */
-const MAGIC_LINK_PREFIX = 'magic-link:';
 
 /**
  * Where the rate limiter reads the client address, per platform (build constant). Cloudflare
@@ -143,78 +140,59 @@ async function sendLoginLink(
 }
 
 /**
- * The `verification.identifier` Better Auth stores for a magic link token with
- * `storeToken: 'hashed'`: SHA-256, base64url without padding.
- *
- * @param token The token of the link.
- * @returns The stored identifier.
- */
-async function storedLinkIdentifier(token: string): Promise<string> {
-	const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
-	return `${MAGIC_LINK_PREFIX}${toBase64Url(new Uint8Array(digest))}`;
-}
-
-/**
- * Tells whether a login link for the address was requested shortly before the current one.
- * Reads Better Auth's verification rows, so it holds across isolates. Rows created after the
- * current one do not count, so of two overlapping requests the earlier one sends; only requests
- * created in the very same millisecond would both stay silent.
+ * Opens the login link window of an address, unless one was opened within the last
+ * `LOGIN_LINK_WINDOW_SECONDS`. One atomic statement on the database clock, so it holds across
+ * isolates and concurrent requests. Requests inside an open window do not extend it.
  *
  * @param db The database.
- * @param email The normalized address.
- * @param token The token of the current link.
- * @returns True when the address is still in its cooldown.
+ * @param emailHash The HMAC of the normalized address.
+ * @returns True when this request opened the window.
  */
-async function hasRecentLoginLink(
+async function openLoginLinkWindow(
 	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Drizzle clients are mutable class instances
 	db: Db,
-	email: string,
-	token: string,
+	emailHash: string,
 ): Promise<boolean> {
-	const current = alias(verification, 'current');
-	const pattern = `${MAGIC_LINK_PREFIX}%`;
-	const since = new Date(Date.now() - LOGIN_LINK_COOLDOWN_MS);
-	const [earlier] = await db
-		.select({ id: verification.id })
-		.from(verification)
-		.innerJoin(current, eq(current.identifier, await storedLinkIdentifier(token)))
-		.where(
-			and(
-				like(verification.identifier, pattern),
-				gt(verification.createdAt, since),
-				lte(verification.createdAt, current.createdAt),
-				ne(verification.id, current.id),
-				// Only magic link rows hold JSON; the CASE keeps the cast away from all others.
-				sql`case when ${verification.identifier} like ${pattern} then lower(trim(${verification.value}::jsonb ->> 'email')) end = ${email}`,
-			),
-		)
-		.limit(1);
-	return earlier !== undefined;
+	const opened = await db
+		.insert(loginLinkWindow)
+		.values({ emailHash, openedAt: sql`now()` })
+		.onConflictDoUpdate({
+			set: { openedAt: sql`excluded.opened_at` },
+			setWhere: sql`${loginLinkWindow.openedAt} <= now() - make_interval(secs => ${LOGIN_LINK_WINDOW_SECONDS})`,
+			target: loginLinkWindow.emailHash,
+		})
+		.returning({ emailHash: loginLinkWindow.emailHash });
+	return opened.length > 0;
 }
 
 /**
- * Builds the `sendMagicLink` callback. It sends only to a user who exists and is not disabled,
- * and at most once per address within `LOGIN_LINK_COOLDOWN_MS`. Every request runs the same two
- * queries, and the mail goes out after the response, so neither the result nor the response time
- * tells which addresses are invited.
+ * Builds the `sendMagicLink` callback. It sends only when the request opened the login link
+ * window of the address and the user exists and is not disabled. Every request runs the same two
+ * statements (window upsert, user lookup), whether the address is invited or not, and the mail
+ * goes out after the response, so neither the result nor the response time tells which
+ * addresses are invited.
  *
  * @param deps The dependencies of the auth instance.
  * @param deps.db The database.
  * @param deps.mailer The mailer for login links.
  * @param deps.runInBackground Runs the sending after the response.
+ * @param windowKey The HMAC key for the login link windows.
  * @returns The callback for the magic link plugin.
  */
 function createLinkSender(
 	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Drizzle clients are mutable class instances
 	{ db, mailer, runInBackground = runDetached }: Readonly<AuthDeps>,
-): (data: Readonly<{ email: string; token: string; url: string }>) => Promise<void> {
-	return async ({ email, token, url }) => {
+	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- CryptoKey is an opaque DOM handle
+	windowKey: CryptoKey,
+): (data: Readonly<{ email: string; url: string }>) => Promise<void> {
+	return async ({ email, url }) => {
 		const to = normalizeEmail(email);
-		const [found, coolingDown] = await Promise.all([
+		const emailHash = await hashLoginWindowEmail(windowKey, to);
+		const [openedWindow, found] = await Promise.all([
+			openLoginLinkWindow(db, emailHash),
 			findUserByEmail(db, to),
-			hasRecentLoginLink(db, to, token),
 		]);
-		if (found === null || found.status === 'disabled' || coolingDown) return;
+		if (!openedWindow || found === null || found.status === 'disabled') return;
 		// The mail touches no database, so it may outlive the request's pool (Cloudflare).
 		runInBackground(sendLoginLink(mailer, to, url));
 	};
@@ -244,7 +222,7 @@ function socialProviders(microsoftLogin: Readonly<Env['microsoftLogin']>): Socia
 
 // The instance type is inferred from these options; `Auth` is derived from this function.
 // oxlint-disable-next-line typescript/explicit-function-return-type, typescript/prefer-readonly-parameter-types -- see above; Drizzle clients are mutable
-function buildAuth(deps: Readonly<AuthDeps>, secret: string) {
+function buildAuth(deps: Readonly<AuthDeps>, secret: string, windowKey: CryptoKey) {
 	const { db, env } = deps;
 	return betterAuth({
 		account: {
@@ -287,7 +265,7 @@ function buildAuth(deps: Readonly<AuthDeps>, secret: string) {
 			magicLink({
 				disableSignUp: true,
 				expiresIn: LOGIN_LINK_TTL_SECONDS,
-				sendMagicLink: createLinkSender(deps),
+				sendMagicLink: createLinkSender(deps, windowKey),
 				storeToken: 'hashed',
 			}),
 			// Must stay last: forwards cookies of server-side calls (session refresh) to the response.
@@ -329,7 +307,11 @@ type Auth = ReturnType<typeof buildAuth>;
  */
 // oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Drizzle clients are mutable class instances
 async function createAuth(deps: Readonly<AuthDeps>): Promise<Auth> {
-	return buildAuth(deps, await deriveAuthSecret(deps.env.appSecret));
+	const [secret, windowKey] = await Promise.all([
+		deriveAuthSecret(deps.env.appSecret),
+		deriveLoginWindowKey(deps.env.appSecret),
+	]);
+	return buildAuth(deps, secret, windowKey);
 }
 
 /**

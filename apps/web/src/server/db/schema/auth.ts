@@ -118,6 +118,16 @@ export const rateLimit = pgTable('rate_limit', {
 	lastRequest: bigint('last_request', { mode: 'number' }).notNull(),
 });
 
+/**
+ * The app's own login link windows: at most one login link per address and window. Keyed by an
+ * HMAC of the address (`hashLoginWindowEmail`), so no address is stored here. Every request
+ * writes it, whether the address is invited or not.
+ */
+export const loginLinkWindow = pgTable('login_link_window', {
+	emailHash: text('email_hash').primaryKey(),
+	openedAt: timestamp('opened_at', { withTimezone: true }).notNull(),
+});
+
 // Better Auth joins users with their accounts and sessions through these relations; without
 // them it cannot find the owner of a linked Microsoft account.
 export const userRelations = relations(user, ({ many }) => ({

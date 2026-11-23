@@ -1,5 +1,6 @@
 const SECRETS_INFO = 'vereinsbote:secrets:v1';
 const AUTH_INFO = 'vereinsbote:auth:v1';
+const LOGIN_WINDOW_INFO = 'vereinsbote:login-window:v1';
 const TOKEN_VERSION = 'v1';
 const IV_BYTES = 12;
 const AUTH_SECRET_BYTES = 32;
@@ -66,6 +67,24 @@ const deriveAuthSecret = async (appSecret: Uint8Array): Promise<string> => {
 	return toBase64Url(new Uint8Array(bits));
 };
 
+// The key for `hashLoginWindowEmail`: HMAC-SHA256, sign only, not extractable.
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- typed arrays cannot be readonly
+const deriveLoginWindowKey = async (appSecret: Uint8Array): Promise<CryptoKey> =>
+	globalThis.crypto.subtle.deriveKey(
+		hkdfParams(LOGIN_WINDOW_INFO),
+		await importHkdfKey(appSecret, 'deriveKey'),
+		{ hash: 'SHA-256', length: 256, name: 'HMAC' },
+		false,
+		['sign'],
+	);
+
+// Keys the login link window of an address without storing the address: HMAC-SHA256, base64url.
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- CryptoKey is an opaque DOM handle
+const hashLoginWindowEmail = async (key: CryptoKey, email: string): Promise<string> => {
+	const signature = await globalThis.crypto.subtle.sign('HMAC', key, encoder.encode(email));
+	return toBase64Url(new Uint8Array(signature));
+};
+
 // oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- CryptoKey is an opaque DOM handle
 const encryptSecret = async (plaintext: string, key: CryptoKey): Promise<string> => {
 	const iv = globalThis.crypto.getRandomValues(new Uint8Array(IV_BYTES));
@@ -102,7 +121,8 @@ export {
 	SecretDecryptError,
 	decryptSecret,
 	deriveAuthSecret,
+	deriveLoginWindowKey,
 	deriveSecretsKey,
 	encryptSecret,
-	toBase64Url,
+	hashLoginWindowEmail,
 };

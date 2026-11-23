@@ -4,8 +4,10 @@ import {
 	SecretDecryptError,
 	decryptSecret,
 	deriveAuthSecret,
+	deriveLoginWindowKey,
 	deriveSecretsKey,
 	encryptSecret,
+	hashLoginWindowEmail,
 } from './secrets';
 
 const appSecret = new Uint8Array(32).fill(9);
@@ -86,5 +88,29 @@ describe('secrets', () => {
 
 	it('derives an auth secret of 32 bytes as unpadded base64url', async () => {
 		await expect(deriveAuthSecret(appSecret)).resolves.toMatch(/^[\w-]{43}$/u);
+	});
+});
+
+describe('login window hash', () => {
+	it('is deterministic per secret', async () => {
+		const first = await deriveLoginWindowKey(appSecret);
+		const second = await deriveLoginWindowKey(appSecret);
+		const hash = await hashLoginWindowEmail(first, 'anna@verein.de');
+		await expect(hashLoginWindowEmail(second, 'anna@verein.de')).resolves.toBe(hash);
+	});
+
+	it('differs across secrets and addresses', async () => {
+		const key = await deriveLoginWindowKey(appSecret);
+		const hash = await hashLoginWindowEmail(key, 'anna@verein.de');
+		const otherKey = await deriveLoginWindowKey(otherSecret);
+		await expect(hashLoginWindowEmail(otherKey, 'anna@verein.de')).resolves.not.toBe(hash);
+		await expect(hashLoginWindowEmail(key, 'kim@verein.de')).resolves.not.toBe(hash);
+	});
+
+	it('is the base64url of 32 bytes and hides the address', async () => {
+		const key = await deriveLoginWindowKey(appSecret);
+		const hash = await hashLoginWindowEmail(key, 'anna@verein.de');
+		expect(hash).toMatch(/^[\w-]{43}$/u);
+		expect(hash).not.toContain('anna');
 	});
 });

@@ -1,11 +1,13 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import { t } from '../../i18n/t';
+import { deriveLoginWindowKey, hashLoginWindowEmail } from '../crypto/secrets';
 import type { Db } from '../db/client';
-import { session, user, verification } from '../db/schema';
+import { loginLinkWindow, session, user, verification } from '../db/schema';
 import { createTestDb } from '../db/test-db';
 import { parseEnv } from '../env';
+import type { Env } from '../env';
 import { MailerNotConfiguredError } from '../mail/system-mailer';
 import type { SystemMail, SystemMailer } from '../mail/system-mailer';
 import { CapturingMailer } from '../mail/testing';
@@ -27,6 +29,7 @@ const baseEnv = {
 interface Setup {
 	auth: Auth;
 	db: Db;
+	env: Env;
 	mailer: CapturingMailer;
 }
 
@@ -41,7 +44,7 @@ async function setup(options: Readonly<SetupOptions> = {}): Promise<Omit<Setup, 
 	const env = parseEnv({ ...baseEnv, ...options.extraEnv });
 	const { mailer = new CapturingMailer(), runInBackground } = options;
 	const auth = await createAuth({ db, env, mailer, runInBackground });
-	return { auth, db };
+	return { auth, db, env };
 }
 
 async function setupCapturing(extraEnv: Readonly<Record<string, string>> = {}): Promise<Setup> {
@@ -103,6 +106,32 @@ function openUnusedPaths(auth: Auth, used: ReadonlySet<string>): string[] {
 		if (typeof path === 'string' && !used.has(path) && !disabled.has(path)) open.push(path);
 	}
 	return open;
+}
+
+/**
+ * Moves every login link window back in time, as if the seconds had passed (the window uses the
+ * database clock, which a test cannot fake).
+ *
+ * @param db The database.
+ * @param seconds How far to move the windows back.
+ */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Drizzle clients are mutable class instances
+async function ageWindows(db: Db, seconds: number): Promise<void> {
+	await db
+		.update(loginLinkWindow)
+		.set({ openedAt: sql`${loginLinkWindow.openedAt} - make_interval(secs => ${seconds})` });
+}
+
+/**
+ * The key of an address in `login_link_window`.
+ *
+ * @param env The environment with the app secret.
+ * @param email The normalized address.
+ * @returns The HMAC of the address.
+ */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Env holds a URL and a Uint8Array, which cannot be readonly
+async function windowHash(env: Readonly<Env>, email: string): Promise<string> {
+	return hashLoginWindowEmail(await deriveLoginWindowKey(env.appSecret), email);
 }
 
 const cookieHeaders = (setCookie: string): Headers =>
@@ -215,24 +244,6 @@ describe('passwordless sign-in', () => {
 			expect(attempted).toHaveLength(1);
 		});
 
-		it('sends at most one link per address within 60 seconds', async () => {
-			vi.useFakeTimers({ toFake: ['Date'] });
-			const { db, mailer, auth } = await setupCapturing();
-			await insertUser(db, { email: 'anna@verein.de', name: 'Anna' });
-			await insertUser(db, { email: 'kim@verein.de', name: 'Kim' });
-
-			await requestLoginLink(auth, 'anna@verein.de');
-			// The HTTP endpoint gets the address as typed; the cooldown must still match it.
-			await expect(requestLinkOverHttp(auth, 'Anna@Verein.DE')).resolves.toBe(200);
-			await requestLoginLink(auth, 'kim@verein.de');
-			expect(mailer.sent).toMatchObject([{ to: 'anna@verein.de' }, { to: 'kim@verein.de' }]);
-
-			vi.setSystemTime(Date.now() + 61_000);
-			await requestLoginLink(auth, 'anna@verein.de');
-			expect(mailer.sent).toHaveLength(3);
-			expect(mailer.sent[2]).toMatchObject({ to: 'anna@verein.de' });
-		});
-
 		it('answers 429 once one client exceeds the link request limit', async () => {
 			const { auth } = await setup();
 			const statuses: number[] = [];
@@ -256,6 +267,68 @@ describe('passwordless sign-in', () => {
 			expect(rows[0]?.identifier).toMatch(/^magic-link:/u);
 			expect(rows[0]?.identifier).not.toContain(token);
 			await expect(verifyLoginLink(auth, token)).resolves.toMatchObject({ userId: id });
+		});
+	});
+
+	describe('login link window', () => {
+		it('sends the first request of a window', async () => {
+			const { db, mailer, auth } = await setupCapturing();
+			await insertUser(db, { email: 'anna@verein.de', name: 'Anna' });
+			await requestLoginLink(auth, 'anna@verein.de');
+			expect(mailer.sent).toMatchObject([{ to: 'anna@verein.de' }]);
+		});
+
+		it('sends nothing for a second request within 60 seconds', async () => {
+			const { db, mailer, auth } = await setupCapturing();
+			await insertUser(db, { email: 'anna@verein.de', name: 'Anna' });
+			await insertUser(db, { email: 'kim@verein.de', name: 'Kim' });
+			await requestLoginLink(auth, 'anna@verein.de');
+			// The HTTP endpoint gets the address as typed; the window must still match it.
+			await expect(requestLinkOverHttp(auth, 'Anna@Verein.DE')).resolves.toBe(200);
+			await requestLoginLink(auth, 'kim@verein.de');
+			expect(mailer.sent).toMatchObject([{ to: 'anna@verein.de' }, { to: 'kim@verein.de' }]);
+		});
+
+		it('sends again once the window has passed', async () => {
+			const { db, mailer, auth } = await setupCapturing();
+			await insertUser(db, { email: 'anna@verein.de', name: 'Anna' });
+			await requestLoginLink(auth, 'anna@verein.de');
+			await ageWindows(db, 61);
+			await requestLoginLink(auth, 'anna@verein.de');
+			expect(mailer.sent).toHaveLength(2);
+		});
+
+		it('is not extended by requests inside an open window', async () => {
+			const { db, mailer, auth } = await setupCapturing();
+			await insertUser(db, { email: 'anna@verein.de', name: 'Anna' });
+			await requestLoginLink(auth, 'anna@verein.de');
+			const sentAfter = [mailer.sent.length];
+			// Someone requests the address every 50 seconds.
+			for (let step = 1; step <= 4; step += 1) {
+				// oxlint-disable-next-line no-await-in-loop -- each step builds on the clock of the last
+				await ageWindows(db, 50);
+				// oxlint-disable-next-line no-await-in-loop -- see above
+				await requestLoginLink(auth, 'anna@verein.de');
+				sentAfter.push(mailer.sent.length);
+			}
+			// Requests at 0, 50, 100, 150 and 200 seconds: the ones at 100 and 200 open a new window.
+			expect(sentAfter).toStrictEqual([1, 1, 2, 2, 3]);
+		});
+
+		it('opens the window for unknown and disabled addresses too, but sends nothing', async () => {
+			const { db, env, mailer, auth } = await setupCapturing();
+			await insertUser(db, { email: 'kim@verein.de', name: 'Kim', status: 'disabled' });
+			await requestLoginLink(auth, 'fremd@example.org');
+			await requestLoginLink(auth, 'kim@verein.de');
+			expect(mailer.sent).toHaveLength(0);
+			const rows = await db.select({ emailHash: loginLinkWindow.emailHash }).from(loginLinkWindow);
+			expect(rows).toHaveLength(2);
+			expect(rows).toStrictEqual(
+				expect.arrayContaining([
+					{ emailHash: await windowHash(env, 'fremd@example.org') },
+					{ emailHash: await windowHash(env, 'kim@verein.de') },
+				]),
+			);
 		});
 	});
 
