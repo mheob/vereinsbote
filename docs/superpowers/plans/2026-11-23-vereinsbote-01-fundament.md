@@ -25,7 +25,7 @@
 
 ## Global Constraints
 
-- **Sprache:** Die Oberfläche ist nur auf Deutsch. Alle Texte stehen in `apps/web/src/i18n/de.ts`. Spec 3: „Alle Texte liegen zentral, damit eine spätere Übersetzung möglich ist.“
+- **Sprache:** Die Oberfläche ist von Beginn an zweisprachig: Deutsch (Standard) und Englisch (Wunsch des Projekts). Alle Texte stehen in `apps/web/src/i18n/de.ts` und `en.ts`. Systemmails gehen in der Sprache des Empfängers. Bis Task 5a gibt es nur `de.ts` und `t()`; ab Task 5a gelten `useT()` und `translate()`.
 - **Barrierefreiheit:** Die App erfüllt WCAG 2.2 AA (Spec 6.9). Jede Seite bekommt im E2E-Test einen axe-Check. Für die Tags `wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa`, `wcag22aa` darf es keine Verstöße geben.
 - **Anmeldung:** Spec 6.7: „Es gibt keine Passwörter und keine Selbstregistrierung. Admins laden Benutzer ein.“
 - **Stufen:** Sie sind kumulativ, `read` < `edit` < `send`. Die Admin-Rolle gibt **keinen** Bereichszugriff. Spec 6.7: „Mitgliederdaten sieht sie nur mit zusätzlichen Bereichsrechten.“
@@ -34,7 +34,7 @@
 - **Deploy-Ziele:** Vercel Pro, Cloudflare Workers Paid und Node/Docker (Spec 3, 4.1). `nodemailer` und `pg` werden nur dynamisch im Node-Pfad geladen und dürfen nie im Cloudflare-Bundle landen.
 - **Migrationen:** Sie laufen beim Deploy automatisch und bleiben mit älteren Daten verträglich (Spec 8).
 - **Lizenz:** MIT (Spec 8).
-- **Namen:** Code-Bezeichner sind englisch, nach dem Glossar im Fahrplan. Die URL-Pfade der Oberfläche sind deutsch.
+- **Namen:** Alles, was Code ist, ist englisch: Bezeichner (nach dem Glossar im Fahrplan), Dateinamen, URL-Pfade, HTML-IDs, CSS-Klassen, Cookie-Namen und Testtitel. Nur sichtbare Texte sind übersetzt.
 - **E-Mail-Adressen:** Sie werden überall über `normalizeEmail` (trim + lowercase) gespeichert und verglichen.
 - **Secrets:** Ihre Werte erscheinen nie in Fehlermeldungen oder Logs.
 - **Versionen:** Immer die neueste stabile Version verwenden: Node (derzeit 26 LTS), pnpm, TypeScript, jede Abhängigkeit im Catalog, Docker-Images (`node:26-alpine`, `postgres:19`, `axllent/mailpit:latest`) und GitHub Actions. Eine ältere Version ist nur erlaubt, wenn die neueste nachweislich nicht funktioniert. Dann steht der Grund als Kommentar am Catalog-Eintrag.
@@ -85,7 +85,8 @@ apps/web/
   vercel.json, wrangler.jsonc, .env.example
   e2e/fundament.e2e.ts, e2e/helpers/{mailpit.ts,a11y.ts}
   src/
-    i18n/{de.ts,t.ts}
+    i18n/{de.ts,en.ts,locale.ts,translate.ts,use-t.tsx}   (t.ts bis Task 5a)
+    components/language-switcher.tsx
     platform/{context.ts,platform.ts,node-server.ts,cloudflare-worker.ts}
     server/
       env.ts
@@ -102,8 +103,8 @@ apps/web/
       areas/areas.ts
       tick/{tick.ts,steps.ts,http.ts}
     routes/
-      __root.tsx, index.tsx, anmelden.tsx, einrichtung.tsx
-      verwaltung/{route.tsx,benutzer.tsx,bereiche.tsx}
+      __root.tsx, index.tsx, login.tsx, setup.tsx
+      admin/{route.tsx,users.tsx,areas.tsx}
       api/{health.ts,tick.ts}, api/auth/$.ts
 ```
 
@@ -466,7 +467,7 @@ it('derives a stable auth secret per app secret', async () => {
 ### Task 5: Anmeldung ohne Passwort
 
 **Files:**
-- Create: `src/server/db/schema/auth.ts`, `src/server/auth/{email.ts,auth.ts,session.ts}`, `src/server/users/repo.ts`, `src/server/mail/{system-mailer.ts,testing.ts}`, `src/routes/api/auth/$.ts`, `src/routes/anmelden.tsx`
+- Create: `src/server/db/schema/auth.ts`, `src/server/auth/{email.ts,auth.ts,session.ts}`, `src/server/users/repo.ts`, `src/server/mail/{system-mailer.ts,testing.ts}`, `src/routes/api/auth/$.ts`, `src/routes/login.tsx`
 - Modify: `src/platform/context.ts` (`AppContext` bekommt `auth: Auth` und `mailer: SystemMailer`), `src/i18n/de.ts`
 - Test: `src/server/auth/email.test.ts`, `src/server/auth/auth.test.ts`
 
@@ -590,10 +591,114 @@ it('getSessionUser returns null once the user is disabled', async () => {
 - [ ] **Step 4: Prüfen.** `vp test apps/web/src/server/auth` meldet PASS.
 - [ ] **Step 5: Routen anlegen.**
   - `api/auth/$` leitet an `auth.handler` weiter.
-  - `/anmelden` hat ein Formular mit dem Feld „E-Mail“ und dem Button „Anmeldelink anfordern“. Danach zeigt die Seite `t('auth.linkSent', { email })`.
+  - `/login` hat ein Formular mit dem Feld „E-Mail“ und dem Button „Anmeldelink anfordern“. Danach zeigt die Seite `t('auth.linkSent', { email })`.
   - Ist Microsoft konfiguriert, gibt es zusätzlich den Button „Mit Microsoft anmelden“.
   - Prüfen: `vp check` läuft fehlerfrei.
 - [ ] **Step 6: Commit:** `feat: add invite-only passwordless sign-in`
+
+---
+
+### Task 5a: Zweisprachigkeit (Deutsch und Englisch)
+
+Wunsch des Projekts: Die Oberfläche ist von Beginn an zweisprachig. Dieser Task stellt das i18n-Modul aus Task 1 auf zwei Sprachen um und passt alle bis hierher vorhandenen Texte an.
+
+**Files:**
+- Create: `apps/web/src/i18n/en.ts`, `apps/web/src/i18n/locale.ts`, `apps/web/src/i18n/translate.ts`, `apps/web/src/i18n/use-t.tsx`, `apps/web/src/server/i18n/request-locale.ts`, `apps/web/src/components/language-switcher.tsx`
+- Modify: `apps/web/src/i18n/de.ts`, `apps/web/src/routes/__root.tsx`, `apps/web/src/routes/login.tsx`, `apps/web/src/server/auth/auth.ts`, `apps/web/src/server/users/repo.ts`, `apps/web/src/server/db/schema/auth.ts` (+ Migration)
+- Delete: `apps/web/src/i18n/t.ts` (ersetzt durch `translate` und `useT`)
+- Test: `apps/web/src/i18n/locale.test.ts`, `apps/web/src/i18n/translate.test.ts`, `apps/web/src/server/auth/auth.test.ts` (Ergänzung)
+
+**Interfaces:**
+- Consumes: `de`, `t` (Task 1); `createAuth`, `requestLoginLink`, `insertUser`, `findUserByEmail`, `getSessionUser` (Task 5); `getAppContext` (Task 3)
+- Produces:
+
+```ts
+// i18n/locale.ts
+export const SUPPORTED_LOCALES = ['de', 'en'] as const
+export type Locale = (typeof SUPPORTED_LOCALES)[number]
+export const DEFAULT_LOCALE: Locale = 'de'
+export const LOCALE_COOKIE = 'locale'
+export function isLocale(value: unknown): value is Locale
+export function resolveLocale(input: { cookie: string | null; acceptLanguage: string | null }): Locale
+// i18n/translate.ts
+export type MessageKey = keyof typeof de
+export type MessageParams = Readonly<Record<string, string | number>>
+export function translate(locale: Locale, key: MessageKey, params?: MessageParams): string
+// i18n/use-t.tsx
+export function LocaleProvider(props: { locale: Locale; children: ReactNode }): ReactNode
+export function useLocale(): Locale
+export function useT(): (key: MessageKey, params?: MessageParams) => string
+// server/i18n/request-locale.ts
+export function getRequestLocale(headers: Headers): Locale
+// users/repo.ts (Änderung)
+// insertUser(db, { email, name, isAdmin?, status?, locale? }) — locale Standard 'de'
+// findUserByEmail(...) liefert zusätzlich locale: Locale
+```
+
+**Regeln:**
+- `en` ist als `Record<MessageKey, string>` typisiert. Fehlt ein Schlüssel, schlägt `vp check` fehl.
+- `t()` aus Task 1 entfällt. Komponenten nutzen `useT()`, Server-Code nutzt `translate(locale, …)`.
+- **Sprachwahl:** Ein gültiges Cookie `locale` gewinnt. Sonst gilt die erste unterstützte Sprache aus `Accept-Language` nach q-Wert (`de-AT` → `de`, `en-GB` → `en`). Sonst `de`.
+- `<html lang>` ist die aufgelöste Sprache. Das Ziel des Skip-Links heißt `#main-content` (statt `#inhalt`), passend zur Regel „Code ist englisch“.
+- **Sprachumschalter** im Kopf jeder Seite:
+  - zwei Schaltflächen „Deutsch“ (`lang="de"`) und „English“ (`lang="en"`); die aktuelle trägt `aria-current="true"`
+  - setzt das Cookie `locale` (1 Jahr, `SameSite=Lax`, `Path=/`) und lädt die Seite neu
+  - ist ein Benutzer angemeldet, speichert er zusätzlich `user.locale`
+- **Datenbank:** `user.locale text not null default 'de'` mit der Prüfung `locale in ('de','en')`.
+- **Systemmails** gehen in der Sprache des Empfängers (`user.locale`). Der Anmeldelink nutzt die gespeicherte Sprache des Benutzers.
+- **Englische Texte** für alle vorhandenen Schlüssel. Verbindlich sind:
+  - `'a11y.skipLink'`: „Skip to content“
+  - `'auth.linkSent'`: „We have sent a sign-in link to {email} if the address has been invited.“
+  - `'mail.login.subject'`: „Your sign-in link for Vereinsbote“
+  - `'mail.login.text'`: „Hello,\n\nhere is your sign-in link:\n{link}\n\nThe link is valid for 15 minutes and works once.“
+  - Feld „Email“, Button „Request sign-in link“, Button „Sign in with Microsoft“
+  - `'app.name'` ist in beiden Sprachen „Vereinsbote“.
+
+- [ ] **Step 1: Failing Tests schreiben**
+
+```ts
+// locale.test.ts
+it.each([
+  [{ cookie: 'en', acceptLanguage: 'de-DE' }, 'en'],
+  [{ cookie: 'fr', acceptLanguage: 'en-GB,en;q=0.9' }, 'en'],
+  [{ cookie: null, acceptLanguage: 'fr-FR, de-AT;q=0.8, en;q=0.5' }, 'de'],
+  [{ cookie: null, acceptLanguage: 'fr-FR, en;q=0.9, de;q=0.8' }, 'en'],
+  [{ cookie: null, acceptLanguage: 'fr' }, 'de'],
+  [{ cookie: null, acceptLanguage: null }, 'de'],
+] as const)('resolveLocale(%o) is %s', (input, expected) => expect(resolveLocale(input)).toBe(expected))
+
+// translate.test.ts
+it('translates per locale', () => {
+  expect(translate('de', 'a11y.skipLink')).toBe('Zum Inhalt springen')
+  expect(translate('en', 'a11y.skipLink')).toBe('Skip to content')
+})
+it('interpolates and names missing params in both locales', () => {
+  expect(translate('en', 'auth.linkSent', { email: 'kim@v.de' })).toBe(
+    'We have sent a sign-in link to kim@v.de if the address has been invited.')
+  expect(() => translate('de', 'auth.linkSent')).toThrow(/email/)
+  expect(() => translate('en', 'auth.linkSent')).toThrow(/email/)
+})
+it('uses the same placeholders in de and en for every key', () => {
+  // für jeden Schlüssel: Menge der {name}-Platzhalter in de === in en
+})
+
+// auth.test.ts (Ergänzung)
+it("sends the sign-in link in the user's language", async () => {
+  // insertUser(..., locale: 'en') → requestLoginLink → mailer.sent[0].subject === 'Your sign-in link for Vereinsbote'
+})
+it('stores de as the default locale', async () => {
+  // insertUser ohne locale → findUserByEmail(...).locale === 'de'
+})
+```
+
+- [ ] **Step 2: Tests laufen lassen.** `vp test apps/web/src/i18n apps/web/src/server/auth` meldet FAIL.
+- [ ] **Step 3: Umsetzen.** `locale.ts`, `translate.ts`, `en.ts`, `use-t.tsx`, `request-locale.ts`, Schema-Spalte und Migration (`vp run --filter web db:generate`), `repo.ts`, Mailsprache in `auth.ts`. Alle bisherigen `t(...)`-Aufrufe auf `useT()` bzw. `translate(...)` umstellen.
+- [ ] **Step 4: Prüfen.** `vp test` meldet PASS, `vp check` läuft fehlerfrei durch.
+- [ ] **Step 5: Oberfläche.**
+  - `__root.tsx` ermittelt die Sprache serverseitig aus der Anfrage, setzt `<html lang>`, umschließt die App mit `LocaleProvider`, nutzt `#main-content` und zeigt den Sprachumschalter.
+  - Der Umschalter ist per Tastatur bedienbar und hat einen sichtbaren Fokus.
+  - Prüfen: `vp check`, `vp run --filter web build:node`. Mit `vp dev` zeigt `/login` bei `Accept-Language: en` die englischen Texte und nach Klick auf „Deutsch“ die deutschen.
+- [ ] **Step 6: Commit:** `feat: add german and english ui`
 
 ---
 
@@ -679,7 +784,7 @@ it('stores an entry with details', async () => {
 ### Task 7: Ersteinrichtung
 
 **Files:**
-- Create: `src/server/setup/setup.ts`, `src/routes/einrichtung.tsx`
+- Create: `src/server/setup/setup.ts`, `src/routes/setup.tsx`
 - Modify: `src/server/auth/auth.ts` (neu: `createSessionFor`), `src/i18n/de.ts`
 - Test: `src/server/setup/setup.test.ts`
 
@@ -708,10 +813,10 @@ export function createSessionFor(auth: Auth, userId: string): Promise<{ setCooki
    4. Mitgliedschaft Admin → Mitglieder mit der Stufe `edit` anlegen (Spec 6.7).
    5. `writeAudit` mit `setup.completed`.
 
-**Route `/einrichtung`:**
+**Route `/setup`:**
 - **Wenn die Einrichtung bereits erledigt ist:** Die Seite zeigt `t('setup.done')` = „Die Einrichtung ist abgeschlossen.“ und einen Link „Zur Anmeldung“.
 - **Formular:** die Felder „Einrichtungs-Token“, „Name“ und „E-Mail“ und der Button „Einrichtung abschließen“.
-- **Nach Erfolg:** `createSessionFor` und ein Redirect auf `/verwaltung/benutzer`.
+- **Nach Erfolg:** `createSessionFor` und ein Redirect auf `/admin/users`.
 - **Fehler:** Sie werden am Formular angezeigt.
   - `t('setup.tokenInvalid')` = „Das Einrichtungs-Token stimmt nicht.“
   - `t('setup.disabled')` = „Die Einrichtung ist nicht freigeschaltet. Setze SETUP_TOKEN.“
@@ -763,7 +868,7 @@ it('creates exactly one admin when submitted twice in parallel', async () => {
 - [ ] **Step 2: Tests laufen lassen.** FAIL.
 - [ ] **Step 3: `completeSetup`, `isSetupDone` und `createSessionFor` umsetzen.**
 - [ ] **Step 4: Prüfen.** `vp test apps/web/src/server/setup` meldet PASS.
-- [ ] **Step 5: Route `/einrichtung` bauen.** Mit React Aria `TextField` und `Button`. Fehler sind über `aria-describedby` verknüpft. Prüfen: `vp check`.
+- [ ] **Step 5: Route `/setup` bauen.** Mit React Aria `TextField` und `Button`. Fehler sind über `aria-describedby` verknüpft. Prüfen: `vp check`.
 - [ ] **Step 6: Commit:** `feat: add one-time setup with first admin`
 
 ---
@@ -771,12 +876,12 @@ it('creates exactly one admin when submitted twice in parallel', async () => {
 ### Task 8: Benutzer und Bereiche verwalten
 
 **Files:**
-- Create: `src/server/users/users.ts`, `src/server/areas/areas.ts`, `src/routes/verwaltung/{route.tsx,benutzer.tsx,bereiche.tsx}`
+- Create: `src/server/users/users.ts`, `src/server/areas/areas.ts`, `src/routes/admin/{route.tsx,users.tsx,areas.tsx}`
 - Modify: `src/routes/index.tsx` (Startseite „Deine Bereiche“), `src/i18n/de.ts`
 - Test: `src/server/users/users.test.ts`, `src/server/areas/areas.test.ts`
 
 **Interfaces:**
-- Consumes: `Principal`, `assertAdmin`, `ForbiddenError`, `AccessLevel`, `writeAudit` (Task 6); `insertUser`, `findUserByEmail`, `revokeSessions`, `SystemMailer`, `CapturingMailer` (Task 5)
+- Consumes: `Principal`, `assertAdmin`, `ForbiddenError`, `AccessLevel`, `writeAudit` (Task 6); `insertUser`, `findUserByEmail`, `revokeSessions`, `SystemMailer`, `CapturingMailer` (Task 5); `Locale`, `translate`, `useT` (Task 5a)
 - Produces:
 
 ```ts
@@ -786,7 +891,7 @@ export class LastAdminError extends Error {}
 export interface UserRow { id: string; email: string; name: string; isAdmin: boolean; status: UserStatus;
   levels: Record<string, AccessLevel> }   // areaId → Stufe
 export function inviteUser(deps: { db: Db; mailer: SystemMailer; appUrl: URL }, actor: Principal,
-  input: { email: string; name: string; isAdmin: boolean }): Promise<{ userId: string }>
+  input: { email: string; name: string; isAdmin: boolean; locale: Locale }): Promise<{ userId: string }>
 export function setAdmin(db: Db, actor: Principal, userId: string, isAdmin: boolean): Promise<void>
 export function disableUser(db: Db, actor: Principal, userId: string): Promise<void>
 export function setAreaLevel(db: Db, actor: Principal, input: { userId: string; areaId: string; level: AccessLevel | null }): Promise<void>
@@ -807,20 +912,21 @@ export function listAreas(db: Db, actor: Principal): Promise<Array<{ id: string;
 - **Einladungs-Mail:**
   - Betreff: `t('mail.invite.subject')` = „Einladung zum Vereinsbote“
   - Text: `t('mail.invite.text', { name, link })` = „Hallo {name},\n\ndu wurdest zum Vereinsbote eingeladen. Melde dich hier an:\n{link}“
-  - `link` ist `new URL('/anmelden', appUrl)`.
+  - `link` ist `new URL('/login', appUrl)`.
+  - Die Einladung geht in der Sprache `input.locale` raus; das Einladungsformular hat dafür ein Auswahlfeld „Sprache“ (Standard: Sprache der einladenden Person). Englische Texte: Betreff „Invitation to Vereinsbote“, Text „Hello {name},\n\nyou have been invited to Vereinsbote. Sign in here:\n{link}“.
 
 **Oberfläche:**
-- **`verwaltung/route.tsx`** schützt alle Unterseiten.
-  - Ohne Sitzung leitet es auf `/anmelden` um.
+- **`admin/route.tsx`** schützt alle Unterseiten.
+  - Ohne Sitzung leitet es auf `/login` um.
   - Ohne Admin-Rolle zeigt es die Überschrift „Kein Zugriff“ mit HTTP-Status 403.
-- **`/verwaltung/benutzer`:**
+- **`/admin/users`:**
   - Eine Tabelle mit einer Zeile pro Benutzer und einer Spalte pro Bereich.
   - Jede Zelle ist ein React-Aria-`Select` mit dem Label „{Bereich} für {Name}“ und den Optionen „Kein Zugriff“, „Lesen“, „Bearbeiten“ und „Versenden“.
   - Ein Einladungsformular mit den Feldern „Name“ und „E-Mail“, einer Checkbox „Admin“ und dem Button „Einladen“.
   - Ein Button „Sperren“ öffnet einen Dialog mit „Ja, sperren“.
-- **`/verwaltung/bereiche`:** Bereiche anlegen und umbenennen.
+- **`/admin/areas`:** Bereiche anlegen und umbenennen.
 - **Startseite `/`:**
-  - Ohne Sitzung leitet sie auf `/anmelden` um.
+  - Ohne Sitzung leitet sie auf `/login` um.
   - Sonst zeigt sie die Überschrift „Deine Bereiche“ und eine Liste im Format „{Bereich} – {Stufe}“, z. B. „Finanzen – Lesen“.
 
 - [ ] **Step 1: Failing Tests schreiben**
@@ -832,13 +938,13 @@ it('only admins can invite', async () => {
   const { id } = await insertUser(db, { email: 'kim@v.de', name: 'Kim', status: 'active' })
   const kim = (await loadPrincipal(db, id))!
   await expect(inviteUser({ db, mailer: new CapturingMailer(), appUrl: new URL('https://b.example.org') }, kim,
-    { email: 'x@v.de', name: 'X', isAdmin: false })).rejects.toBeInstanceOf(ForbiddenError)
+    { email: 'x@v.de', name: 'X', isAdmin: false, locale: 'de' })).rejects.toBeInstanceOf(ForbiddenError)
 })
-it('normalizes the address and sends an invitation linking to /anmelden', async () => {
+it('normalizes the address and sends an invitation linking to /login', async () => {
   const db = await createTestDb(); const mailer = new CapturingMailer(); const a = await admin(db)
-  await inviteUser({ db, mailer, appUrl: new URL('https://b.example.org') }, a, { email: ' Kim@V.de', name: 'Kim', isAdmin: false })
+  await inviteUser({ db, mailer, appUrl: new URL('https://b.example.org') }, a, { email: ' Kim@V.de', name: 'Kim', isAdmin: false, locale: 'de' })
   expect(mailer.sent[0]).toMatchObject({ to: 'kim@v.de', subject: 'Einladung zum Vereinsbote' })
-  expect(mailer.sent[0].text).toContain('https://b.example.org/anmelden')
+  expect(mailer.sent[0].text).toContain('https://b.example.org/login')
 })
 it('rejects inviting an existing address in other case', async () => { /* zweimal einladen, 'KIM@v.de' → UserExistsError */ })
 it('refuses to disable or demote the last active admin', async () => {
@@ -1025,38 +1131,39 @@ it('does not chain when no work is left', async () => { /* moreWork false → fe
 - [ ] **Step 3: Failing E2E-Test schreiben** (`apps/web/e2e/fundament.e2e.ts`)
 
 ```ts
-test('Ersteinrichtung, Einladung, Anmeldung, Rechte und Sperre', async ({ page, browser }) => {
-  await page.goto('/einrichtung'); await expectNoA11yViolations(page)
+test('setup, invitation, sign-in, permissions and blocking', async ({ page, browser }) => {
+  await page.goto('/setup'); await expectNoA11yViolations(page)
   await page.getByLabel('Einrichtungs-Token').fill(process.env.SETUP_TOKEN!)
   await page.getByLabel('Name').fill('Alex Admin')
   await page.getByLabel('E-Mail').fill('admin@verein.test')
   await page.getByRole('button', { name: 'Einrichtung abschließen' }).click()
-  await expect(page).toHaveURL(/\/verwaltung\/benutzer$/); await expectNoA11yViolations(page)
+  await expect(page).toHaveURL(/\/admin\/users$/); await expectNoA11yViolations(page)
 
   await page.getByLabel('Name').fill('Kim'); await page.getByLabel('E-Mail').fill('kim@verein.test')
   await page.getByRole('button', { name: 'Einladen' }).click()
   await page.getByLabel('Finanzen für Kim').click(); await page.getByRole('option', { name: 'Lesen' }).click()
-  expect(await latestLink('kim@verein.test', /\/anmelden/)).toMatch(/\/anmelden$/)
+  expect(await latestLink('kim@verein.test', /\/login/)).toMatch(/\/login$/)
 
   const kim = await (await browser.newContext()).newPage()
-  await kim.goto('/anmelden'); await expectNoA11yViolations(kim)
+  await kim.goto('/login'); await expectNoA11yViolations(kim)
   await kim.getByLabel('E-Mail').fill(' Kim@Verein.test')
   await kim.getByRole('button', { name: 'Anmeldelink anfordern' }).click()
   await kim.goto(await latestLink('kim@verein.test', /magic-link/))
   await expect(kim.getByRole('heading', { name: 'Deine Bereiche' })).toBeVisible(); await expectNoA11yViolations(kim)
   await expect(kim.getByText('Finanzen – Lesen')).toBeVisible()
   await expect(kim.getByText(/Mitglieder/)).toHaveCount(0)
-  await kim.goto('/verwaltung/benutzer')
+  await kim.goto('/admin/users')
   await expect(kim.getByRole('heading', { name: 'Kein Zugriff' })).toBeVisible()
 
   await page.getByRole('row', { name: /Kim/ }).getByRole('button', { name: 'Sperren' }).click()
   await page.getByRole('button', { name: 'Ja, sperren' }).click()
-  await kim.goto('/'); await expect(kim).toHaveURL(/\/anmelden$/)
+  await kim.goto('/'); await expect(kim).toHaveURL(/\/login$/)
 })
 ```
 
 - [ ] **Step 4: E2E laufen lassen.**
   - Ablauf: `docker compose -f docker/compose.dev.yml up -d`, dann `vp run --filter web e2e`.
+  - Playwright läuft mit `locale: 'de-DE'`, damit die deutschen Bezeichnungen gelten. Ein zweiter Test prüft auf `/login`: Klick auf „English“ zeigt den Button „Request sign-in link“, `<html lang="en">` und keine axe-Verstöße.
   - Playwright startet die App mit `DEV_SMTP_URL=smtp://localhost:1025` und einem festen `SETUP_TOKEN`, über `webServer` in `playwright.config.ts`.
   - Erwartung: FAIL nur dort, wo noch etwas fehlt. Fehlende Bezeichnungen oder Seiten werden ergänzt, bis der Test PASS meldet. Die Bezeichnungen müssen den Texten aus Task 5, 7 und 8 entsprechen.
 - [ ] **Step 5: CI einrichten.**
