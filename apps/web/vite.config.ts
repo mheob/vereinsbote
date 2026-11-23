@@ -19,13 +19,25 @@ const platformConfigs = {
 		plugins: [
 			nitro({
 				output: { dir: 'dist/node' },
+				// Runs the tick interval from startup on (see the file).
+				plugins: ['./src/platform/node-server.ts'],
 				preset: 'node-server',
-				// Imported once at startup, it runs the tick interval (see the file).
-				serverEntry: './src/platform/node-server.ts',
 			}),
 		],
 	}),
-	vercel: (): UserConfig => ({ plugins: [nitro({ preset: 'vercel' })] }),
+	vercel: (): UserConfig => ({
+		plugins: [
+			nitro({
+				preset: 'vercel',
+				vercel: {
+					// The tick, every 15 minutes (Spec 6.6), written to `.vercel/output/config.json`.
+					config: { crons: [{ path: '/api/tick', schedule: '*/15 * * * *' }], version: 3 },
+					// A tick has a 4-minute budget; 5 minutes leave room for the chain request.
+					functionRules: { '/api/tick': { maxDuration: 300 } },
+				},
+			}),
+		],
+	}),
 };
 
 type Platform = keyof typeof platformConfigs;

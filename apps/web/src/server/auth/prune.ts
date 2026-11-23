@@ -1,4 +1,5 @@
-import { inArray, lt, lte, sql } from 'drizzle-orm';
+import { and, inArray, lt, lte, sql } from 'drizzle-orm';
+import type { SQL } from 'drizzle-orm';
 
 import type { Db } from '@/server/db/client';
 import { loginLinkWindow, verification } from '@/server/db/schema';
@@ -12,6 +13,23 @@ const PRUNE_BATCH_SIZE = 500;
 /** Deletes up to one batch and returns how many rows it deleted. */
 type BatchDelete = (db: Db, batchSize: number) => Promise<number>;
 
+/*
+ * Each delete repeats its age condition on the rows it deletes, not only in the batch subquery:
+ * a row that another request renewed in the meantime (a reopened login window) is checked again
+ * after its lock and then kept.
+ */
+
+function isExpiredVerification(): SQL {
+	return lt(verification.expiresAt, sql`now()`);
+}
+
+function isClosedLoginWindow(): SQL {
+	return lte(
+		loginLinkWindow.openedAt,
+		sql`now() - make_interval(secs => ${LOGIN_LINK_WINDOW_SECONDS})`,
+	);
+}
+
 /**
  * Deletes expired Better Auth verification rows (used or unused login links).
  *
@@ -23,11 +41,11 @@ const deleteExpiredVerifications: BatchDelete = async (db, batchSize) => {
 	const expired = db
 		.select({ id: verification.id })
 		.from(verification)
-		.where(lt(verification.expiresAt, sql`now()`))
+		.where(isExpiredVerification())
 		.limit(batchSize);
 	const deleted = await db
 		.delete(verification)
-		.where(inArray(verification.id, expired))
+		.where(and(inArray(verification.id, expired), isExpiredVerification()))
 		.returning({ id: verification.id });
 	return deleted.length;
 };
@@ -44,16 +62,11 @@ const deleteClosedLoginWindows: BatchDelete = async (db, batchSize) => {
 	const closed = db
 		.select({ emailHash: loginLinkWindow.emailHash })
 		.from(loginLinkWindow)
-		.where(
-			lte(
-				loginLinkWindow.openedAt,
-				sql`now() - make_interval(secs => ${LOGIN_LINK_WINDOW_SECONDS})`,
-			),
-		)
+		.where(isClosedLoginWindow())
 		.limit(batchSize);
 	const deleted = await db
 		.delete(loginLinkWindow)
-		.where(inArray(loginLinkWindow.emailHash, closed))
+		.where(and(inArray(loginLinkWindow.emailHash, closed), isClosedLoginWindow()))
 		.returning({ emailHash: loginLinkWindow.emailHash });
 	return deleted.length;
 };

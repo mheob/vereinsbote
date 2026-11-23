@@ -6,9 +6,11 @@ import { errorLabel } from '@/server/error-label';
 import { tickSteps } from '@/server/tick/steps';
 import { runTick } from '@/server/tick/tick';
 
+import { runScheduledTicks } from './cloudflare-scheduled';
+
 /*
  * The Worker entry of the Cloudflare build (`main` in `wrangler.jsonc`). `fetch` is TanStack
- * Start's own handler, unchanged; `scheduled` runs the tick of the cron trigger.
+ * Start's own handler, unchanged; `scheduled` runs the ticks of the cron trigger.
  */
 
 /** The part of the Workers `ExecutionContext` the entry uses. */
@@ -34,19 +36,19 @@ function variablesOf(bindings: Bindings): Record<string, string> {
 }
 
 /**
- * Runs one tick with a database of its own: a scheduled event has no request, so the request
- * scoped database of `getAppContext` does not exist here. The pool is ended after the tick.
- * Failures are logged by name and rethrown without their message, so the cron event shows as
- * failed without exposing details.
+ * Runs the ticks of a cron event (see `runScheduledTicks`) with a database of its own: a
+ * scheduled event has no request, so the request scoped database of `getAppContext` does not
+ * exist here. The pool is ended after the last tick. Failures are logged by name and rethrown
+ * without their message, so the cron event shows as failed without exposing details.
  *
  * @param bindings The Worker's bindings.
  */
-async function runScheduledTick(bindings: Bindings): Promise<void> {
+async function handleCronEvent(bindings: Bindings): Promise<void> {
 	try {
 		const env = parseEnv(variablesOf(bindings));
 		const { db, end } = await openDb(env.databaseUrl, 'neon');
 		try {
-			await runTick({ db, env, steps: tickSteps });
+			await runScheduledTicks(async () => runTick({ db, env, steps: tickSteps }));
 		} finally {
 			await end();
 		}
@@ -63,6 +65,6 @@ export default {
 		return handler.fetch(request);
 	},
 	scheduled(_controller: unknown, bindings: Bindings, ctx: ExecutionContext): void {
-		ctx.waitUntil(runScheduledTick(bindings));
+		ctx.waitUntil(handleCronEvent(bindings));
 	},
 };

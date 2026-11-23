@@ -1,5 +1,6 @@
-import { createDb } from '@/server/db/client';
-import type { Db } from '@/server/db/client';
+import { definePlugin } from 'nitro';
+
+import { openDb } from '@/server/db/client';
 import { EnvError, parseEnv } from '@/server/env';
 import type { Env } from '@/server/env';
 import { errorLabel } from '@/server/error-label';
@@ -7,11 +8,12 @@ import { startTickInterval } from '@/server/tick/interval';
 import { tickSteps } from '@/server/tick/steps';
 import { runTick } from '@/server/tick/tick';
 
+import { createTickPool } from './tick-pool';
+
 /*
- * The Nitro server entry of the Node build (`serverEntry` in `vite.config.ts`). Nitro imports it
- * once at startup; it has no default export, so every request falls through to TanStack Start's
- * handler unchanged. TanStack Start's own entry would not do: Nitro loads it lazily on the first
- * request, so an idle server would never tick.
+ * A Nitro runtime plugin of the Node build (`plugins` in `vite.config.ts`). Nitro runs it once
+ * when the server starts, before the first request; TanStack Start's own server entry would not
+ * do, Nitro loads it lazily on the first request, so an idle server would never tick.
  */
 
 /**
@@ -32,21 +34,24 @@ function readEnv(): Env | null {
 	}
 }
 
-/**
- * Runs a tick every `TICK_INTERVAL_MS`. The ticks share a pool of their own, created on the first
- * tick; a pool connects per query and recovers from lost connections by itself.
+/*
+ * Runs a tick every `TICK_INTERVAL_MS` (and follow-up ticks right away while work is left, see
+ * `startTickInterval`). On shutdown, Nitro's `close` hook stops the interval and ends the pool.
  */
-function startNodeTicks(): void {
+export default definePlugin((nitroApp) => {
 	const env = readEnv();
 	if (env === null) return;
-	const state: { db?: Promise<Db> } = {};
-	startTickInterval({
+	const pool = createTickPool(async () => openDb(env.databaseUrl, 'pg'));
+	const stop = startTickInterval({
 		intervalMs: env.tickIntervalMs,
 		async run() {
-			state.db ??= createDb(env.databaseUrl, 'pg');
-			return runTick({ db: await state.db, env, steps: tickSteps });
+			const { db } = await pool.open();
+			return runTick({ db, env, steps: tickSteps });
 		},
 	});
-}
-
-startNodeTicks();
+	// oxlint-disable-next-line typescript/strict-void-return -- Nitro awaits a promise a `close` hook returns, though the hook type says void
+	nitroApp.hooks.hook('close', async () => {
+		stop();
+		await pool.close();
+	});
+});
