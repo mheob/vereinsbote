@@ -14,7 +14,8 @@
 		"@tanstack/react-start": "catalog:",
 		"react": "catalog:",
 		"react-aria-components": "catalog:",
-		"react-dom": "catalog:"
+		"react-dom": "catalog:",
+		"zod": "catalog:"
 	},
 	"devDependencies": {
 		"@cloudflare/vite-plugin": "catalog:",

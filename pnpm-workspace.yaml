@@ -34,6 +34,7 @@ catalog:
   # Pinned to the Vitest that vite-plus bundles (`vp toolchain vitest`), npm already has a newer one.
   vitest: 5.1.0
   wrangler: ^4.166.0
+  zod: ^4.6.7
 
 overrides:
   vite@*: "catalog:"

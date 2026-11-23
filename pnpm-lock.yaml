@@ -254,6 +254,9 @@ catalogs:
     wrangler:
       specifier: ^4.166.0
       version: 4.166.0
+    zod:
+      specifier: ^4.6.7
+      version: 4.6.7
 
 overrides:
   vite@*: npm:@voidzero-dev/vite-plus-core@8.3.8000
@@ -320,6 +323,9 @@ importers:
       react-dom:
         specifier: 'catalog:'
         version: 19.3.1(react@19.3.1)
+      zod:
+        specifier: 'catalog:'
+        version: 4.6.7
     devDependencies:
       '@cloudflare/vite-plugin':
         specifier: 'catalog:'
