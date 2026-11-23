@@ -16,6 +16,7 @@ import { Route as SetupRouteImport } from './routes/setup'
 import { Route as AdminAreasRouteImport } from './routes/admin/areas'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
+import { Route as ApiTickRouteImport } from './routes/api/tick'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 
 const IndexRoute = IndexRouteImport.update({
@@ -53,6 +54,11 @@ const ApiHealthRoute = ApiHealthRouteImport.update({
   path: '/api/health',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiTickRoute = ApiTickRouteImport.update({
+  id: '/api/tick',
+  path: '/api/tick',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -67,6 +73,7 @@ export interface FileRoutesByFullPath {
   '/admin/areas': typeof AdminAreasRoute
   '/admin/users': typeof AdminUsersRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/tick': typeof ApiTickRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesByTo {
@@ -77,6 +84,7 @@ export interface FileRoutesByTo {
   '/admin/areas': typeof AdminAreasRoute
   '/admin/users': typeof AdminUsersRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/tick': typeof ApiTickRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesById {
@@ -88,6 +96,7 @@ export interface FileRoutesById {
   '/admin/areas': typeof AdminAreasRoute
   '/admin/users': typeof AdminUsersRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/tick': typeof ApiTickRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRouteTypes {
@@ -100,6 +109,7 @@ export interface FileRouteTypes {
     | '/admin/areas'
     | '/admin/users'
     | '/api/health'
+    | '/api/tick'
     | '/api/auth/$'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -110,6 +120,7 @@ export interface FileRouteTypes {
     | '/admin/areas'
     | '/admin/users'
     | '/api/health'
+    | '/api/tick'
     | '/api/auth/$'
   id:
     | '__root__'
@@ -120,6 +131,7 @@ export interface FileRouteTypes {
     | '/admin/areas'
     | '/admin/users'
     | '/api/health'
+    | '/api/tick'
     | '/api/auth/$'
   fileRoutesById: FileRoutesById
 }
@@ -129,6 +141,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   SetupRoute: typeof SetupRoute
   ApiHealthRoute: typeof ApiHealthRoute
+  ApiTickRoute: typeof ApiTickRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
 
@@ -183,6 +196,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiHealthRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/tick': {
+      id: '/api/tick'
+      path: '/api/tick'
+      fullPath: '/api/tick'
+      preLoaderRoute: typeof ApiTickRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -213,6 +233,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   SetupRoute: SetupRoute,
   ApiHealthRoute: ApiHealthRoute,
+  ApiTickRoute: ApiTickRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
 }
 export const routeTree = rootRouteImport

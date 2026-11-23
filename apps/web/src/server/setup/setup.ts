@@ -2,6 +2,7 @@
 import type { Locale } from '@/i18n/locale';
 import { writeAudit } from '@/server/audit/audit';
 import { normalizeEmail } from '@/server/auth/email';
+import { secretsMatch } from '@/server/crypto/constant-time';
 import type { Db } from '@/server/db/client';
 import { isUniqueViolation } from '@/server/db/errors';
 import { areaMemberships, areas, systemState } from '@/server/db/schema';
@@ -17,8 +18,6 @@ const SESSION_OPENED_KEY: StateKey = 'setup_session_opened_at';
 /** The areas every club starts with (Spec 6.7). The first admin may edit "Mitglieder". */
 const MEMBERS_AREA = 'Mitglieder';
 const FINANCE_AREA = 'Finanzen';
-
-const encoder = new TextEncoder();
 
 /** The value under `setup_completed_at`. */
 interface SetupMarker {
@@ -63,29 +62,6 @@ class SetupAlreadyDoneError extends Error {
 		super('The setup is already done.');
 		this.name = 'SetupAlreadyDoneError';
 	}
-}
-
-async function sha256(value: string): Promise<Uint8Array> {
-	return new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(value)));
-}
-
-/**
- * Compares two tokens in constant time. Both are hashed first, so the comparison always runs
- * over 32 bytes and visits every byte: neither the length of a token nor a shared prefix shows
- * in the time it takes.
- *
- * @param given The token from the form.
- * @param expected The configured token.
- * @returns True when the tokens are equal.
- */
-async function tokensMatch(given: string, expected: string): Promise<boolean> {
-	const [givenHash, expectedHash] = await Promise.all([sha256(given), sha256(expected)]);
-	let difference = 0;
-	for (const [index, byte] of givenHash.entries()) {
-		// oxlint-disable-next-line no-bitwise -- XOR and OR keep the comparison free of early exits
-		difference |= byte ^ (expectedHash[index] ?? 0);
-	}
-	return difference === 0;
 }
 
 /**
@@ -190,7 +166,7 @@ async function completeSetup(
 	input: Readonly<SetupInput>,
 ): Promise<{ adminUserId: string }> {
 	if (input.expectedToken === null) throw new SetupDisabledError();
-	if (!(await tokensMatch(input.token, input.expectedToken))) throw new SetupTokenInvalidError();
+	if (!(await secretsMatch(input.token, input.expectedToken))) throw new SetupTokenInvalidError();
 
 	const at = new Date().toISOString();
 	return db.transaction(async (tx) => {

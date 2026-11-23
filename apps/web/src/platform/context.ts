@@ -1,7 +1,7 @@
 import { getRequest } from '@tanstack/react-start/server';
 
 import { createAuth } from '@/server/auth/auth';
-import type { Auth, BackgroundRunner } from '@/server/auth/auth';
+import type { Auth } from '@/server/auth/auth';
 import { openDb } from '@/server/db/client';
 import type { Db, DbHandle } from '@/server/db/client';
 import { parseEnv } from '@/server/env';
@@ -9,9 +9,9 @@ import type { Env } from '@/server/env';
 import { createSystemMailer } from '@/server/mail/system-mailer';
 import type { SystemMailer } from '@/server/mail/system-mailer';
 
+import { platformName } from './platform';
+import type { Platform } from './platform';
 import { createRequestScope } from './request-scope';
-
-type PlatformName = 'cloudflare' | 'node' | 'vercel';
 
 interface AppContext {
 	env: Env;
@@ -20,14 +20,15 @@ interface AppContext {
 	auth: Auth;
 	/** Stateless, shared by all requests of an isolate. */
 	mailer: SystemMailer;
+	/** Keeps work (a login link, the next tick) alive after the response. */
+	platform: Platform;
 }
 
-/** What all requests of an isolate share: the environment, the stateless mailer and the runner. */
+/** What all requests of an isolate share: the environment, the stateless mailer, the platform. */
 interface IsolateServices {
 	env: Env;
 	mailer: SystemMailer;
-	/** Keeps work (sending a login link) alive after the response. */
-	runInBackground: BackgroundRunner;
+	platform: Platform;
 }
 
 /** A database and the auth instance bound to it; on Cloudflare, what one request owns. */
@@ -85,7 +86,7 @@ function currentRequest(): Request | null {
 }
 
 interface WaitUntilRequest {
-	waitUntil: BackgroundRunner;
+	waitUntil: Platform['waitUntil'];
 }
 
 function hasWaitUntil(request: object): request is WaitUntilRequest {
@@ -108,20 +109,21 @@ function runAfterResponse(promise: Promise<unknown>): void {
  * Creates the auth instance for an opened database. Ends the database when that fails, so a
  * failed attempt leaves no pool behind.
  *
- * @param isolate The environment, the mailer and the background runner.
+ * @param isolate The environment, the mailer and the platform.
  * @param isolate.env The environment.
  * @param isolate.mailer The mailer.
- * @param isolate.runInBackground Keeps the sending of login links alive after the response.
+ * @param isolate.platform Keeps the sending of login links alive after the response.
  * @param handle The opened database.
  * @param handle.db The database client.
  * @param handle.end Closes the database.
  * @returns The database and its auth instance.
  */
 async function bindAuth(
-	{ env, mailer, runInBackground }: IsolateServices,
+	{ env, mailer, platform }: IsolateServices,
 	{ db, end }: Readonly<DbHandle>,
 ): Promise<DbServices> {
 	try {
+		const runInBackground = platform.waitUntil;
 		return { auth: await createAuth({ db, env, mailer, runInBackground }), db };
 	} catch (error) {
 		await end();
@@ -136,10 +138,11 @@ async function createSharedContext(): Promise<AppContext> {
 	try {
 		const env = parseEnv({ ...readProcessEnv() });
 		const mailer = createSystemMailer(env);
-		const isolate = { env, mailer, runInBackground: runAfterResponse };
+		const platform: Platform = { name: platformName(), waitUntil: runAfterResponse };
+		const isolate = { env, mailer, platform };
 		const driver = import.meta.env.VITE_VB_PLATFORM === 'vercel' ? 'neon' : 'pg';
 		const { auth, db } = await bindAuth(isolate, await openDb(env.databaseUrl, driver));
-		return { auth, db, env, mailer };
+		return { auth, db, env, mailer, platform };
 	} catch (error) {
 		// Do not keep a failed attempt, the next call retries.
 		cache.promise = undefined;
@@ -162,8 +165,11 @@ async function createIsolateServices(): Promise<IsolateServices> {
 		return {
 			env,
 			mailer: createSystemMailer(env),
-			runInBackground(promise) {
-				workers.waitUntil(promise);
+			platform: {
+				name: 'cloudflare',
+				waitUntil(promise) {
+					workers.waitUntil(promise);
+				},
 			},
 		};
 	} catch (error) {
@@ -187,11 +193,11 @@ const requestServices = createRequestScope<DbServices>({
 
 async function getCloudflareContext(): Promise<AppContext> {
 	cloudflare.isolate ??= createIsolateServices();
-	const [{ env, mailer }, { auth, db }] = await Promise.all([
+	const [{ env, mailer, platform }, { auth, db }] = await Promise.all([
 		cloudflare.isolate,
 		requestServices.get(getRequest()),
 	]);
-	return { auth, db, env, mailer };
+	return { auth, db, env, mailer, platform };
 }
 
 /**
@@ -208,18 +214,28 @@ async function getAppContext(): Promise<AppContext> {
 }
 
 /**
- * Returns the validated environment. Unlike `getAppContext`, it opens no database on Cloudflare,
- * so request middlewares can read settings cheaply.
+ * Returns the validated environment and the platform. Unlike `getAppContext`, it opens no
+ * database on Cloudflare, so request middlewares and unauthenticated requests stay cheap.
+ *
+ * @returns The environment and the platform.
+ */
+async function getAppServices(): Promise<{ env: Env; platform: Platform }> {
+	if (import.meta.env.VITE_VB_PLATFORM === 'cloudflare') {
+		cloudflare.isolate ??= createIsolateServices();
+		const { env, platform } = await cloudflare.isolate;
+		return { env, platform };
+	}
+	const { env, platform } = await getAppContext();
+	return { env, platform };
+}
+
+/**
+ * Returns the validated environment without opening a database on Cloudflare.
  *
  * @returns The environment.
  */
 async function getAppEnv(): Promise<Env> {
-	if (import.meta.env.VITE_VB_PLATFORM === 'cloudflare') {
-		cloudflare.isolate ??= createIsolateServices();
-		const { env } = await cloudflare.isolate;
-		return env;
-	}
-	const { env } = await getAppContext();
+	const { env } = await getAppServices();
 	return env;
 }
 
@@ -238,5 +254,6 @@ function requestDbReleaser(): (() => Promise<void>) | null {
 	};
 }
 
-export { getAppContext, getAppEnv, requestDbReleaser };
-export type { AppContext, PlatformName };
+export { getAppContext, getAppEnv, getAppServices, requestDbReleaser };
+export type { AppContext };
+export type { PlatformName } from './platform';

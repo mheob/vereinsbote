@@ -30,6 +30,7 @@ import { closeSetupRecoveryFor } from '@/server/setup/setup';
 import { activateInvitedUser, findUserByEmail, findUserById } from '@/server/users/repo';
 
 import { normalizeEmail } from './email';
+import { LOGIN_LINK_WINDOW_SECONDS } from './login-window';
 
 /** 15 minutes. */
 const LOGIN_LINK_TTL_SECONDS = 900;
@@ -40,8 +41,6 @@ const SESSION_REFRESH_AGE_SECONDS = 86_400;
 /** Where a login link leads after a successful check, and where it leads after a failed one. */
 const AFTER_SIGN_IN_PATH = '/';
 const LOGIN_PATH = '/login';
-/** At most one login link per address and window; requests inside an open window send nothing. */
-const LOGIN_LINK_WINDOW_SECONDS = 60;
 /** Login link requests per client address and window, enforced by Better Auth's rate limiter. */
 const LINK_REQUESTS_PER_WINDOW = 5;
 const LINK_REQUEST_WINDOW_SECONDS = 60;

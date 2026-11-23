@@ -1,7 +1,10 @@
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "vereinsbote",
-	"main": "@tanstack/react-start/server-entry",
+	// TanStack Start's handler plus the `scheduled` handler of the tick.
+	"main": "./src/platform/cloudflare-worker.ts",
 	"compatibility_date": "2026-11-17",
 	"compatibility_flags": ["nodejs_compat"],
+	// The tick, every 15 minutes (Spec 6.6).
+	"triggers": { "crons": ["*/15 * * * *"] },
 }
