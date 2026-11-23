@@ -208,6 +208,22 @@ async function getAppContext(): Promise<AppContext> {
 }
 
 /**
+ * Returns the validated environment. Unlike `getAppContext`, it opens no database on Cloudflare,
+ * so request middlewares can read settings cheaply.
+ *
+ * @returns The environment.
+ */
+async function getAppEnv(): Promise<Env> {
+	if (import.meta.env.VITE_VB_PLATFORM === 'cloudflare') {
+		cloudflare.isolate ??= createIsolateServices();
+		const { env } = await cloudflare.isolate;
+		return env;
+	}
+	const { env } = await getAppContext();
+	return env;
+}
+
+/**
  * Binds the end of the current request's database to a function the request middleware calls
  * once the response body is done (the request is looked up now, the body finishes outside the
  * request context).
@@ -222,5 +238,5 @@ function requestDbReleaser(): (() => Promise<void>) | null {
 	};
 }
 
-export { getAppContext, requestDbReleaser };
+export { getAppContext, getAppEnv, requestDbReleaser };
 export type { AppContext, PlatformName };
