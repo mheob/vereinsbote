@@ -204,7 +204,8 @@ describe(inviteUser, () => {
 		const result = await inviteUser(deps(db, failing), a, kimInvite);
 		expect(result).toMatchObject({ mailSent: false });
 		await expect(findUserById(db, result.userId)).resolves.toMatchObject({ status: 'invited' });
-		expect(JSON.stringify(log.mock.calls)).not.toContain('kim@v.de');
+		expect(log).toHaveBeenCalledOnce();
+		expect(JSON.stringify(log.mock.calls.flat())).not.toContain('@');
 		log.mockRestore();
 	});
 
@@ -233,6 +234,35 @@ describe('the last admin', () => {
 		await insertUser(db, { email: 'b@v.de', isAdmin: true, name: 'B', status: 'disabled' });
 		await expect(setAdmin(db, a, a.userId, false)).rejects.toBeInstanceOf(LastAdminError);
 		await expect(disableUser(db, a, a.userId)).rejects.toBeInstanceOf(LastAdminError);
+	});
+
+	it('does not count invited admins', async () => {
+		const db = await createTestDb();
+		const a = await admin(db);
+		await insertUser(db, { email: 'b@v.de', isAdmin: true, name: 'B', status: 'invited' });
+		await expect(setAdmin(db, a, a.userId, false)).rejects.toBeInstanceOf(LastAdminError);
+		await expect(disableUser(db, a, a.userId)).rejects.toBeInstanceOf(LastAdminError);
+		await expect(findUserById(db, a.userId)).resolves.toMatchObject({
+			isAdmin: true,
+			status: 'active',
+		});
+	});
+
+	it('lets the only active admin demote and disable an invited admin', async () => {
+		const db = await createTestDb();
+		const a = await admin(db);
+		const { id } = await insertUser(db, {
+			email: 'b@v.de',
+			isAdmin: true,
+			name: 'B',
+			status: 'invited',
+		});
+		await setAdmin(db, a, id, false);
+		await disableUser(db, a, id);
+		await expect(findUserById(db, id)).resolves.toMatchObject({
+			isAdmin: false,
+			status: 'disabled',
+		});
 	});
 
 	it('allows demoting an admin when another active admin exists', async () => {

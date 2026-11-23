@@ -2,9 +2,10 @@ import { useRouter } from '@tanstack/react-router';
 import { useServerFn } from '@tanstack/react-start';
 import { useActionState, useEffect, useId, useRef } from 'react';
 import type { ReactNode } from 'react';
-import { FieldError, Form, Input, Label, TextField } from 'react-aria-components';
+import { FieldError, Input, Label, TextField } from 'react-aria-components';
 
 import type { Announce } from '@/components/announcements';
+import { PostForm } from '@/components/post-form';
 import { inputClass } from '@/components/styles';
 import { SubmitButton } from '@/components/submit-button';
 import { useFormSubmit } from '@/components/use-form-submit';
@@ -58,7 +59,7 @@ export function CreateAreaForm({ announce }: Readonly<{ announce: Announce }>): 
 			<h2 className="text-xl font-bold" id={headingId}>
 				{t('areas.createTitle')}
 			</h2>
-			<Form
+			<PostForm
 				aria-labelledby={headingId}
 				className="flex flex-col gap-4"
 				onSubmit={onSubmit}
@@ -78,7 +79,7 @@ export function CreateAreaForm({ announce }: Readonly<{ announce: Announce }>): 
 					<FieldError className="text-sm text-red-700" />
 				</TextField>
 				<SubmitButton isPending={isPending}>{t('areas.createSubmit')}</SubmitButton>
-			</Form>
+			</PostForm>
 		</section>
 	);
 }

@@ -2,11 +2,13 @@ import { useRouter } from '@tanstack/react-router';
 import { useServerFn } from '@tanstack/react-start';
 import { useActionState, useEffect, useId, useRef } from 'react';
 import type { ReactNode } from 'react';
-import { Button, FieldError, Form, Input, TextField } from 'react-aria-components';
+import { Button, FieldError, Input, TextField } from 'react-aria-components';
 
 import type { Announce } from '@/components/announcements';
+import { PostForm } from '@/components/post-form';
 import { inputClass, secondaryButtonClass } from '@/components/styles';
 import { useFormSubmit } from '@/components/use-form-submit';
+import { useHydrated } from '@/components/use-hydrated';
 import { submitRenameArea } from '@/functions/areas';
 import { useT } from '@/i18n/use-t';
 import { MAX_AREA_NAME_LENGTH } from '@/server/areas/form';
@@ -39,6 +41,7 @@ function RenameForm({
 	const rename = useServerFn(submitRenameArea);
 	const inputRef = useRef<HTMLInputElement>(null);
 	const buttonRef = useRef<HTMLButtonElement>(null);
+	const hydrated = useHydrated();
 	const [state, submitForm] = useActionState(
 		async (_previous: AreaFormState, formData: FormData): Promise<AreaFormState> => {
 			const name = areaNameField(formData);
@@ -65,7 +68,7 @@ function RenameForm({
 		if (state !== null) inputRef.current?.focus();
 	}, [state]);
 	return (
-		<Form
+		<PostForm
 			className="flex flex-wrap items-start gap-2"
 			onSubmit={onSubmit}
 			validationErrors={validationErrors}
@@ -82,15 +85,17 @@ function RenameForm({
 				<Input className={inputClass} ref={inputRef} />
 				<FieldError className="text-sm text-red-700" />
 			</TextField>
+			{/* Pending until hydrated, like `SubmitButton`: focusable, but a press does nothing yet. */}
 			<Button
 				aria-describedby={describedBy}
 				className={secondaryButtonClass}
+				isPending={!hydrated}
 				ref={buttonRef}
 				type="submit"
 			>
 				{t('areas.renameSubmit')}
 			</Button>
-		</Form>
+		</PostForm>
 	);
 }
 

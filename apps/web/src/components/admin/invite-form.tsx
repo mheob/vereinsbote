@@ -7,7 +7,6 @@ import {
 	CheckboxButton,
 	CheckboxField,
 	FieldError,
-	Form,
 	Input,
 	Label,
 	ListBox,
@@ -20,6 +19,7 @@ import {
 
 import type { Announce } from '@/components/announcements';
 import { CheckIcon, ChevronIcon } from '@/components/icons';
+import { PostForm } from '@/components/post-form';
 import {
 	checkboxBoxClass,
 	checkboxClass,
@@ -152,7 +152,7 @@ export function InviteForm({
 			<h2 className="text-xl font-bold" id={headingId}>
 				{t('users.inviteTitle')}
 			</h2>
-			<Form
+			<PostForm
 				aria-labelledby={headingId}
 				className="flex flex-col gap-4"
 				onSubmit={onSubmit}
@@ -217,7 +217,7 @@ export function InviteForm({
 					</Popover>
 				</Select>
 				<SubmitButton isPending={isPending}>{t('users.inviteSubmit')}</SubmitButton>
-			</Form>
+			</PostForm>
 		</section>
 	);
 }

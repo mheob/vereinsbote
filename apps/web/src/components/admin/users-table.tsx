@@ -226,9 +226,10 @@ function DisableAction({
 			<Button aria-describedby={describedBy} className={dangerButtonClass}>
 				{t('users.disable')}
 			</Button>
+			{/* While the user is being disabled, the dialog stays until the result is in. */}
 			<ModalOverlay
 				className="fixed inset-0 z-10 flex items-center justify-center bg-black/50 p-4"
-				isDismissable
+				isDismissable={!isPending}
 			>
 				<Modal className="w-full max-w-md rounded-md bg-white p-6 shadow-lg">
 					<Dialog className="flex flex-col gap-4 outline-none">

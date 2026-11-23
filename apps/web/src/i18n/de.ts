@@ -84,7 +84,7 @@ export const de = {
 	'users.invitedWithoutMail':
 		'{name} wurde eingeladen, aber die Einladung konnte nicht verschickt werden.',
 	'users.lastAdmin':
-		'Der letzte Admin kann nicht gesperrt werden und die Admin-Rolle nicht verlieren.',
+		'Der letzte aktive Admin kann nicht gesperrt werden und die Admin-Rolle nicht verlieren.',
 	'users.levelChanged': '{area} für {name}: {level}',
 	'users.levelLabel': '{area} für {name}',
 	'users.nameColumn': 'Name',

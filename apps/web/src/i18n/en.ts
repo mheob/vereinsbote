@@ -83,7 +83,7 @@ export const en: Record<keyof typeof de, string> = {
 	'users.inviteTitle': 'Invite a user',
 	'users.invited': '{name} has been invited.',
 	'users.invitedWithoutMail': '{name} has been invited, but the invitation could not be sent.',
-	'users.lastAdmin': 'The last admin cannot be disabled or lose the admin role.',
+	'users.lastAdmin': 'The last active admin cannot be disabled or lose the admin role.',
 	'users.levelChanged': '{area} for {name}: {level}',
 	'users.levelLabel': '{area} for {name}',
 	'users.nameColumn': 'Name',

@@ -1,5 +1,5 @@
 /* oxlint-disable max-classes-per-file -- the plan's interface defines both user errors in this module */
-import { and, eq, ne, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 
 import type { Locale } from '@/i18n/locale';
 import { translate } from '@/i18n/translate';
@@ -27,10 +27,10 @@ class UserExistsError extends Error {
 	}
 }
 
-/** The change would leave no admin who is not disabled. */
+/** The change would leave no active admin. */
 class LastAdminError extends Error {
 	public constructor() {
-		super('The last admin cannot be disabled or lose the admin role.');
+		super('The last active admin cannot be disabled or lose the admin role.');
 		this.name = 'LastAdminError';
 	}
 }
@@ -107,17 +107,20 @@ async function sendInvitation(
 }
 
 /**
- * Locks every admin who is not disabled, so concurrent changes of admins wait for each other and
- * see each other's result: two admins who demote each other cannot both succeed.
+ * Locks every active admin, so concurrent changes of admins wait for each other and see each
+ * other's result: two admins who demote each other cannot both succeed. Invited admins do not
+ * count: they may never be able to sign in (no mail transport), so they could not take over. The
+ * rows are locked in id order, so two transactions never wait for each other in a cycle.
  *
  * @param tx The transaction.
- * @returns The ids of those admins.
+ * @returns The ids of the active admins.
  */
 async function lockActiveAdmins(tx: Db): Promise<string[]> {
 	const rows = await tx
 		.select({ id: user.id })
 		.from(user)
-		.where(and(eq(user.isAdmin, true), ne(user.status, 'disabled')))
+		.where(and(eq(user.isAdmin, true), eq(user.status, 'active')))
+		.orderBy(user.id)
 		.for('update');
 	return rows.map((row) => row.id);
 }
@@ -141,9 +144,9 @@ async function lockUser(tx: Db, userId: string): Promise<{ isAdmin: boolean; sta
 }
 
 /**
- * Tells whether an admin who is not disabled remains once a user loses the role or is disabled.
+ * Tells whether an active admin remains once a user loses the role or is disabled.
  *
- * @param activeAdmins The ids of all admins who are not disabled.
+ * @param activeAdmins The ids of all active admins.
  * @param userId The user who loses the role or is disabled.
  * @returns True when another one remains.
  */
@@ -217,14 +220,14 @@ async function inviteUser(
 }
 
 /**
- * Gives or takes the admin role. The last admin who is not disabled keeps it.
+ * Gives or takes the admin role. The last active admin keeps it.
  *
  * @param db The database.
  * @param actor Who changes the role; must be an admin.
  * @param userId The user.
  * @param isAdmin The new role.
  * @throws {ForbiddenError} When the actor is no admin.
- * @throws {LastAdminError} When no other admin who is not disabled would remain.
+ * @throws {LastAdminError} When no other active admin would remain.
  */
 // oxlint-disable-next-line max-params -- the plan's interface fixes these parameters
 async function setAdmin(db: Db, actor: Principal, userId: string, isAdmin: boolean): Promise<void> {
@@ -233,7 +236,7 @@ async function setAdmin(db: Db, actor: Principal, userId: string, isAdmin: boole
 		const activeAdmins = await lockActiveAdmins(tx);
 		const target = await lockUser(tx, userId);
 		if (target.isAdmin === isAdmin) return;
-		if (!isAdmin && target.status !== 'disabled' && !anotherActiveAdmin(activeAdmins, userId)) {
+		if (!isAdmin && target.status === 'active' && !anotherActiveAdmin(activeAdmins, userId)) {
 			throw new LastAdminError();
 		}
 		await tx.update(user).set({ isAdmin }).where(eq(user.id, userId));
@@ -248,13 +251,13 @@ async function setAdmin(db: Db, actor: Principal, userId: string, isAdmin: boole
 
 /**
  * Disables a user and ends all of the user's sessions, so the next request is signed out. The
- * last admin who is not disabled cannot be disabled.
+ * last active admin cannot be disabled.
  *
  * @param db The database.
  * @param actor Who disables; must be an admin.
  * @param userId The user.
  * @throws {ForbiddenError} When the actor is no admin.
- * @throws {LastAdminError} When no other admin who is not disabled would remain.
+ * @throws {LastAdminError} When no other active admin would remain.
  */
 async function disableUser(db: Db, actor: Principal, userId: string): Promise<void> {
 	assertAdmin(actor);
@@ -262,7 +265,9 @@ async function disableUser(db: Db, actor: Principal, userId: string): Promise<vo
 		const activeAdmins = await lockActiveAdmins(tx);
 		const target = await lockUser(tx, userId);
 		if (target.status === 'disabled') return;
-		if (target.isAdmin && !anotherActiveAdmin(activeAdmins, userId)) throw new LastAdminError();
+		if (target.isAdmin && target.status === 'active' && !anotherActiveAdmin(activeAdmins, userId)) {
+			throw new LastAdminError();
+		}
 		await tx.update(user).set({ status: 'disabled' }).where(eq(user.id, userId));
 		await revokeSessions(tx, userId);
 		await writeAudit(tx, {

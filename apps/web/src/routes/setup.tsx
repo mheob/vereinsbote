@@ -10,10 +10,11 @@ import {
 	useRef,
 } from 'react';
 import type { ReactNode } from 'react';
-import { FieldError, Form, Input, Label, TextField } from 'react-aria-components';
+import { FieldError, Input, Label, TextField } from 'react-aria-components';
 import type { FormProps } from 'react-aria-components';
 import { z } from 'zod';
 
+import { PostForm } from '@/components/post-form';
 import { SubmitButton } from '@/components/submit-button';
 import type { MessageKey } from '@/i18n/translate';
 import { useT } from '@/i18n/use-t';
@@ -251,7 +252,7 @@ export const Route = createFileRoute('/setup')({
 						{t('setup.toLogin')}
 					</Link>
 				) : (
-					<Form
+					<PostForm
 						aria-describedby={messageKey === null ? undefined : messageId}
 						aria-labelledby={headingId}
 						className="flex flex-col gap-4"
@@ -307,7 +308,7 @@ export const Route = createFileRoute('/setup')({
 							</p>
 						)}
 						<SubmitButton isPending={isPending}>{t('setup.submit')}</SubmitButton>
-					</Form>
+					</PostForm>
 				)}
 			</div>
 		);
