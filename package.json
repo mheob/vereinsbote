@@ -1,0 +1,32 @@
+{
+	"name": "vereinsbote",
+	"private": true,
+	"license": "MIT",
+	"type": "module",
+	"scripts": {
+		"check": "vp check",
+		"check:catalog": "node scripts/check-catalog.ts",
+		"commit": "czg",
+		"prepare": "vp config",
+		"test": "vp test"
+	},
+	"devDependencies": {
+		"@commitlint/cli": "catalog:",
+		"@mheob/commitlint-config": "catalog:",
+		"@mheob/oxfmt-config": "catalog:",
+		"@mheob/oxlint-config": "catalog:",
+		"@types/node": "catalog:",
+		"czg": "catalog:",
+		"eslint-plugin-better-tailwindcss": "catalog:",
+		"eslint-plugin-regexp": "catalog:",
+		"oxfmt": "catalog:",
+		"oxlint": "catalog:",
+		"tailwindcss": "catalog:",
+		"typescript": "catalog:",
+		"vite-plus": "catalog:"
+	},
+	"engines": {
+		"node": ">=26.0.0"
+	},
+	"packageManager": "pnpm@12.21.0"
+}

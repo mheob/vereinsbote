@@ -1,0 +1,21 @@
+# Dependencies
+node_modules
+
+# Build outputs
+dist
+.vercel
+.output
+.nitro
+.wrangler
+.tanstack
+
+# Environment, only the example is committed
+.env*
+!.env.example
+
+# Local workspaces of tools and the IDE
+.superpowers/
+.openidea/
+
+# OS
+.DS_Store
