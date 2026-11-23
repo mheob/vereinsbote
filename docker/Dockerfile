@@ -1,8 +1,8 @@
-# syntax=docker/dockerfile:1
-
 # The Node build of the app (apps/web/dist/node) in a small image. Build context: the repository
 # root, see compose.yml. Migrations are part of the build and run when the server starts.
-# Base images are pinned by digest; Renovate keeps tag and digest up to date (see README).
+# Base images are pinned by digest; Renovate keeps tag and digest up to date (see README). No
+# `# syntax=` line: Docker's built-in Dockerfile frontend handles the cache mount below, and an
+# external frontend would be one more image to pin.
 
 FROM node:26-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS build
 # Vite+ and its native tools are linked against libstdc++, which Alpine does not ship.

@@ -5,7 +5,7 @@ import { bundledMigrations } from '@/server/db/bundled-migrations';
 import { openDb } from '@/server/db/client';
 import { EnvError, parseEnv } from '@/server/env';
 import type { Env } from '@/server/env';
-import { errorLabel } from '@/server/error-label';
+import { errorLabel, errorLabelWithCause } from '@/server/error-label';
 import { startTickInterval } from '@/server/tick/interval';
 import { tickSteps } from '@/server/tick/steps';
 import { runTick } from '@/server/tick/tick';
@@ -65,8 +65,8 @@ export default definePlugin(async (nitroApp) => {
 	try {
 		await migrate(env.databaseUrl);
 	} catch (error) {
-		// oxlint-disable-next-line no-console -- name or code only, the message may carry connection details
-		console.error('migrations failed, server stops', errorLabel(error));
+		// oxlint-disable-next-line no-console -- names or codes only (Drizzle wraps the driver's error), the message may carry connection details
+		console.error('migrations failed, server stops', errorLabelWithCause(error));
 		// oxlint-disable-next-line node/no-process-exit, unicorn/no-process-exit -- see above, the server must not serve without its schema
 		process.exit(1);
 	}

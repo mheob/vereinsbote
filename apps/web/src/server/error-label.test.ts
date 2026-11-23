@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 
-import { errorLabel } from './error-label';
+import { errorLabel, errorLabelWithCause } from './error-label';
 
 describe(errorLabel, () => {
 	it('prefers the error code over the name', () => {
@@ -18,5 +18,18 @@ describe(errorLabel, () => {
 
 	it('labels non-errors as unknown', () => {
 		expect(errorLabel('password=x')).toBe('unknown');
+	});
+});
+
+describe(errorLabelWithCause, () => {
+	it('adds the code of a wrapped cause, never a message', () => {
+		const cause = Object.assign(new Error('password authentication failed'), { code: '28P01' });
+		const error = new Error('Failed query: postgres://user:secret@host/db', { cause });
+		expect(errorLabelWithCause(error)).toBe('Error (cause: 28P01)');
+	});
+
+	it('is the plain label without a cause', () => {
+		expect(errorLabelWithCause(new TypeError('x'))).toBe('TypeError');
+		expect(errorLabelWithCause('password=x')).toBe('unknown');
 	});
 });

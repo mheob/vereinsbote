@@ -1,133 +1,165 @@
 # Vereinsbote
 
-Vereinsbote ist eine Open-Source-Web-App, mit der ein Verein E-Mails an seine Mitglieder und Partner verschickt. Die Oberfläche gibt es auf Deutsch (Standard) und Englisch.
+Vereinsbote is an open-source web app a club uses to send e-mails to its members and partners. The interface is available in German (default) and English.
 
-## Voraussetzungen
+## Requirements
 
-- Node.js 26 (siehe `.node-version`)
-- pnpm 12 (siehe `packageManager` in `package.json`)
-- [Vite+](https://viteplus.dev) mit der CLI `vp`
-- Docker, für PostgreSQL und Mailpit
+- Node.js 26 (see `.node-version`)
+- pnpm 12 (see `packageManager` in `package.json`)
+- [Vite+](https://viteplus.dev) with its CLI `vp`
+- Docker, for PostgreSQL and Mailpit
 
-## Lokale Entwicklung
+## Local development
 
 ```sh
 pnpm install
-docker compose -f docker/compose.dev.yml up -d   # PostgreSQL :5432, Mailpit :1025 (SMTP) und :8025 (Web)
-cp apps/web/.env.example apps/web/.env           # ausfüllen, siehe unten
-set -a; . apps/web/.env; set +a                  # die Variablen in die Shell laden
+docker compose -f docker/compose.dev.yml up -d   # PostgreSQL :5432, Mailpit :1025 (SMTP) and :8025 (web)
+cp apps/web/.env.example apps/web/.env           # fill in, see below
+set -a; . apps/web/.env; set +a                  # load the variables into the shell
 vp run --filter web db:migrate
 vp dev                                           # http://localhost:3000
 ```
 
-- In `apps/web/.env` die Secrets erzeugen (die Befehle stehen in der Datei) und `DEV_SMTP_URL=smtp://localhost:1025` setzen. Dann landen alle Mails in Mailpit unter <http://localhost:8025>.
-- Beim ersten Start führt `/setup` mit dem `SETUP_TOKEN` durch die Ersteinrichtung des ersten Admins.
-- Prüfen: `vp check` (Format, Lint, Typen), `vp test`, `pnpm check:catalog` und `pnpm check:vite-plus`.
-- Committen: `pnpm commit` startet czg für Conventional Commits. Die Git-Hooks (`.vite-hooks/`) installiert `pnpm install` über `vp config`.
+- Generate the secrets in `apps/web/.env` (the commands are in the file) and set `DEV_SMTP_URL=smtp://localhost:1025`. All mails then end up in Mailpit at <http://localhost:8025>.
+- On first start, `/setup` walks you through creating the first admin with the `SETUP_TOKEN`.
+- Checks: `vp check` (format, lint, types), `vp test`, `pnpm check:catalog` and `pnpm check:vite-plus`.
+- Commits: `pnpm commit` starts czg for Conventional Commits. `pnpm install` installs the Git hooks (`.vite-hooks/`) through `vp config`.
 
-### End-to-End-Tests
+### End-to-end tests
 
 ```sh
 docker compose -f docker/compose.dev.yml up -d
-pnpm --filter web exec playwright install chromium   # einmalig
+pnpm --filter web exec playwright install chromium   # once
 vp run --filter web e2e
 ```
 
-Playwright baut die Node-Ausgabe und startet sie auf Port 3100 mit festen Testwerten (`apps/web/e2e/env.ts`). Jeder Lauf leert die Datenbank `vereinsbote_e2e` und das Postfach von Mailpit. Die Entwicklungsdatenbank `vereinsbote` bleibt unberührt. `compose.dev.yml` legt `vereinsbote_e2e` an, wenn das Volume neu entsteht. Fehlt sie in einem älteren Volume, hilft `docker compose -f docker/compose.dev.yml down -v`.
+Playwright builds the Node output and starts it on port 3100 with fixed test values (`apps/web/e2e/env.ts`). The values in that file replace the shell's, so your own `MS_LOGIN_*` or `HEARTBEAT_URL` do not leak into the run. Every run empties the database `vereinsbote_e2e` and the Mailpit inbox, so the development database `vereinsbote` stays untouched. `compose.dev.yml` creates `vereinsbote_e2e` when its volume is new. If an older volume lacks it, create it:
 
-## Umgebungsvariablen
+```sh
+docker compose -f docker/compose.dev.yml exec postgres createdb --username=vereinsbote vereinsbote_e2e
+```
 
-Alle Variablen sind in `apps/web/.env.example` beschrieben und werden beim Start geprüft (`apps/web/src/server/env.ts`).
+## Environment variables
 
-| Variable | Pflicht | Zweck |
+All variables are described in `apps/web/.env.example`. They are validated at startup (`apps/web/src/server/env.ts`).
+
+| Variable | Required | Purpose |
 | --- | --- | --- |
-| `DATABASE_URL` | ja | PostgreSQL-Verbindung (`postgres://…`) |
-| `APP_URL` | ja | Öffentliche Adresse, `https://` (`http://` nur für localhost) |
-| `APP_SECRET` | ja | 32 Byte, Base64; verschlüsselt gespeicherte Zugangsdaten |
-| `CRON_SECRET` | ja | Mindestens 32 Zeichen; schützt den Tick (`/api/tick`) |
-| `SETUP_TOKEN` | nein | Schaltet `/setup` frei, bis der erste Admin existiert |
-| `MS_LOGIN_CLIENT_ID`, `MS_LOGIN_CLIENT_SECRET`, `MS_LOGIN_TENANT_ID` | nein | Anmeldung mit Microsoft, alle drei oder keine |
-| `DEV_SMTP_URL` | nein | Nur Entwicklung: Systemmails per SMTP, z. B. an Mailpit |
-| `HEARTBEAT_URL` | nein | Wird nach jedem erfolgreichen Tick aufgerufen |
-| `TICK_INTERVAL_MS` | nein | Nur Node/Docker: Abstand der Ticks, Standard 15 Minuten |
+| `DATABASE_URL` | yes | PostgreSQL connection (`postgres://…`) |
+| `APP_URL` | yes | Public address, `https://` (`http://` for localhost only) |
+| `APP_SECRET` | yes | 32 bytes, Base64; encrypts stored credentials |
+| `CRON_SECRET` | yes | At least 32 characters; protects the tick (`/api/tick`) |
+| `SETUP_TOKEN` | no | Enables `/setup` until the first admin exists |
+| `MS_LOGIN_CLIENT_ID`, `MS_LOGIN_CLIENT_SECRET`, `MS_LOGIN_TENANT_ID` | no | Sign-in with Microsoft, all three or none |
+| `DEV_SMTP_URL` | no | Development only: system mails via SMTP, e.g. to Mailpit |
+| `HEARTBEAT_URL` | no | Called after every successful tick |
+| `TICK_INTERVAL_MS` | no | Node/Docker only: interval between ticks, default 15 minutes |
 
-## Builds und Deployment
+## Builds and deployment
 
-Es gibt drei Ziele. Bei allen laufen die Migrationen, bevor die neue Version Anfragen beantwortet.
+There are three targets. All of them apply the migrations before the new version answers requests. A migration run holds a PostgreSQL advisory lock (`pg_advisory_xact_lock`), so servers or builds that start at the same time wait for each other instead of applying a migration twice.
 
-| Ziel | Build | Ausgabe | Migrationen |
+| Target | Build | Output | Migrations |
 | --- | --- | --- | --- |
-| Node/Docker | `vp run --filter web build:node` | `apps/web/dist/node` | beim Start des Servers |
-| Vercel | `vp run --filter web build:vercel` | `apps/web/.vercel/output` | im Build-Befehl (`apps/web/vercel.json`) |
-| Cloudflare Workers | `vp run --filter web build:cloudflare` | `apps/web/dist/cloudflare` | in `deploy:cloudflare` |
+| Node/Docker | `vp run --filter web build:node` | `apps/web/dist/node` | when the server starts |
+| Vercel | `vp run --filter web build:vercel` | `apps/web/.vercel/output` | in the build command, after the build (`apps/web/vercel.json`) |
+| Cloudflare Workers | `vp run --filter web build:cloudflare` | `apps/web/dist/cloudflare` | in `deploy:cloudflare`, after the build |
 
-### Node und Docker
+### Node and Docker
 
-Die Node-Ausgabe enthält alle Abhängigkeiten und die Migrationen. Sie startet mit `node apps/web/dist/node/server/index.mjs`, den Port setzt `PORT` (Standard 3000). Beim Start wendet der Server zuerst die offenen Migrationen an und beantwortet bis dahin keine Anfrage. Schlagen sie fehl, beendet er sich mit Code 1.
+The Node output contains all dependencies and the migrations. Start it with `node apps/web/dist/node/server/index.mjs`; `PORT` sets the port (default 3000). On startup the server first applies the pending migrations and answers no request until they are done. If they fail, it logs the error's code and exits with code 1.
 
-Mit Docker Compose (App und PostgreSQL):
+With Docker Compose (app and PostgreSQL):
 
-1. `docker/.env` anlegen: die Variablen aus `apps/web/.env.example` außer `DATABASE_URL` (die setzt `compose.yml`), dazu `POSTGRES_PASSWORD`. Das Passwort steht in einer URL, also nur URL-sichere Zeichen verwenden, z. B. `openssl rand -hex 24`.
-2. `docker compose -f docker/compose.yml up -d --build`
-3. `curl -s localhost:3000/api/health` liefert `{"ok":true}`.
+1. Create `docker/.env`. It holds the variables from `apps/web/.env.example` except `DATABASE_URL`, which `compose.yml` sets, plus `POSTGRES_PASSWORD`. The password ends up in a URL, so use URL-safe characters only, e.g. `openssl rand -hex 24`.
+2. Run `docker compose -f docker/compose.yml up -d --build`.
+3. Check that `curl -s localhost:3000/api/health` returns `{"ok":true}`.
 
-Das Image (`docker/Dockerfile`) baut in einer eigenen Stufe und enthält zur Laufzeit nur Node und `apps/web/dist/node`, ohne `node_modules`, Quelltext und npm. Der Server läuft als Benutzer `node`. Compose startet ihn mit schreibgeschütztem Dateisystem (nur `/tmp` ist beschreibbar), ohne Capabilities und mit `no-new-privileges`. Die App lauscht nur auf `127.0.0.1:3000`.
+The image (`docker/Dockerfile`) builds in a separate stage. At runtime it contains only Node and `apps/web/dist/node`: no `node_modules`, no sources, no npm. The server runs as user `node`. Compose starts it with a read-only file system (only `/tmp` is writable), without capabilities and with `no-new-privileges`. The app listens on `127.0.0.1:3000` only.
 
 ### Vercel
 
-- Root Directory des Projekts ist `apps/web`.
-- `apps/web/vercel.json` setzt den Build-Befehl: erst `db:migrate`, dann `build:vercel`. Er steht in der Datei statt in den Projekteinstellungen, damit er versioniert ist und im Review sichtbar wird.
-- Cron und `maxDuration` für `/api/tick` stehen in der Nitro-Konfiguration (`apps/web/vite.config.ts`), nicht in `vercel.json`.
-- `DATABASE_URL` muss auch im Build verfügbar sein. Preview-Deployments migrieren die Datenbank, die für Preview eingetragen ist.
+- The project's root directory is `apps/web`.
+- `apps/web/vercel.json` sets the build command: first `build:vercel`, then `db:migrate`. A failing build therefore never touches the database. The command lives in the file rather than the project settings, so it is versioned and visible in review.
+- The cron job and the `maxDuration` of `/api/tick` are set in the Nitro config (`apps/web/vite.config.ts`), not in `vercel.json`.
+- `DATABASE_URL` must also be available to the build.
+- **Preview deployments need a database of their own**, e.g. a Neon branch. Every preview build runs the branch's migrations against the `DATABASE_URL` set for Preview. If Preview shared the production database, every push to any branch would run unreviewed migrations against production.
+- Toolchain on Vercel:
+  - **Node 26:** comes from the project's "Node.js Version" setting, which must be 26.x. The root `package.json` declares `engines.node`, but Vercel reads the `package.json` of the root directory (`apps/web`). Nitro writes the function runtime from the Node version of the build (`nodejs26.x`). Check that the project offers 26.x before the first deployment.
+  - **pnpm 12:** Vercel detects pnpm from the lockfile. pnpm then switches to the version in `packageManager` (`pnpm@12.21.0`). Alternatively, set `ENABLE_EXPERIMENTAL_COREPACK=1`, which needs Corepack in the selected Node version. Check the build log of the first deployment for `pnpm v12`.
+  - **`vp`:** comes from the `vite-plus` dev dependency; `node_modules/.bin` is on the build command's `PATH`.
 
 ### Cloudflare Workers
 
-- Die Variablen sind Secrets des Workers: `wrangler secret put DATABASE_URL`, ebenso `APP_URL`, `APP_SECRET`, `CRON_SECRET` und die optionalen.
-- Deploy: `vp run --filter web build:cloudflare`, danach `vp run --filter web deploy:cloudflare` mit `DATABASE_URL` in der Shell. Das Skript migriert zuerst und ruft dann `wrangler deploy` auf.
-- Der Cron-Trigger steht in `apps/web/wrangler.jsonc`.
+- The variables are secrets of the Worker: `wrangler secret put DATABASE_URL`, and likewise `APP_URL`, `APP_SECRET`, `CRON_SECRET` and the optional ones.
+- Deploy with `vp run --filter web deploy:cloudflare`, with `DATABASE_URL` in the shell. The script builds, migrates the database and then runs `wrangler deploy`. A failing build never touches the database, and no stale build is ever deployed.
+- The cron trigger is set in `apps/web/wrangler.jsonc`.
 
-## Betrieb
+## Operations
 
-- **`SETUP_TOKEN` nach der Einrichtung entfernen.** Danach ist `/setup` abgeschaltet.
-- **Node/Docker nur hinter einem Reverse Proxy betreiben.** Er beendet HTTPS und setzt `X-Forwarded-For` auf die Adresse des Clients, bei nginx mit `proxy_set_header X-Forwarded-For $remote_addr;`. Die Anfragen nach Anmeldelinks sind pro Adresse begrenzt. Ohne den Header teilen sich alle Clients ein Limit. Cloudflare und Vercel setzen die Adresse selbst.
-- **Zwei Datenbank-Pools auf Node.** Der Tick läuft mit einem eigenen, zweiten Pool neben dem der Anfragen (node-postgres, je höchstens 10 Verbindungen). Das Verbindungslimit der Datenbank muss für beide reichen.
-- **Migrationen ohne Sperre.** Laufen mehrere Node-Instanzen, sollte eine neue Version zuerst auf einer Instanz starten.
-- Zustand prüfen: `GET /api/health` antwortet mit 200 und `{"ok":true}`, wenn die Datenbank erreichbar ist, sonst mit 503.
+- **Remove `SETUP_TOKEN` after the setup.** `/setup` is then switched off.
+- **Run Node/Docker only behind a reverse proxy.**
+  - The proxy terminates HTTPS and sets `X-Forwarded-For` to the client's address; for nginx, `proxy_set_header X-Forwarded-For $remote_addr;`.
+  - Requests for sign-in links are limited per address. Without the header, all clients share one limit.
+  - Cloudflare and Vercel set the address themselves.
+- **Two database pools on Node.**
+  - The tick runs on a second pool of its own, next to the pool of the requests. Both are node-postgres pools with at most 10 connections each.
+  - The database's connection limit must cover both.
+- **Health:** `GET /api/health` answers 200 with `{"ok":true}` when the database is reachable, otherwise 503.
 
 ## CI
 
-`.github/workflows/ci.yml` läuft bei jedem Push und jedem Pull Request:
+`.github/workflows/ci.yml` runs on every push and every pull request:
 
-- `check`: `vp check`, `pnpm check:catalog`, `pnpm check:vite-plus` und bei Pull Requests commitlint über alle Commits des Pull Requests
+- `check`: `vp check`, `pnpm check:catalog`, `pnpm check:vite-plus` and, on pull requests, commitlint over all commits of the pull request
 - `test`: `vp test`
-- `build`: die drei Ziele. Zusätzlich prüft der Job, dass `nodemailer` und `pg` nicht im Cloudflare-Bundle landen.
-- `e2e`: die End-to-End-Tests gegen PostgreSQL und Mailpit als Service-Container
+- `build`: the three targets. The job also checks that `nodemailer` and `pg` do not end up in the Cloudflare bundle.
+- `docker`: builds `docker/Dockerfile` (without pushing)
+- `e2e`: the end-to-end tests, against PostgreSQL and Mailpit as service containers
 
-Vite+, Node (aus `.node-version`) und pnpm (aus `packageManager`) richtet `voidzero-dev/setup-vp` ein. Die Abhängigkeiten installiert es mit `--frozen-lockfile`.
+`voidzero-dev/setup-vp` sets up Vite+, Node (from `.node-version`) and pnpm (from `packageManager`), and installs the dependencies with `--frozen-lockfile`. A newer push cancels the running checks of the same branch or pull request; on `main`, every commit keeps its run.
 
-## Sicherheit der Lieferkette
+## Supply-chain security
 
-- GitHub Actions sind auf den Commit-SHA ihres Releases gepinnt (`uses: owner/action@<sha> # vX.Y.Z`). Container-Images sind per Digest gepinnt (`image:tag@sha256:…`), im Dockerfile, in beiden Compose-Dateien und bei den Services der CI.
-- Die CI läuft mit einem nur lesenden Token (`permissions: contents: read`) und `persist-credentials: false`, ohne `pull_request_target`. Überholte Läufe werden abgebrochen.
-- pnpm (`pnpm-workspace.yaml`) installiert nur Versionen, die mindestens einen Tag alt sind (`minimumReleaseAge`). Es lehnt Versionen ab, die mit weniger Vertrauensnachweis veröffentlicht wurden als ihre Vorgänger (`trustPolicy: no-downgrade`). Install-Skripte führt es nur für Pakete in `allowBuilds` aus (`strictDepBuilds`), und transitive Abhängigkeiten kommen nur aus der Registry (`blockExoticSubdeps`). Ausnahmen stehen mit Begründung in der Datei.
+- **Pins:**
+  - GitHub Actions are pinned to the commit SHA of their release (`uses: owner/action@<sha> # vX.Y.Z`).
+  - Container images are pinned by digest (`image:tag@sha256:…`) in the Dockerfile, in both Compose files and in the CI service containers.
+- **CI:**
+  - The workflow runs with a read-only token (`permissions: contents: read`) and `persist-credentials: false`, without `pull_request_target`.
+- **pnpm (`pnpm-workspace.yaml`):**
+  - It installs only versions that are at least a day old (`minimumReleaseAge`).
+  - It refuses versions published with less trust evidence than their predecessors (`trustPolicy: no-downgrade`).
+  - It runs install scripts only for packages listed in `allowBuilds` (`strictDepBuilds`).
+  - Transitive dependencies come from the registry only (`blockExoticSubdeps`).
+  - Exceptions are listed in the file with their reasons.
 
-### Pins aktuell halten mit Renovate
+### Keeping the pins current with Renovate
 
-Die [Renovate GitHub App](https://github.com/apps/renovate) muss für das Repository installiert sein. Sie liest `.github/renovate.json`, die `github>mheob/renovate-config` erweitert. Darin steckt `config:best-practices`, das die SHA-Pins der Actions und die Digests der Images setzt und aktualisiert. Renovate aktualisiert außerdem die Versionen im pnpm-Catalog, `packageManager` und `.node-version`. Updates kommen einmal pro Woche, nicht-major gebündelt.
+The [Renovate GitHub App](https://github.com/apps/renovate) must be installed for the repository. It reads `.github/renovate.json`, which extends `github>mheob/renovate-config`.
 
-Eigene Regeln in `.github/renovate.json`:
+- That preset includes `config:best-practices`, which sets and updates the SHA pins of the actions and the digests of the images.
+- Renovate also updates the versions in the pnpm catalog, `packageManager` and `.node-version`.
+- Updates come once a week, with non-major updates grouped.
 
-- `vite-plus`, sein Core (`vite` im Catalog) und `vitest` kommen gemeinsam in einem Pull Request. `pnpm check:vite-plus` (`scripts/check-vite-plus-versions.ts`) lässt die CI fehlschlagen, wenn die installierten Versionen nicht zu dem passen, was `vite-plus` deklariert.
-- `oxfmt` und `oxlint` bekommen keine eigenen Updates. Sie folgen den Versionen, die mit Vite+ kommen.
-- `nitro` (Nitro 3 ist ein Release Candidate) wartet auf eine Freigabe im Dependency Dashboard und bekommt einen eigenen Pull Request.
+Rules of this repository in `.github/renovate.json`:
 
-## Beitragen und Mergen
+- `vite-plus`, its core (`vite` in the catalog) and `vitest` come together in one pull request. `pnpm check:vite-plus` (`scripts/check-vite-plus-versions.ts`) fails CI when the installed versions differ from what `vite-plus` declares.
+- `oxfmt` and `oxlint` get no updates of their own. They follow the versions that ship with Vite+.
+- `nitro` (Nitro 3 is a release candidate) waits for approval on the Dependency Dashboard and gets a pull request of its own.
 
-- [Kodiak](https://kodiakhq.com) merged Pull Requests, sobald alle Checks grün sind. Ein Label dafür braucht es nicht. Die Konfiguration gilt für alle Repositories und liegt in `mheob/.github` (`.github/.kodiak.toml`), dieses Repository hat keine eigene.
-- Kodiak merged per Squash. Titel und Beschreibung des Pull Requests werden zur Commit-Nachricht, danach wird der Branch gelöscht. Der Titel folgt deshalb den Conventional Commits. Schlüsselwörter wie `Closes #123` gehören in die Beschreibung des Pull Requests, nicht nur in einzelne Commits.
-- Major-Updates von Renovate tragen das Label `major ⚠️`. Kodiak merged sie nicht, sie werden von Hand geprüft und gemerged.
-- Pull Requests von Renovate brauchen die Freigabe eines Code Owners (`.github/CODEOWNERS`). Das ist eine Einstellung des Repositorys, keine Datei: ein Branch-Ruleset für `main` mit „Require a pull request before merging“, „Require review from Code Owners“ und den CI-Jobs als „Required status checks“.
+## Contributing and merging
 
-## Lizenz
+- **Kodiak:**
+  - [Kodiak](https://kodiakhq.com) merges a pull request as soon as all checks are green, without needing a label.
+  - Its configuration is shared by all repositories and lives in `mheob/.github` (`.github/.kodiak.toml`); this repository has none of its own.
+  - It squash-merges: the pull request's title and description become the commit message, then the branch is deleted.
+  - So the title follows Conventional Commits, and closing keywords such as `Closes #123` belong in the pull request's description, not only in individual commits.
+- **Major updates:** Renovate labels them `major ⚠️`. Kodiak does not merge them; they are reviewed and merged by hand.
+- **Code-owner review:**
+  - Pull requests need the approval of a code owner (`.github/CODEOWNERS`), which matters above all for Renovate's.
+  - This is a repository setting, not a file: a branch ruleset for `main` with "Require a pull request before merging", "Require review from Code Owners" and the CI jobs as "Required status checks".
+  - GitHub does not let authors approve their own pull requests. The ruleset therefore lists the owner (the repository admin role) in its bypass list, so the owner can merge their own pull requests.
+
+## License
 
 [MIT](LICENSE)

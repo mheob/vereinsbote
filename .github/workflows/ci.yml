@@ -9,9 +9,11 @@ on:
 permissions:
   contents: read
 
+# A newer push supersedes a running check of the same branch or pull request; on main every
+# commit keeps its own run.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   # `vp install` runs `prepare` (`vp config`); CI needs no Git hooks.
@@ -95,6 +97,17 @@ jobs:
             echo "::error::The Cloudflare bundle contains nodemailer or pg (grep exit code $status)."
             exit 1
           fi
+
+  # The production image (docker/Dockerfile), built only, never pushed.
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the image
+        run: docker build --file docker/Dockerfile --tag vereinsbote:ci .
 
   e2e:
     runs-on: ubuntu-latest

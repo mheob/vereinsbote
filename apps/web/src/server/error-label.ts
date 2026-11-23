@@ -13,4 +13,18 @@ function errorLabel(error: unknown): string {
 	return error.name;
 }
 
-export { errorLabel };
+/**
+ * The label of an error, followed by the label of its `cause` when it has one: libraries that
+ * wrap a driver's error (Drizzle does) keep the telling code there, e.g. `28P01` or
+ * `ECONNREFUSED`. Like `errorLabel`, never a message.
+ *
+ * @param error Whatever was thrown.
+ * @returns `<label>` or `<label> (cause: <label of the cause>)`.
+ */
+function errorLabelWithCause(error: unknown): string {
+	const label = errorLabel(error);
+	if (!(error instanceof Error) || error.cause === undefined) return label;
+	return `${label} (cause: ${errorLabel(error.cause)})`;
+}
+
+export { errorLabel, errorLabelWithCause };

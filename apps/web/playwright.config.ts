@@ -19,11 +19,20 @@ export default defineConfig({
 	reporter: isCi ? [['github'], ['list']] : 'list',
 	testDir: './e2e',
 	testMatch: '**/*.e2e.ts',
-	use: { baseURL: E2E_URL, locale: 'de-DE', trace: 'retain-on-failure' },
+	use: {
+		baseURL: E2E_URL,
+		// What the reverse proxy in front of a Node server sets (README); without it, Better Auth
+		// rate limits all clients in one bucket and warns about it.
+		extraHTTPHeaders: { 'x-forwarded-for': '127.0.0.1' },
+		locale: 'de-DE',
+		trace: 'retain-on-failure',
+	},
 	webServer: {
 		command: 'vp run build:node && node dist/node/server/index.mjs',
 		env: E2E_SERVER_ENV,
 		reuseExistingServer: false,
+		// The command builds first; a cold CI runner needs more than the default minute.
+		timeout: 180_000,
 		// The server answers once it has migrated the database and reaches it.
 		url: `${E2E_URL}/api/health`,
 	},

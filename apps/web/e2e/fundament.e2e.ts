@@ -45,6 +45,7 @@ test('setup, invitation, sign-in, permissions and blocking', async ({ page, brow
 	await expect(kim.getByText(/Mitglieder/u)).toHaveCount(0);
 	await kim.goto('/admin/users');
 	await expect(kim.getByRole('heading', { name: 'Kein Zugriff' })).toBeVisible();
+	await expectNoA11yViolations(kim);
 
 	await page.getByRole('row', { name: /Kim/u }).getByRole('button', { name: 'Sperren' }).click();
 	await page.getByRole('button', { name: 'Ja, sperren' }).click();
@@ -52,6 +53,10 @@ test('setup, invitation, sign-in, permissions and blocking', async ({ page, brow
 	await kim.goto('/');
 	await expect(kim).toHaveURL(/\/login$/u);
 	await kimContext.close();
+
+	await page.goto('/admin/areas');
+	await expect(page.getByRole('heading', { exact: true, name: 'Bereiche' })).toBeVisible();
+	await expectNoA11yViolations(page);
 });
 
 test('switches the sign-in page to English', async ({ page }) => {

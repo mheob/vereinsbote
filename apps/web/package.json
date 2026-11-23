@@ -8,7 +8,7 @@
 		"build:vercel": "VITE_VB_PLATFORM=vercel vp build",
 		"db:generate": "drizzle-kit generate",
 		"db:migrate": "tsx src/server/db/migrate-cli.ts",
-		"deploy:cloudflare": "vp run db:migrate && wrangler deploy",
+		"deploy:cloudflare": "vp run build:cloudflare && vp run db:migrate && wrangler deploy",
 		"dev": "vp dev",
 		"e2e": "playwright test"
 	},
