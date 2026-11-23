@@ -13,9 +13,8 @@ dist
 .env*
 !.env.example
 
-# Local workspaces of tools and the IDE
+# Local workspace of the SDD tooling
 .superpowers/
-.openidea/
 
 # OS
 .DS_Store

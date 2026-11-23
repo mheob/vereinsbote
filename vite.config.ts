@@ -24,7 +24,11 @@ export default defineConfig({
 		],
 		jsPlugins: [{ name: 'vite-plus', specifier: 'vite-plus/oxlint-plugin' }],
 		options: { typeAware: true, typeCheck: true },
-		rules: { 'vite-plus/prefer-vite-plus-imports': 'error' },
+		rules: {
+			// oxfmt (`sortTailwindcss`) owns the formatting of class lists and joins wrapped lines again.
+			'better-tailwindcss/enforce-consistent-line-wrapping': 'off',
+			'vite-plus/prefer-vite-plus-imports': 'error',
+		},
 	},
 	staged: {
 		'*': 'vp check --fix',

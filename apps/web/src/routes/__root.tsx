@@ -22,7 +22,10 @@ export const Route = createRootRoute({
 				<HeadContent />
 			</head>
 			<body>
-				<a className="skip-link" href="#inhalt">
+				<a
+					className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:bg-white focus:p-2"
+					href="#inhalt"
+				>
 					{t('a11y.skipLink')}
 				</a>
 				<main id="inhalt">{children}</main>
