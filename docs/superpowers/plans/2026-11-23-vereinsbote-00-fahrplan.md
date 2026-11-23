@@ -19,12 +19,13 @@ Die Spec umfasst mehrere eigenständige Teilsysteme. Sie wird deshalb in acht Te
 | 5 | Automatische Anlässe | Datumsregeln, Geburtstage und Jubiläen, Vorschau-Mail, Warn-Mails, Idempotenz, Nachholen, Dashboard | 6.3, 6.10 | 1–4 |
 | 6 | Rechnungen und Einladungen | PDF-Upload, XRechnung (UBL/CII) und ZUGFeRD, Empfängervorschlag, .ics | 6.4 | 1–4 |
 | 7 | Datenschutz-Funktionen | Löschfristen, Auskunfts-Export, Inhalte der Doku-Vorlagen | 6.8 | 1–6 |
-| 8 | Doku-Website und Release | Astro und Starlight im Monorepo; Anleitungen für Installation, Entra und Resend; Handbuch; Entwickler-Doku; Release-Ablauf mit Versionen und Änderungsprotokoll | 8 | 1–7 |
+| 8 | Doku-Website und Release | Astro und Starlight im Monorepo, zweisprachig (Deutsch und Englisch); Anleitungen für Installation, Entra und Resend; Handbuch; Entwickler-Doku; Release-Ablauf mit Versionen und Änderungsprotokoll | 8 | 1–7 |
 
 ## Werkzeuge (gelten für alle Teilpläne)
 
 - **Versionen:** immer die neueste stabile Version von Node (derzeit 26 LTS), pnpm, TypeScript, allen Abhängigkeiten und Docker-Images.
 - **Sicherheit:** GitHub Actions per Commit-SHA und Container-Images per Digest gepinnt, Renovate (Preset `github>mheob/renovate-config`) hält die Pins aktuell; CI über `voidzero-dev/setup-vp`; CI mit minimalen Rechten; pnpm-Lieferkettenschutz. Sicherheit hat in allen Teilplänen hohe Priorität.
+- **Sprache der Doku:** `README.md` und andere Repo-Dateien für Entwickler sind englisch. Die Doku-Website (Teilplan 8) ist zweisprachig, Deutsch und Englisch.
 - **Vite+** (`vite-plus`, CLI `vp`) ist die einzige Toolchain: Dev, Build, Test, Lint, Format, Typprüfung und Task-Runner. Konfiguriert wird nur in `vite.config.ts`.
 - **pnpm** mit `catalogMode: strict`. Alle Versionen stehen im Catalog in `pnpm-workspace.yaml`, die `package.json`-Dateien nutzen `"catalog:"`.
 - **Lint und Format:** `@mheob/oxlint-config` und `@mheob/oxfmt-config`, eingebunden in die `lint`- und `fmt`-Blöcke von Vite+.

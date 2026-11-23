@@ -438,7 +438,7 @@ Ein Assistent führt durch die Einrichtung:
   - Datenbank-Migrationen laufen beim Deploy automatisch und bleiben mit älteren Daten verträglich.
   - Ein Verein aktualisiert, indem er seinen Fork synchronisiert und neu deployt.
 - **Lizenz:** MIT.
-- **Doku-Website im Projekt:** Eine typische Dokumentations-Website ist Teil des Repos.
+- **Doku-Website im Projekt:** Eine typische Dokumentations-Website ist Teil des Repos, zweisprachig in Deutsch und Englisch. Die `README.md` ist englisch. (Nachtrag 2026-11-23, Wunsch des Projekts.)
   - **[Claude]** Gebaut mit Astro und Starlight. Starlight ist auf Dokumentation zugeschnitten und bringt Suche, Navigation und eine barrierefreie Grundlage mit.
   - **[Claude]** Das Repo ist ein Monorepo mit App und Doku-Website nebeneinander.
   - Sie enthält alle Anleitungen unten, ein Benutzerhandbuch für Ehrenamtliche und eine Entwickler-Doku (Architektur, Mitwirken).

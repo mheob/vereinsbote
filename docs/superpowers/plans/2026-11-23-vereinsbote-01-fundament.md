@@ -44,6 +44,7 @@
   - CI mit minimalen Rechten (`permissions: contents: read`, `persist-credentials: false`, kein `pull_request_target`).
   - pnpm-Lieferkettenschutz, soweit von pnpm 12 unterstützt: `minimumReleaseAge`, `trustPolicy: no-downgrade`, `strictDepBuilds`, `blockExoticSubdeps`.
   - Container laufen als Nicht-Root-Benutzer ohne Dev-Abhängigkeiten.
+- **README und Repo-Doku:** `README.md` (und weitere Entwickler-Doku im Repo) ist englisch (Wunsch des Projekts). Die spätere Doku-Website ist zweisprachig.
 - **Imports:** Innerhalb von `apps/web/src` laufen Imports über den Alias `@/` (zeigt auf `apps/web/src`), z. B. `import { getAppContext } from '@/platform/context'`. Relative Imports mit `../` sind verboten (Lint-Regel); `./` im selben Ordner ist erlaubt. Gilt ab Task 5a (Wunsch des Projekts).
 - **Secrets:** Ihre Werte erscheinen nie in Fehlermeldungen oder Logs.
 - **Versionen:** Immer die neueste stabile Version verwenden: Node (derzeit 26 LTS), pnpm, TypeScript, jede Abhängigkeit im Catalog, Docker-Images (`node:26-alpine`, `postgres:19`, `axllent/mailpit:latest`) und GitHub Actions. Eine ältere Version ist nur erlaubt, wenn die neueste nachweislich nicht funktioniert. Dann steht der Grund als Kommentar am Catalog-Eintrag.
