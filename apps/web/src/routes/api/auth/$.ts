@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
 
-import { getAppContext } from '../../../platform/context';
+import { getAppContext } from '@/platform/context';
 
 /**
  * Hands every request under `/api/auth/` to Better Auth (login link, Microsoft, session).

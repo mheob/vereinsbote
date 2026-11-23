@@ -1,5 +1,6 @@
-import type { Db } from '../db/client';
-import { findUserById } from '../users/repo';
+import type { Db } from '@/server/db/client';
+import { findUserById } from '@/server/users/repo';
+
 import type { Auth } from './auth';
 
 interface SessionUser {

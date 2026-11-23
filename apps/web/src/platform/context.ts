@@ -1,13 +1,14 @@
 import { getRequest } from '@tanstack/react-start/server';
 
-import { createAuth } from '../server/auth/auth';
-import type { Auth, BackgroundRunner } from '../server/auth/auth';
-import { openDb } from '../server/db/client';
-import type { Db, DbHandle } from '../server/db/client';
-import { parseEnv } from '../server/env';
-import type { Env } from '../server/env';
-import { createSystemMailer } from '../server/mail/system-mailer';
-import type { SystemMailer } from '../server/mail/system-mailer';
+import { createAuth } from '@/server/auth/auth';
+import type { Auth, BackgroundRunner } from '@/server/auth/auth';
+import { openDb } from '@/server/db/client';
+import type { Db, DbHandle } from '@/server/db/client';
+import { parseEnv } from '@/server/env';
+import type { Env } from '@/server/env';
+import { createSystemMailer } from '@/server/mail/system-mailer';
+import type { SystemMailer } from '@/server/mail/system-mailer';
+
 import { createRequestScope } from './request-scope';
 
 type PlatformName = 'cloudflare' | 'node' | 'vercel';

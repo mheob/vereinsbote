@@ -1,5 +1,6 @@
-import { t } from '../../i18n/t';
-import type { Env } from '../env';
+import { t } from '@/i18n/t';
+import type { Env } from '@/server/env';
+
 import type { SmtpTransport } from './smtp-transport';
 
 /** A mail the app itself sends, such as a login link or an invitation. */

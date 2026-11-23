@@ -42,14 +42,18 @@ function platformConfig(platform: string | undefined): UserConfig {
 // oxlint-disable-next-line node/no-process-env -- Vitest and the build scripts pass their settings here.
 const { VITE_VB_PLATFORM, VITEST } = process.env;
 
+/** Resolves `@/` (→ `src/`) from the `paths` of `tsconfig.json`, in the app and in the tests. */
+const resolve: UserConfig['resolve'] = { tsconfigPaths: true };
+
 export default defineConfig((): UserConfig => {
 	// The unit tests import plain modules, they need none of the app plugins.
-	if (VITEST !== undefined) return {};
+	if (VITEST !== undefined) return { resolve };
 
 	const { plugins = [], ...adapterConfig } = platformConfig(VITE_VB_PLATFORM);
 	return {
 		...adapterConfig,
 		plugins: [...plugins, tailwindcss(), tanstackStart(), viteReact()],
+		resolve,
 		server: { port: 3000 },
 	};
 });

@@ -27,6 +27,12 @@ export default defineConfig({
 		rules: {
 			// oxfmt (`sortTailwindcss`) owns the formatting of class lists and joins wrapped lines again.
 			'better-tailwindcss/enforce-consistent-line-wrapping': 'off',
+			// Imports inside `apps/web/src` go through the `@/` alias (→ `apps/web/src`); `./` stays allowed.
+			// `../**`, not `../*`: in a group pattern `*` stops at `/`, so `../*` would miss `../db/client`.
+			'no-restricted-imports': [
+				'error',
+				{ patterns: [{ group: ['../**'], message: 'Use the @/ alias' }] },
+			],
 			'vite-plus/prefer-vite-plus-imports': 'error',
 		},
 	},

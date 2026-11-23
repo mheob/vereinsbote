@@ -6,8 +6,8 @@ import type { ReactNode } from 'react';
 import { Button, FieldError, Form, Input, Label, TextField } from 'react-aria-components';
 import { z } from 'zod';
 
-import { t } from '../i18n/t';
-import { normalizeEmail } from '../server/auth/email';
+import { t } from '@/i18n/t';
+import { normalizeEmail } from '@/server/auth/email';
 
 /** Where Better Auth sends the user after signing in, and back to after a failure. */
 const AFTER_SIGN_IN_PATH = '/';
@@ -20,7 +20,7 @@ const socialSignInResponse = z.object({ url: z.url() });
 
 // Server modules are imported inside the handler, so they stay out of the client bundle.
 const loadLoginOptions = createServerFn({ method: 'GET' }).handler(async () => {
-	const { getAppContext } = await import('../platform/context');
+	const { getAppContext } = await import('@/platform/context');
 	const { env } = await getAppContext();
 	return { microsoft: env.microsoftLogin !== null };
 });

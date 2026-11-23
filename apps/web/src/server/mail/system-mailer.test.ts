@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test';
 
-import { parseEnv } from '../env';
+import { parseEnv } from '@/server/env';
+
 import { createSystemMailer, MailerNotConfiguredError } from './system-mailer';
 import { CapturingMailer } from './testing';
 

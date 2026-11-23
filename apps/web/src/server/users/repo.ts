@@ -1,9 +1,9 @@
 import { and, eq, sql } from 'drizzle-orm';
 
-import { normalizeEmail } from '../auth/email';
-import type { Db } from '../db/client';
-import { session, user } from '../db/schema';
-import type { userStatuses } from '../db/schema';
+import { normalizeEmail } from '@/server/auth/email';
+import type { Db } from '@/server/db/client';
+import { session, user } from '@/server/db/schema';
+import type { userStatuses } from '@/server/db/schema';
 
 type UserStatus = (typeof userStatuses)[number];
 

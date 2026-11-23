@@ -6,13 +6,25 @@ import { magicLink } from 'better-auth/plugins/magic-link';
 import { tanstackStartCookies } from 'better-auth/tanstack-start';
 import { sql } from 'drizzle-orm';
 
-import { t } from '../../i18n/t';
-import { deriveAuthSecret, deriveLoginWindowKey, hashLoginWindowEmail } from '../crypto/secrets';
-import type { Db } from '../db/client';
-import { account, loginLinkWindow, rateLimit, session, user, verification } from '../db/schema';
-import type { Env } from '../env';
-import type { SystemMailer } from '../mail/system-mailer';
-import { activateInvitedUser, findUserByEmail, findUserById } from '../users/repo';
+import { t } from '@/i18n/t';
+import {
+	deriveAuthSecret,
+	deriveLoginWindowKey,
+	hashLoginWindowEmail,
+} from '@/server/crypto/secrets';
+import type { Db } from '@/server/db/client';
+import {
+	account,
+	loginLinkWindow,
+	rateLimit,
+	session,
+	user,
+	verification,
+} from '@/server/db/schema';
+import type { Env } from '@/server/env';
+import type { SystemMailer } from '@/server/mail/system-mailer';
+import { activateInvitedUser, findUserByEmail, findUserById } from '@/server/users/repo';
+
 import { normalizeEmail } from './email';
 
 /** 15 minutes. */

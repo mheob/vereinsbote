@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { sql } from 'drizzle-orm';
 
-import { getAppContext } from '../../platform/context';
+import { getAppContext } from '@/platform/context';
 
 async function checkHealth(): Promise<Response> {
 	try {

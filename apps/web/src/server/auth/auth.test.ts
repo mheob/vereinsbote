@@ -1,17 +1,18 @@
 import { eq, sql } from 'drizzle-orm';
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 
-import { t } from '../../i18n/t';
-import { deriveLoginWindowKey, hashLoginWindowEmail } from '../crypto/secrets';
-import type { Db } from '../db/client';
-import { loginLinkWindow, session, user, verification } from '../db/schema';
-import { createTestDb } from '../db/test-db';
-import { parseEnv } from '../env';
-import type { Env } from '../env';
-import { MailerNotConfiguredError } from '../mail/system-mailer';
-import type { SystemMail, SystemMailer } from '../mail/system-mailer';
-import { CapturingMailer } from '../mail/testing';
-import { findUserByEmail, insertUser, revokeSessions } from '../users/repo';
+import { t } from '@/i18n/t';
+import { deriveLoginWindowKey, hashLoginWindowEmail } from '@/server/crypto/secrets';
+import type { Db } from '@/server/db/client';
+import { loginLinkWindow, session, user, verification } from '@/server/db/schema';
+import { createTestDb } from '@/server/db/test-db';
+import { parseEnv } from '@/server/env';
+import type { Env } from '@/server/env';
+import { MailerNotConfiguredError } from '@/server/mail/system-mailer';
+import type { SystemMail, SystemMailer } from '@/server/mail/system-mailer';
+import { CapturingMailer } from '@/server/mail/testing';
+import { findUserByEmail, insertUser, revokeSessions } from '@/server/users/repo';
+
 import { createAuth, LoginLinkInvalidError, requestLoginLink, verifyLoginLink } from './auth';
 import type { Auth } from './auth';
 import { getSessionUser } from './session';
