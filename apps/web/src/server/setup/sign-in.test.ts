@@ -1,13 +1,21 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
 
-import { createAuth, createSessionFor } from '@/server/auth/auth';
+import {
+	createAuth,
+	createSessionFor,
+	requestLoginLink,
+	verifyLoginLink,
+} from '@/server/auth/auth';
+import type { Auth } from '@/server/auth/auth';
 import { getSessionUser } from '@/server/auth/session';
 import type { Db } from '@/server/db/client';
 import { session, user } from '@/server/db/schema';
 import { createTestDb } from '@/server/db/test-db';
 import { parseEnv } from '@/server/env';
+import type { SystemMail } from '@/server/mail/system-mailer';
 import { CapturingMailer } from '@/server/mail/testing';
 import { getState } from '@/server/system-state';
+import { insertUser } from '@/server/users/repo';
 
 import {
 	completeSetupAndSignIn,
@@ -74,6 +82,41 @@ function rejectionsOf(results: readonly Readonly<PromiseSettledResult<unknown>>[
 		}
 	}
 	return reasons;
+}
+
+/**
+ * Creates a Better Auth instance whose mails are kept in the returned mailer.
+ *
+ * @param db The database.
+ * @returns The auth instance and the mailer.
+ */
+async function authWithMailer(db: Db): Promise<{ auth: Auth; mailer: CapturingMailer }> {
+	const env = parseEnv({
+		APP_SECRET: Buffer.alloc(32, 3).toString('base64'),
+		APP_URL: 'https://bote.example.org',
+		CRON_SECRET: 'c'.repeat(32),
+		DATABASE_URL: 'postgres://x@localhost/x',
+	});
+	const mailer = new CapturingMailer();
+	return { auth: await createAuth({ db, env, mailer }), mailer };
+}
+
+/**
+ * Signs a user in with a login link, as the login page and the link in the mail do.
+ *
+ * @param auth The auth instance.
+ * @param sent The mails the auth instance sends, as its mailer keeps them.
+ * @param email The user's address.
+ */
+async function signInWithLoginLink(
+	auth: Auth,
+	sent: readonly Readonly<SystemMail>[],
+	email: string,
+): Promise<void> {
+	await requestLoginLink(auth, email);
+	const token = /token=(?<token>[^&\s]+)/u.exec(sent.at(-1)?.text ?? '')?.groups?.token;
+	if (token === undefined) throw new Error('No login link was sent.');
+	await verifyLoginLink(auth, token);
 }
 
 /**
@@ -219,5 +262,37 @@ describe(completeSetupAndSignIn, () => {
 			isAdmin: true,
 		});
 		await expect(db.select().from(session)).resolves.toHaveLength(1);
+	});
+});
+
+describe('the setup recovery after another sign-in', () => {
+	it('closes once the setup admin signs in with a login link', async () => {
+		const db = await createTestDb();
+		const { auth, mailer } = await authWithMailer(db);
+		await setUpWithFailedSession(db);
+		await signInWithLoginLink(auth, mailer.sent, 'admin@verein.de');
+		await expect(hasSetupSession(db)).resolves.toBe(true);
+		const open = opensSession();
+		await expect(completeSetupAndSignIn(db, input, open)).rejects.toBeInstanceOf(
+			SetupAlreadyDoneError,
+		);
+		expect(open).not.toHaveBeenCalled();
+	});
+
+	it('stays open when the setup itself opens the session, until the cookie is confirmed', async () => {
+		const db = await createTestDb();
+		const { auth } = await authWithMailer(db);
+		const adminUserId = await setUpWithFailedSession(db);
+		await createSessionFor(auth, adminUserId);
+		await expect(hasSetupSession(db)).resolves.toBe(false);
+	});
+
+	it('stays open when another user signs in', async () => {
+		const db = await createTestDb();
+		const { auth, mailer } = await authWithMailer(db);
+		await setUpWithFailedSession(db);
+		await insertUser(db, { email: 'kim@verein.de', name: 'Kim', status: 'active' });
+		await signInWithLoginLink(auth, mailer.sent, 'kim@verein.de');
+		await expect(hasSetupSession(db)).resolves.toBe(false);
 	});
 });

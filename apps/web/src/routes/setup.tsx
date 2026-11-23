@@ -27,9 +27,6 @@ import {
 } from '@/server/setup/form';
 import type { SetupField } from '@/server/setup/form';
 
-/** Where the first admin goes after the setup: the user management. */
-const ADMIN_HOME_PATH = '/admin/users';
-
 const inputClass =
 	'rounded-md border border-gray-600 px-3 py-2 data-focused:outline-2 data-focused:outline-offset-2 data-focused:outline-blue-700 data-invalid:border-red-700';
 
@@ -141,9 +138,9 @@ const submitSetup = createServerFn({ method: 'POST' })
 			if (error instanceof setup.SetupAlreadyDoneError) return { failure: 'done', fields: [] };
 			throw error;
 		}
-		// `href`: the user management is a route of a later step.
+		// The first admin goes on to the user management.
 		// oxlint-disable-next-line typescript/only-throw-error -- TanStack Start sends a thrown redirect to the client
-		throw redirect({ href: ADMIN_HOME_PATH });
+		throw redirect({ to: '/admin/users' });
 	});
 
 /**

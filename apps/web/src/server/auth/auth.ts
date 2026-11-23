@@ -26,6 +26,7 @@ import {
 } from '@/server/db/schema';
 import type { Env } from '@/server/env';
 import type { SystemMailer } from '@/server/mail/system-mailer';
+import { closeSetupRecoveryFor } from '@/server/setup/setup';
 import { activateInvitedUser, findUserByEmail, findUserById } from '@/server/users/repo';
 
 import { normalizeEmail } from './email';
@@ -233,6 +234,13 @@ function socialProviders(microsoftLogin: Readonly<Env['microsoftLogin']>): Socia
 }
 
 /**
+ * The endpoint contexts of `createSessionForUser` calls. The session hooks run inside the
+ * endpoint that creates the session and get its context, so they can tell the setup's own
+ * session from a sign-in (`closeSetupRecoveryFor`).
+ */
+const serverOpenedSessions = new WeakSet<object>();
+
+/**
  * A server-only endpoint that opens a session for a user the app has identified itself (the
  * first admin, right after the setup). Better Auth never routes it over HTTP. It sets the
  * session cookie the way a sign-in does; the session hooks apply, so a disabled user gets none.
@@ -242,6 +250,7 @@ const sessionForUser = {
 		createSessionForUser: createAuthEndpoint.serverOnly(
 			{ body: z.object({ userId: z.string() }), method: 'POST' },
 			async (ctx) => {
+				serverOpenedSessions.add(ctx);
 				const { internalAdapter } = ctx.context;
 				const found = await internalAdapter.findUserById(ctx.body.userId);
 				// `createSession` returns null when the session hook refuses the user.
@@ -277,9 +286,14 @@ function buildAuth(deps: AuthDeps, secret: string, windowKey: CryptoKey) {
 		databaseHooks: {
 			session: {
 				create: {
-					// The first session of an invited user activates the user.
-					async after(created) {
+					// The first session of an invited user activates the user. A sign-in of the setup
+					// admin closes the setup's recovery; the setup's own session does not, its route does
+					// so once the cookie is on the response.
+					async after(created, context) {
 						await activateInvitedUser(db, created.userId);
+						if (context === null || !serverOpenedSessions.has(context)) {
+							await closeSetupRecoveryFor(db, created.userId);
+						}
 					},
 					// Disabled users get no session, whatever the way they sign in.
 					async before(data) {

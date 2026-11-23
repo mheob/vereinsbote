@@ -1,36 +1,16 @@
-import { z } from 'zod';
+import { isValidUserEmail, isValidUserName } from '@/server/users/form';
 
 /** The fields of the setup form. */
 type SetupField = 'email' | 'name' | 'token';
 
-/** Limits that no real input reaches; they keep oversized values away from the database. */
+/** Longer than any real token; keeps oversized values away from the hash. */
 const MAX_TOKEN_LENGTH = 1024;
-const MAX_NAME_LENGTH = 200;
-const MAX_EMAIL_LENGTH = 254;
 
-const emailSchema = z.string().trim().max(MAX_EMAIL_LENGTH).pipe(z.email());
+/** The admin's name follows the rules of every user's name. */
+const isValidAdminName = isValidUserName;
 
-/**
- * Tells whether a name can be the admin's: not only spaces, at most `MAX_NAME_LENGTH` long.
- *
- * @param name The name as typed.
- * @returns True when the server accepts it.
- */
-function isValidAdminName(name: string): boolean {
-	const trimmed = name.trim();
-	return trimmed.length > 0 && trimmed.length <= MAX_NAME_LENGTH;
-}
-
-/**
- * Tells whether an address can be the admin's: with a domain (`admin@localhost` is refused),
- * at most `MAX_EMAIL_LENGTH` long, spaces around it are ignored.
- *
- * @param email The address as typed.
- * @returns True when the server accepts it.
- */
-function isValidAdminEmail(email: string): boolean {
-	return emailSchema.safeParse(email).success;
-}
+/** The admin's address follows the rules of every user's address. */
+const isValidAdminEmail = isValidUserEmail;
 
 /**
  * The fields of the setup form the server refuses, in form order. The page shows each at its
@@ -53,12 +33,7 @@ function invalidSetupFields(
 	return fields;
 }
 
-export {
-	MAX_EMAIL_LENGTH,
-	MAX_NAME_LENGTH,
-	MAX_TOKEN_LENGTH,
-	invalidSetupFields,
-	isValidAdminEmail,
-	isValidAdminName,
-};
+// The limits of every user's name and address apply to the admin's.
+export { MAX_EMAIL_LENGTH, MAX_NAME_LENGTH } from '@/server/users/form';
+export { MAX_TOKEN_LENGTH, invalidSetupFields, isValidAdminEmail, isValidAdminName };
 export type { SetupField };

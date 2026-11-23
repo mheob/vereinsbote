@@ -3,6 +3,7 @@ import type { Locale } from '@/i18n/locale';
 import { writeAudit } from '@/server/audit/audit';
 import { normalizeEmail } from '@/server/auth/email';
 import type { Db } from '@/server/db/client';
+import { isUniqueViolation } from '@/server/db/errors';
 import { areaMemberships, areas, systemState } from '@/server/db/schema';
 import { getState, setState } from '@/server/system-state';
 import type { StateKey } from '@/server/system-state';
@@ -16,11 +17,6 @@ const SESSION_OPENED_KEY: StateKey = 'setup_session_opened_at';
 /** The areas every club starts with (Spec 6.7). The first admin may edit "Mitglieder". */
 const MEMBERS_AREA = 'Mitglieder';
 const FINANCE_AREA = 'Finanzen';
-
-/** PostgreSQL's SQLSTATE for a unique violation. */
-const UNIQUE_VIOLATION = '23505';
-/** How deep to follow `cause`: Drizzle wraps the error of the driver once. */
-const MAX_CAUSE_DEPTH = 5;
 
 const encoder = new TextEncoder();
 
@@ -93,23 +89,6 @@ async function tokensMatch(given: string, expected: string): Promise<boolean> {
 }
 
 /**
- * Tells whether a database error is a unique violation. Drizzle wraps the error of the driver
- * (pg, Neon, PGlite) in `cause`, and each of them carries the SQLSTATE in `code`.
- *
- * @param error The error of a query.
- * @returns True for a unique violation.
- */
-function isUniqueViolation(error: unknown): boolean {
-	let current = error;
-	for (let depth = 0; depth < MAX_CAUSE_DEPTH; depth += 1) {
-		if (typeof current !== 'object' || current === null) return false;
-		if ('code' in current && current.code === UNIQUE_VIOLATION) return true;
-		current = 'cause' in current ? current.cause : undefined;
-	}
-	return false;
-}
-
-/**
  * Marks the setup as done, with a plain insert: a second setup, even a concurrent one, fails on
  * the primary key of `system_state` instead of overwriting the first. The admin is added to the
  * marker once it exists, in the same transaction.
@@ -156,6 +135,20 @@ async function markSessionOpened(db: Db): Promise<void> {
 		.insert(systemState)
 		.values({ key: SESSION_OPENED_KEY, value: { at: new Date().toISOString() } })
 		.onConflictDoNothing();
+}
+
+/**
+ * Closes the setup's way to a session once its admin has signed in another way (login link,
+ * Microsoft): that session proves the admin is in, so the setup token no longer opens one.
+ * Sessions of other users change nothing.
+ *
+ * @param db The database.
+ * @param userId The user who just got a session.
+ */
+async function closeSetupRecoveryFor(db: Db, userId: string): Promise<void> {
+	const marker = await getState<Partial<SetupMarker>>(db, SETUP_DONE_KEY);
+	if (marker?.adminUserId !== userId) return;
+	await markSessionOpened(db);
 }
 
 /**
@@ -287,6 +280,7 @@ export {
 	SetupAlreadyDoneError,
 	SetupDisabledError,
 	SetupTokenInvalidError,
+	closeSetupRecoveryFor,
 	completeSetup,
 	completeSetupAndSignIn,
 	hasSetupSession,
