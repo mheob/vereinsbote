@@ -160,6 +160,10 @@ Rules of this repository in `.github/renovate.json`:
   - This is a repository setting, not a file: a branch ruleset for `main` with "Require a pull request before merging", "Require review from Code Owners" and the CI jobs as "Required status checks".
   - GitHub does not let authors approve their own pull requests. The ruleset therefore lists the owner (the repository admin role) in its bypass list, so the owner can merge their own pull requests.
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow and [AGENTS.md](AGENTS.md) for the rules that coding agents and contributors follow.
+
 ## License
 
 [MIT](LICENSE)
