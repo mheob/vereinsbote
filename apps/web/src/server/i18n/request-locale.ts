@@ -23,7 +23,6 @@ function readCookie(cookieHeader: string | null, name: string): string | null {
  * @param headers The request headers.
  * @returns The locale.
  */
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Headers cannot be made readonly
 function getRequestLocale(headers: Headers): Locale {
 	return resolveLocale({
 		acceptLanguage: headers.get('accept-language'),

@@ -19,7 +19,6 @@ const migrationsFolder = fileURLToPath(new URL('../../../drizzle', import.meta.u
  *
  * @param db The database to migrate.
  */
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Drizzle clients are mutable class instances
 async function runMigrations(db: Db): Promise<void> {
 	const migrations = readMigrationFiles({ migrationsFolder });
 	// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- dialect and session are runtime members stripped from the typings

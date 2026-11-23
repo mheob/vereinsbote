@@ -12,7 +12,6 @@ type StateKey = 'last_tick' | 'setup_completed_at' | 'tick_lock';
  * @param key The state key.
  * @returns The stored value, or null when the key was never set.
  */
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Drizzle clients are mutable class instances
 async function getState<T>(db: Db, key: StateKey): Promise<T | null> {
 	const [row] = await db.select().from(systemState).where(eq(systemState.key, key));
 	// The caller names the shape it stored under this key.
@@ -27,7 +26,6 @@ async function getState<T>(db: Db, key: StateKey): Promise<T | null> {
  * @param key The state key.
  * @param value Any JSON-serializable value.
  */
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Drizzle clients are mutable class instances
 async function setState(db: Db, key: StateKey, value: unknown): Promise<void> {
 	await db
 		.insert(systemState)

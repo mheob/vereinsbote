@@ -27,7 +27,6 @@ function setup(): Setup {
 				value,
 			};
 		},
-		// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- a promise cannot be made readonly
 		waitUntil(promise) {
 			waited.push(promise);
 		},
@@ -89,7 +88,6 @@ describe('response body release', () => {
 	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- rest array of a test helper
 	const streamOf = (...chunks: string[]): ReadableStream<Uint8Array> =>
 		new ReadableStream({
-			// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- stream callback of the platform API
 			pull(controller) {
 				const chunk = chunks.shift();
 				if (chunk === undefined) controller.close();

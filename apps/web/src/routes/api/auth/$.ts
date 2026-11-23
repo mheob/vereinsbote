@@ -9,7 +9,6 @@ import { getAppContext } from '@/platform/context';
  * @param context.request The incoming request.
  * @returns Better Auth's response.
  */
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Request cannot be made readonly
 async function handleAuth({ request }: Readonly<{ request: Request }>): Promise<Response> {
 	const { auth } = await getAppContext();
 	return auth.handler(request);

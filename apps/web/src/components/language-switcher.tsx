@@ -21,7 +21,6 @@ const buttonClass =
  */
 const saveLocale = createServerFn({ method: 'POST' })
 	.validator(z.enum(SUPPORTED_LOCALES))
-	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- the handler context is TanStack Start's type
 	.handler(async ({ data: locale }) => {
 		const [{ getRequest, setCookie }, { getAppContext }, { getSessionUser }, { setUserLocale }] =
 			await Promise.all([
@@ -46,7 +45,6 @@ const saveLocale = createServerFn({ method: 'POST' })
  *
  * @param formData The submitted form with the pressed button's `locale`.
  */
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- FormData cannot be made readonly
 async function chooseLocale(formData: FormData): Promise<void> {
 	const locale = formData.get('locale');
 	if (!isLocale(locale)) return;

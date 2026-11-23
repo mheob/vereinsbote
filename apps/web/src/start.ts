@@ -3,7 +3,6 @@ import { createMiddleware, createStart } from '@tanstack/react-start';
 import { releaseWhenBodyDone } from './platform/request-scope';
 
 /** Ends the request-scoped database (Cloudflare) once the response body is done. */
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- the middleware context is a library type
 const releaseDb = createMiddleware({ type: 'request' }).server(async ({ next }) => {
 	const { requestDbReleaser } = await import('./platform/context');
 	const release = requestDbReleaser();

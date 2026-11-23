@@ -14,7 +14,6 @@ const appSecret = new Uint8Array(32).fill(9);
 const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 const otherSecret = new Uint8Array(32).fill(1);
 
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- CryptoKey is an opaque DOM handle
 const splitToken = async (key: CryptoKey): Promise<string[]> => {
 	const token = await encryptSecret('x', key);
 	return token.split('.');

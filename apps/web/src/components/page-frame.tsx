@@ -11,7 +11,6 @@ import { LanguageSwitcher } from './language-switcher';
  * @param props.children The page.
  * @returns The frame.
  */
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- ReactNode cannot be made deeply readonly.
 export function PageFrame({ children }: Readonly<{ children: ReactNode }>): ReactNode {
 	const t = useT();
 	return (

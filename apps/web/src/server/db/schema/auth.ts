@@ -1,4 +1,3 @@
-/* oxlint-disable typescript/prefer-readonly-parameter-types -- Drizzle passes mutable table and relation builders to the schema callbacks */
 import {
 	bigint,
 	boolean,

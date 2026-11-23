@@ -7,7 +7,6 @@ interface RequestScopeOptions<T> {
 	/** Opens the resource of one request. */
 	create: () => Promise<ScopedHandle<T>>;
 	/** Keeps the runtime alive until the promise settles, like `ctx.waitUntil` on Workers. */
-	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- a promise cannot be made readonly
 	waitUntil: (promise: Promise<unknown>) => Promise<void> | void;
 }
 
@@ -69,7 +68,6 @@ function ignore(): void {
  * @param release Called exactly once.
  * @returns A response with the same status and headers.
  */
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Response cannot be made readonly
 function releaseWhenBodyDone(response: Response, release: () => Promise<void> | void): Response {
 	const source = response.body;
 	let called = false;
@@ -89,7 +87,6 @@ function releaseWhenBodyDone(response: Response, release: () => Promise<void> | 
 	}
 	const reader = source.getReader();
 	const body = new ReadableStream<Uint8Array>({
-		// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- stream callback of the platform API
 		async cancel(reason) {
 			try {
 				await reader.cancel(reason);
@@ -97,7 +94,6 @@ function releaseWhenBodyDone(response: Response, release: () => Promise<void> | 
 				await done();
 			}
 		},
-		// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- stream callback of the platform API
 		async pull(controller) {
 			try {
 				const chunk = await reader.read();

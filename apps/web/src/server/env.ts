@@ -37,7 +37,6 @@ const parseUrl = (value: string): URL | null => {
 };
 
 // Decodes and validates once; the schema output is the 32-byte key itself.
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- zod passes a mutable refinement context
 const toSecretBytes = (value: string, ctx: z.RefinementCtx): Uint8Array => {
 	if (z.base64().safeParse(value).success) {
 		const bytes = Uint8Array.from(atob(value), (char) => char.codePointAt(0) ?? 0);
@@ -47,7 +46,6 @@ const toSecretBytes = (value: string, ctx: z.RefinementCtx): Uint8Array => {
 	return z.NEVER;
 };
 
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- zod passes a mutable refinement context
 const toAppUrl = (value: string, ctx: z.RefinementCtx): URL => {
 	const url = parseUrl(value);
 	if (

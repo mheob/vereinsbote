@@ -69,8 +69,7 @@ function createSmtpMailer(smtpUrl: string, from: string): SystemMailer {
  * @param env The validated environment.
  * @returns The mailer.
  */
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Env holds a URL and a Uint8Array, which cannot be readonly
-function createSystemMailer(env: Readonly<Env>): SystemMailer {
+function createSystemMailer(env: Env): SystemMailer {
 	if (
 		import.meta.env.VITE_VB_PLATFORM !== 'cloudflare' &&
 		import.meta.env.VITE_VB_PLATFORM !== 'vercel' &&

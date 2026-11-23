@@ -61,7 +61,6 @@ async function setupCapturing(extraEnv: Readonly<Record<string, string>> = {}): 
  * @param ip The client address the proxy reports.
  * @returns The HTTP status of the response.
  */
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- the Better Auth instance is mutable
 async function requestLinkOverHttp(auth: Auth, email: string, ip = '203.0.113.7'): Promise<number> {
 	const request = new Request(`${APP_URL}/api/auth/sign-in/magic-link`, {
 		body: JSON.stringify({ email }),
@@ -97,7 +96,6 @@ function lastToken(sent: readonly Readonly<SystemMail>[]): string {
  * @param used The paths the app serves on purpose.
  * @returns The paths that are open without a reason.
  */
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- the Better Auth instance is mutable
 function openUnusedPaths(auth: Auth, used: ReadonlySet<string>): string[] {
 	const disabled = new Set(auth.options.disabledPaths);
 	const open: string[] = [];
@@ -116,7 +114,6 @@ function openUnusedPaths(auth: Auth, used: ReadonlySet<string>): string[] {
  * @param db The database.
  * @param seconds How far to move the windows back.
  */
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Drizzle clients are mutable class instances
 async function ageWindows(db: Db, seconds: number): Promise<void> {
 	await db
 		.update(loginLinkWindow)
@@ -130,8 +127,7 @@ async function ageWindows(db: Db, seconds: number): Promise<void> {
  * @param email The normalized address.
  * @returns The HMAC of the address.
  */
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Env holds a URL and a Uint8Array, which cannot be readonly
-async function windowHash(env: Readonly<Env>, email: string): Promise<string> {
+async function windowHash(env: Env, email: string): Promise<string> {
 	return hashLoginWindowEmail(await deriveLoginWindowKey(env.appSecret), email);
 }
 
@@ -149,7 +145,7 @@ const cookieHeaders = (setCookie: string): Headers =>
  * @returns The user id and request headers carrying the session cookie.
  */
 async function signIn(
-	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Drizzle and Better Auth instances are mutable
+	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Setup holds the Drizzle client and the auth instance
 	{ auth, db, mailer }: Readonly<Setup>,
 	input: Readonly<{ email: string; isAdmin?: boolean }>,
 ): Promise<{ headers: Headers; id: string }> {

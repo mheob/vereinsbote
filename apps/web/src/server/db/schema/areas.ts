@@ -1,4 +1,3 @@
-/* oxlint-disable typescript/prefer-readonly-parameter-types -- Drizzle passes mutable table builders to the schema callbacks */
 import {
 	check,
 	pgTable,

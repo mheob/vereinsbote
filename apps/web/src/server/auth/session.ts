@@ -19,7 +19,6 @@ interface SessionUser {
  * @param headers The request headers with the session cookie.
  * @returns The user, or null without a valid session or when the user is disabled.
  */
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Drizzle clients and Headers are mutable class instances
 async function getSessionUser(auth: Auth, db: Db, headers: Headers): Promise<SessionUser | null> {
 	const current = await auth.api.getSession({ headers });
 	if (current === null) return null;

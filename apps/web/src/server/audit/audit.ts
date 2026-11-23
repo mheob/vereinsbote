@@ -26,7 +26,6 @@ interface AuditEntry {
  * @param db The database.
  * @param entry What happened; `at` defaults to now.
  */
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Drizzle clients are mutable class instances
 async function writeAudit(db: Db, entry: AuditEntry): Promise<void> {
 	await db.insert(auditLog).values({
 		action: entry.action,

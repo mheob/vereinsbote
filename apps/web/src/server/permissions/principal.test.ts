@@ -8,7 +8,6 @@ import { insertUser } from '@/server/users/repo';
 import { assertAdmin, assertArea, canAccessArea, ForbiddenError, loadPrincipal } from './principal';
 import type { Principal } from './principal';
 
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Drizzle clients are mutable class instances
 async function insertArea(db: Db, name: string): Promise<string> {
 	const [area] = await db.insert(areas).values({ name }).returning({ id: areas.id });
 	if (!area) {
@@ -17,7 +16,6 @@ async function insertArea(db: Db, name: string): Promise<string> {
 	return area.id;
 }
 
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Drizzle clients are mutable class instances
 async function principalOf(db: Db, userId: string): Promise<Principal> {
 	const p = await loadPrincipal(db, userId);
 	if (!p) {

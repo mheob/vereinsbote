@@ -17,7 +17,6 @@ const LocaleContext = createContext<Locale>(DEFAULT_LOCALE);
  * @param props.children The components that read it.
  * @returns The provider.
  */
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- ReactNode cannot be made deeply readonly.
 export function LocaleProvider({
 	locale,
 	children,

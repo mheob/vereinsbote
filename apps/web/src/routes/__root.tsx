@@ -24,7 +24,6 @@ const loadLocale = createServerFn({ method: 'GET' }).handler(async () => {
 });
 
 export const Route = createRootRoute({
-	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- the head context is TanStack Router's type
 	head: ({ loaderData }) => ({
 		links: [{ href: appCss, rel: 'stylesheet' }],
 		meta: [
@@ -37,7 +36,7 @@ export const Route = createRootRoute({
 	// Loader data is part of the SSR payload, so hydration renders the language the server chose.
 	loader: async () => loadLocale(),
 	// The name gives React a component (hooks rules, DevTools); TanStack Router names the property.
-	// oxlint-disable-next-line func-name-matching, typescript/prefer-readonly-parameter-types -- see above; ReactNode cannot be made deeply readonly
+	// oxlint-disable-next-line func-name-matching -- see above; ReactNode cannot be made deeply readonly
 	shellComponent: function RootShell({ children }: Readonly<{ children: ReactNode }>): ReactNode {
 		const { locale } = useLoaderData({ from: '__root__' });
 		return (

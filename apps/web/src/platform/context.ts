@@ -40,7 +40,6 @@ type EnvSource = Readonly<Record<string, string | undefined>>;
 
 interface CloudflareWorkers {
 	env: EnvSource;
-	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- a promise cannot be made readonly
 	waitUntil: (promise: Promise<unknown>) => void;
 }
 
@@ -100,7 +99,6 @@ function hasWaitUntil(request: object): request is WaitUntilRequest {
  *
  * @param promise The work to finish after the response.
  */
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- a promise cannot be made readonly
 function runAfterResponse(promise: Promise<unknown>): void {
 	const request = currentRequest();
 	if (request !== null && hasWaitUntil(request)) request.waitUntil(promise);
@@ -120,9 +118,7 @@ function runAfterResponse(promise: Promise<unknown>): void {
  * @returns The database and its auth instance.
  */
 async function bindAuth(
-	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Env holds a URL and a Uint8Array, which cannot be readonly
-	{ env, mailer, runInBackground }: Readonly<IsolateServices>,
-	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Drizzle clients are mutable class instances
+	{ env, mailer, runInBackground }: IsolateServices,
 	{ db, end }: Readonly<DbHandle>,
 ): Promise<DbServices> {
 	try {
@@ -166,7 +162,6 @@ async function createIsolateServices(): Promise<IsolateServices> {
 		return {
 			env,
 			mailer: createSystemMailer(env),
-			// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- a promise cannot be made readonly
 			runInBackground(promise) {
 				workers.waitUntil(promise);
 			},
@@ -184,7 +179,6 @@ const requestServices = createRequestScope<DbServices>({
 		const handle = await openDb(isolate.env.databaseUrl, 'neon');
 		return { end: handle.end, value: await bindAuth(isolate, handle) };
 	},
-	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- a promise cannot be made readonly
 	async waitUntil(promise) {
 		const workers = await loadWorkers();
 		workers.waitUntil(promise);

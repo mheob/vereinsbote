@@ -13,7 +13,6 @@ const buttonClass =
  * @param props.children The label.
  * @returns The button.
  */
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- ReactNode cannot be made deeply readonly.
 export function SubmitButton({ children }: Readonly<{ children: ReactNode }>): ReactNode {
 	const { pending } = useFormStatus();
 	return (

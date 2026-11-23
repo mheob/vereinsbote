@@ -38,7 +38,6 @@ const userRecord = {
  * @returns The id of the new user.
  */
 async function insertUser(
-	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Drizzle clients are mutable class instances
 	db: Db,
 	input: Readonly<{
 		email: string;
@@ -70,7 +69,6 @@ async function insertUser(
  * @returns The user, or null when no user has this address.
  */
 async function findUserByEmail(
-	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Drizzle clients are mutable class instances
 	db: Db,
 	email: string,
 ): Promise<{ id: string; status: UserStatus; isAdmin: boolean; locale: Locale } | null> {
@@ -88,7 +86,6 @@ async function findUserByEmail(
  * @param id The user id.
  * @returns The user, or null when there is none.
  */
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Drizzle clients are mutable class instances
 async function findUserById(db: Db, id: string): Promise<UserRecord | null> {
 	const [row] = await db.select(userRecord).from(user).where(eq(user.id, id));
 	return row ?? null;
@@ -100,7 +97,6 @@ async function findUserById(db: Db, id: string): Promise<UserRecord | null> {
  * @param db The database.
  * @param id The user id.
  */
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Drizzle clients are mutable class instances
 async function activateInvitedUser(db: Db, id: string): Promise<void> {
 	await db
 		.update(user)
@@ -115,7 +111,6 @@ async function activateInvitedUser(db: Db, id: string): Promise<void> {
  * @param id The user id.
  * @param locale The language.
  */
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Drizzle clients are mutable class instances
 async function setUserLocale(db: Db, id: string, locale: Locale): Promise<void> {
 	await db.update(user).set({ locale }).where(eq(user.id, id));
 }
@@ -126,7 +121,6 @@ async function setUserLocale(db: Db, id: string, locale: Locale): Promise<void> 
  * @param db The database.
  * @param userId The user id.
  */
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Drizzle clients are mutable class instances
 async function revokeSessions(db: Db, userId: string): Promise<void> {
 	await db.delete(session).where(eq(session.userId, userId));
 }

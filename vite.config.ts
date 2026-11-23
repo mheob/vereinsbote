@@ -45,6 +45,34 @@ export default defineConfig({
 				'error',
 				{ patterns: [{ group: ['../**'], message: 'Use the @/ alias' }] },
 			],
+			// Strict for plain data. The allowed types are opaque or mutable by design and cannot be made
+			// deeply readonly: DOM/platform handles, the Drizzle client, Better Auth's instance, zod's
+			// refinement context, React nodes and the app's service bundles that hold such objects.
+			// Names are matched as written, so a parameter typed `Readonly<Env>` is not covered: write `Env`.
+			'typescript/prefer-readonly-parameter-types': [
+				'error',
+				{
+					allow: [
+						{
+							from: 'lib',
+							name: ['CryptoKey', 'Uint8Array', 'Request', 'Response', 'Headers', 'URL'],
+						},
+						'$RefinementCtx',
+						'Auth',
+						'AuthDeps',
+						'Db',
+						'Env',
+						'IsolateServices',
+						'ReactNode',
+						'ReadableStream',
+						'RefinementCtx',
+					],
+					// Callbacks whose parameter types come from a library (Drizzle builders, hooks, handlers).
+					ignoreInferredTypes: true,
+					// `ReadonlyMap`, `ReadonlySet` and `Principal`: their methods are not mutation.
+					treatMethodsAsReadonly: true,
+				},
+			],
 			'vite-plus/prefer-vite-plus-imports': 'error',
 		},
 	},

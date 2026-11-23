@@ -25,7 +25,6 @@ class ForbiddenError extends Error {
  * @param userId The id of the user.
  * @returns The principal, or null for an unknown or disabled user.
  */
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Drizzle clients are mutable class instances
 async function loadPrincipal(db: Db, userId: string): Promise<Principal | null> {
 	const [row] = await db
 		.select({ isAdmin: user.isAdmin, status: user.status })
@@ -53,7 +52,6 @@ async function loadPrincipal(db: Db, userId: string): Promise<Principal | null> 
  * @param need The required level.
  * @returns True when allowed.
  */
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- ReadonlyMap still counts as mutable for this rule
 function canAccessArea(p: Principal, areaId: string, need: AccessLevel): boolean {
 	return levelAtLeast(p.areas.get(areaId) ?? null, need);
 }
@@ -66,7 +64,6 @@ function canAccessArea(p: Principal, areaId: string, need: AccessLevel): boolean
  * @param need The required level.
  * @throws {ForbiddenError} When the principal lacks the level.
  */
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- ReadonlyMap still counts as mutable for this rule
 function assertArea(p: Principal, areaId: string, need: AccessLevel): void {
 	if (!canAccessArea(p, areaId, need)) {
 		throw new ForbiddenError('Forbidden');
@@ -79,7 +76,6 @@ function assertArea(p: Principal, areaId: string, need: AccessLevel): void {
  * @param p The principal.
  * @throws {ForbiddenError} When the principal is no admin.
  */
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- ReadonlyMap still counts as mutable for this rule
 function assertAdmin(p: Principal): void {
 	if (!p.isAdmin) {
 		throw new ForbiddenError('Forbidden');

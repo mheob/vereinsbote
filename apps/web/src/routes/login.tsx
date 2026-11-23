@@ -51,7 +51,6 @@ async function postToAuth(path: string, body: Readonly<Record<string, string>>):
  * @param response The response that is not ok.
  * @returns The message.
  */
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Response cannot be made readonly
 function failureMessage(response: Response): StatusMessage {
 	return response.status === HTTP_TOO_MANY_REQUESTS
 		? { key: 'auth.tooManyRequests' }
@@ -64,7 +63,6 @@ function failureMessage(response: Response): StatusMessage {
  * @param formData The submitted e-mail form.
  * @returns The message for the status region.
  */
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- FormData cannot be made readonly
 async function requestLink(formData: FormData): Promise<StatusMessage> {
 	const entered = formData.get('email');
 	const email = normalizeEmail(typeof entered === 'string' ? entered : '');
@@ -110,7 +108,6 @@ async function startMicrosoftSignIn(): Promise<StatusMessage> {
  * @param formData The submitted form.
  * @returns The message for the status region.
  */
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- FormData cannot be made readonly
 async function loginAction(_previous: StatusMessage, formData: FormData): Promise<StatusMessage> {
 	return formData.get('intent') === 'microsoft' ? startMicrosoftSignIn() : requestLink(formData);
 }

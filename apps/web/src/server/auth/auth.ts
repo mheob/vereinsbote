@@ -84,7 +84,6 @@ const DISABLED_PATHS = [
 ];
 
 /** Keeps a promise running after the response, like `waitUntil`. */
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- a promise cannot be made readonly
 type BackgroundRunner = (promise: Promise<unknown>) => void;
 
 interface AuthDeps {
@@ -123,7 +122,6 @@ function logSendFailure(error: unknown): void {
  *
  * @param promise The work to finish after the response.
  */
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- a promise cannot be made readonly
 function runDetached(promise: Promise<unknown>): void {
 	// oxlint-disable-next-line promise/prefer-await-to-then -- nothing awaits a detached promise
 	promise.catch(logSendFailure);
@@ -163,11 +161,7 @@ async function sendLoginLink(
  * @param emailHash The HMAC of the normalized address.
  * @returns True when this request opened the window.
  */
-async function openLoginLinkWindow(
-	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Drizzle clients are mutable class instances
-	db: Db,
-	emailHash: string,
-): Promise<boolean> {
+async function openLoginLinkWindow(db: Db, emailHash: string): Promise<boolean> {
 	const opened = await db
 		.insert(loginLinkWindow)
 		.values({ emailHash, openedAt: sql`now()` })
@@ -195,9 +189,7 @@ async function openLoginLinkWindow(
  * @returns The callback for the magic link plugin.
  */
 function createLinkSender(
-	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Drizzle clients are mutable class instances
-	{ db, mailer, runInBackground = runDetached }: Readonly<AuthDeps>,
-	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- CryptoKey is an opaque DOM handle
+	{ db, mailer, runInBackground = runDetached }: AuthDeps,
 	windowKey: CryptoKey,
 ): (data: Readonly<{ email: string; url: string }>) => Promise<void> {
 	return async ({ email, url }) => {
@@ -236,8 +228,8 @@ function socialProviders(microsoftLogin: Readonly<Env['microsoftLogin']>): Socia
 }
 
 // The instance type is inferred from these options; `Auth` is derived from this function.
-// oxlint-disable-next-line typescript/explicit-function-return-type, typescript/prefer-readonly-parameter-types -- see above; Drizzle clients are mutable
-function buildAuth(deps: Readonly<AuthDeps>, secret: string, windowKey: CryptoKey) {
+// oxlint-disable-next-line typescript/explicit-function-return-type -- see above; Drizzle clients are mutable
+function buildAuth(deps: AuthDeps, secret: string, windowKey: CryptoKey) {
 	const { db, env } = deps;
 	return betterAuth({
 		account: {
@@ -258,12 +250,10 @@ function buildAuth(deps: Readonly<AuthDeps>, secret: string, windowKey: CryptoKe
 			session: {
 				create: {
 					// The first session of an invited user activates the user.
-					// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- the hook signature is Better Auth's
 					async after(created) {
 						await activateInvitedUser(db, created.userId);
 					},
 					// Disabled users get no session, whatever the way they sign in.
-					// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- the hook signature is Better Auth's
 					async before(data) {
 						const found = await findUserById(db, data.userId);
 						return found !== null && found.status !== 'disabled';
@@ -320,8 +310,7 @@ type Auth = ReturnType<typeof buildAuth>;
  *   sends them after the response.
  * @returns The auth instance.
  */
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Drizzle clients are mutable class instances
-async function createAuth(deps: Readonly<AuthDeps>): Promise<Auth> {
+async function createAuth(deps: AuthDeps): Promise<Auth> {
 	const [secret, windowKey] = await Promise.all([
 		deriveAuthSecret(deps.env.appSecret),
 		deriveLoginWindowKey(deps.env.appSecret),
@@ -335,7 +324,6 @@ async function createAuth(deps: Readonly<AuthDeps>): Promise<Auth> {
  * @param auth The auth instance.
  * @param email The address as typed.
  */
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- the Better Auth instance is mutable
 async function requestLoginLink(auth: Auth, email: string): Promise<void> {
 	await auth.api.signInMagicLink({
 		body: {
@@ -356,7 +344,6 @@ async function requestLoginLink(auth: Auth, email: string): Promise<void> {
  * @throws {LoginLinkInvalidError} When the link is unknown, expired, used or its user is disabled.
  */
 async function verifyLoginLink(
-	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- the Better Auth instance is mutable
 	auth: Auth,
 	token: string,
 ): Promise<{ userId: string; setCookie: string }> {

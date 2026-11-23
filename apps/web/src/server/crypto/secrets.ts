@@ -16,7 +16,6 @@ class SecretDecryptError extends Error {
 const encoder = new TextEncoder();
 const decoder = new TextDecoder('utf-8', { fatal: true });
 
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- typed arrays cannot be readonly
 const toBase64Url = (bytes: Uint8Array): string => {
 	let binary = '';
 	for (const byte of bytes) binary += String.fromCodePoint(byte);
@@ -41,13 +40,11 @@ const hkdfParams = (info: string): HkdfParams => ({
 });
 
 const importHkdfKey = async (
-	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- typed arrays cannot be readonly
 	appSecret: Uint8Array,
 	usage: 'deriveBits' | 'deriveKey',
 ): Promise<CryptoKey> =>
 	globalThis.crypto.subtle.importKey('raw', Uint8Array.from(appSecret), 'HKDF', false, [usage]);
 
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- typed arrays cannot be readonly
 const deriveSecretsKey = async (appSecret: Uint8Array): Promise<CryptoKey> =>
 	globalThis.crypto.subtle.deriveKey(
 		hkdfParams(SECRETS_INFO),
@@ -57,7 +54,6 @@ const deriveSecretsKey = async (appSecret: Uint8Array): Promise<CryptoKey> =>
 		['encrypt', 'decrypt'],
 	);
 
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- typed arrays cannot be readonly
 const deriveAuthSecret = async (appSecret: Uint8Array): Promise<string> => {
 	const bits = await globalThis.crypto.subtle.deriveBits(
 		hkdfParams(AUTH_INFO),
@@ -68,7 +64,6 @@ const deriveAuthSecret = async (appSecret: Uint8Array): Promise<string> => {
 };
 
 // The key for `hashLoginWindowEmail`: HMAC-SHA256, sign only, not extractable.
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- typed arrays cannot be readonly
 const deriveLoginWindowKey = async (appSecret: Uint8Array): Promise<CryptoKey> =>
 	globalThis.crypto.subtle.deriveKey(
 		hkdfParams(LOGIN_WINDOW_INFO),
@@ -79,13 +74,11 @@ const deriveLoginWindowKey = async (appSecret: Uint8Array): Promise<CryptoKey> =
 	);
 
 // Keys the login link window of an address without storing the address: HMAC-SHA256, base64url.
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- CryptoKey is an opaque DOM handle
 const hashLoginWindowEmail = async (key: CryptoKey, email: string): Promise<string> => {
 	const signature = await globalThis.crypto.subtle.sign('HMAC', key, encoder.encode(email));
 	return toBase64Url(new Uint8Array(signature));
 };
 
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- CryptoKey is an opaque DOM handle
 const encryptSecret = async (plaintext: string, key: CryptoKey): Promise<string> => {
 	const iv = globalThis.crypto.getRandomValues(new Uint8Array(IV_BYTES));
 	const ciphertext = await globalThis.crypto.subtle.encrypt(
@@ -97,7 +90,6 @@ const encryptSecret = async (plaintext: string, key: CryptoKey): Promise<string>
 };
 
 // Every failure surfaces as SecretDecryptError; its message never contains token or plaintext.
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- CryptoKey is an opaque DOM handle
 const decryptSecret = async (token: string, key: CryptoKey): Promise<string> => {
 	const [version, ivPart, ciphertextPart, ...rest] = token.split('.');
 	if (version !== TOKEN_VERSION || rest.length > 0 || ciphertextPart === undefined) {
