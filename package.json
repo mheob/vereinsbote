@@ -6,6 +6,7 @@
 	"scripts": {
 		"check": "vp check",
 		"check:catalog": "node scripts/check-catalog.ts",
+		"check:vite-plus": "node scripts/check-vite-plus-versions.ts",
 		"commit": "czg",
 		"prepare": "vp config",
 		"test": "vp test"

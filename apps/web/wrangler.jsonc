@@ -7,4 +7,8 @@
 	"compatibility_flags": ["nodejs_compat"],
 	// The tick, every 15 minutes (Spec 6.6).
 	"triggers": { "crons": ["*/15 * * * *"] },
+	// The settings of apps/web/.env.example are secrets of the Worker, never part of this file:
+	// `wrangler secret put DATABASE_URL` (likewise APP_URL, APP_SECRET, CRON_SECRET and the optional
+	// ones). Deploy with `vp run --filter web build:cloudflare`, then `vp run --filter web
+	// deploy:cloudflare`, which migrates the database first (DATABASE_URL in the shell).
 }

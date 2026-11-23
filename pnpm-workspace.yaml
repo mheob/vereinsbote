@@ -4,6 +4,7 @@ packages:
 catalogMode: strict
 
 catalog:
+  "@axe-core/playwright": ^4.14.0
   "@cloudflare/vite-plugin": ^1.70.1
   "@commitlint/cli": ^21.2.4
   "@electric-sql/pglite": ^0.6.0
@@ -50,10 +51,26 @@ overrides:
   vite@*: "catalog:"
   vitest@*: "catalog:"
 
+# Supply-chain protection, all supported by pnpm 12:
+# A dependency's install script runs only when `allowBuilds` lists it; any other fails the install.
+strictDepBuilds: true
 allowBuilds:
   esbuild: true
   workerd: true
 
+# Transitive dependencies come from the registry only, never from Git or tarball URLs.
+blockExoticSubdeps: true
+
+# Refuses a version that is published with less trust than an earlier one (e.g. without provenance).
+trustPolicy: no-downgrade
+trustPolicyExclude:
+  # Pinned by vite-plus 1.7.0. Flagged as a downgrade, but it comes from the same trusted publisher,
+  # repository and release workflow as the versions before it, with provenance (checked 2026-11-23).
+  - "tsrs@7.1.0-beta.tsrs2"
+
+# Installs only versions that are at least a day (1440 minutes) old, so a compromised release is
+# usually unpublished before it arrives here. The exceptions are pinned on purpose.
+minimumReleaseAge: 1440
 minimumReleaseAgeExclude:
   - "@electric-sql/pglite@0.6.0"
   - "@mheob/*"

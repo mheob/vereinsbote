@@ -9,6 +9,11 @@ dist
 .wrangler
 .tanstack
 
+# Playwright output
+test-results
+playwright-report
+blob-report
+
 # Environment, only the example is committed
 .env*
 !.env.example

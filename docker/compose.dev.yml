@@ -1,0 +1,43 @@
+# Services for local development and the end-to-end tests:
+#   docker compose -f docker/compose.dev.yml up -d
+# PostgreSQL matches DATABASE_URL in apps/web/.env.example; the end-to-end tests use a database
+# of their own, `vereinsbote_e2e`, since they wipe it on every run. Mailpit catches every mail the
+# app sends through DEV_SMTP_URL=smtp://localhost:1025; its inbox is at http://localhost:8025.
+# All ports are bound to this machine only.
+name: vereinsbote-dev
+
+configs:
+  # Runs only when the data volume is created; after `down -v` it runs again.
+  create-e2e-database:
+    content: |
+      CREATE DATABASE vereinsbote_e2e;
+
+services:
+  postgres:
+    image: postgres:19@sha256:766ddae4967301b9802b341bb596905f11dd5c558149690a7a4d80c2f61bbcf9
+    configs:
+      - source: create-e2e-database
+        target: /docker-entrypoint-initdb.d/create-e2e-database.sql
+    environment:
+      POSTGRES_DB: vereinsbote
+      POSTGRES_PASSWORD: vereinsbote
+      POSTGRES_USER: vereinsbote
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready --username=vereinsbote --dbname=vereinsbote"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      # Since PostgreSQL 18 the image keeps its data below /var/lib/postgresql/<major>/.
+      - postgres-data:/var/lib/postgresql
+
+  mailpit:
+    image: axllent/mailpit:v1.34.0@sha256:23a2ef85bc50853ab3093645d1d64679afd8887e89da5e48a88940c172591a4e
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+
+volumes:
+  postgres-data:

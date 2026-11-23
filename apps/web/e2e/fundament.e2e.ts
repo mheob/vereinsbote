@@ -1,0 +1,64 @@
+import { expect, test } from '@playwright/test';
+
+import { E2E_SETUP_TOKEN } from './env';
+import { expectNoA11yViolations } from './helpers/a11y';
+import { latestLink } from './helpers/mailpit';
+
+/*
+ * The forms submit through React, so their buttons stay pending (`aria-disabled`) until the page
+ * is hydrated. The tests wait for an enabled button before they type, so no input gets lost.
+ * Actions that save in the background are awaited through the page's status message.
+ */
+
+// oxlint-disable-next-line max-statements -- one flow through the app, step by step, as two users see it
+test('setup, invitation, sign-in, permissions and blocking', async ({ page, browser }) => {
+	await page.goto('/setup');
+	await expect(page.getByRole('button', { name: 'Einrichtung abschließen' })).toBeEnabled();
+	await expectNoA11yViolations(page);
+	await page.getByLabel('Einrichtungs-Token').fill(E2E_SETUP_TOKEN);
+	await page.getByLabel('Name').fill('Alex Admin');
+	await page.getByLabel('E-Mail').fill('admin@verein.test');
+	await page.getByRole('button', { name: 'Einrichtung abschließen' }).click();
+	await expect(page).toHaveURL(/\/admin\/users$/u);
+	await expect(page.getByRole('heading', { exact: true, name: 'Benutzer' })).toBeVisible();
+	await expectNoA11yViolations(page);
+
+	await page.getByLabel('Name').fill('Kim');
+	await page.getByLabel('E-Mail').fill('kim@verein.test');
+	await page.getByRole('button', { name: 'Einladen' }).click();
+	await page.getByLabel('Finanzen für Kim').click();
+	await page.getByRole('option', { name: 'Lesen' }).click();
+	await expect(page.getByRole('status')).toHaveText('Finanzen für Kim: Lesen');
+	expect(await latestLink('kim@verein.test', /\/login/u)).toMatch(/\/login$/u);
+
+	const kimContext = await browser.newContext();
+	const kim = await kimContext.newPage();
+	await kim.goto('/login');
+	await expect(kim.getByRole('button', { name: 'Anmeldelink anfordern' })).toBeEnabled();
+	await expectNoA11yViolations(kim);
+	await kim.getByLabel('E-Mail').fill(' Kim@Verein.test');
+	await kim.getByRole('button', { name: 'Anmeldelink anfordern' }).click();
+	await kim.goto(await latestLink('kim@verein.test', /magic-link/u));
+	await expect(kim.getByRole('heading', { name: 'Deine Bereiche' })).toBeVisible();
+	await expectNoA11yViolations(kim);
+	await expect(kim.getByText('Finanzen – Lesen')).toBeVisible();
+	await expect(kim.getByText(/Mitglieder/u)).toHaveCount(0);
+	await kim.goto('/admin/users');
+	await expect(kim.getByRole('heading', { name: 'Kein Zugriff' })).toBeVisible();
+
+	await page.getByRole('row', { name: /Kim/u }).getByRole('button', { name: 'Sperren' }).click();
+	await page.getByRole('button', { name: 'Ja, sperren' }).click();
+	await expect(page.getByRole('status')).toHaveText('Kim wurde gesperrt.');
+	await kim.goto('/');
+	await expect(kim).toHaveURL(/\/login$/u);
+	await kimContext.close();
+});
+
+test('switches the sign-in page to English', async ({ page }) => {
+	await page.goto('/login');
+	await expect(page.getByRole('button', { name: 'Anmeldelink anfordern' })).toBeEnabled();
+	await page.getByRole('button', { name: 'English' }).click();
+	await expect(page.getByRole('button', { name: 'Request sign-in link' })).toBeVisible();
+	await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+	await expectNoA11yViolations(page);
+});
