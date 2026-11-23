@@ -1,7 +1,7 @@
 import { eq, sql } from 'drizzle-orm';
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 
-import { t } from '@/i18n/t';
+import { translate } from '@/i18n/translate';
 import { deriveLoginWindowKey, hashLoginWindowEmail } from '@/server/crypto/secrets';
 import type { Db } from '@/server/db/client';
 import { loginLinkWindow, session, user, verification } from '@/server/db/schema';
@@ -172,13 +172,36 @@ describe('passwordless sign-in', () => {
 			await requestLoginLink(auth, ' Anna@Verein.DE');
 			expect(mailer.sent).toHaveLength(1);
 			expect(mailer.sent[0]).toMatchObject({
-				subject: t('mail.login.subject'),
+				subject: translate('de', 'mail.login.subject'),
 				to: 'anna@verein.de',
 			});
 			expect(mailer.sent[0]?.text).toContain(`${APP_URL}/`);
 			expect(mailer.sent[0]?.text).toContain(
 				'Der Link ist 15 Minuten gültig und funktioniert einmal.',
 			);
+		});
+
+		it("sends the sign-in link in the user's language", async () => {
+			const { db, mailer, auth } = await setupCapturing();
+			await insertUser(db, { email: 'kim@verein.de', locale: 'en', name: 'Kim' });
+			await requestLoginLink(auth, 'kim@verein.de');
+			expect(mailer.sent).toHaveLength(1);
+			expect(mailer.sent[0]?.subject).toBe('Your sign-in link for Vereinsbote');
+			expect(mailer.sent[0]?.text).toContain('The link is valid for 15 minutes and works once.');
+			expect(mailer.sent[0]?.text).toContain(`${APP_URL}/`);
+		});
+
+		it('sends the sign-in link in German by default', async () => {
+			const { db, mailer, auth } = await setupCapturing();
+			await insertUser(db, { email: 'anna@verein.de', name: 'Anna' });
+			await requestLoginLink(auth, 'anna@verein.de');
+			expect(mailer.sent[0]?.subject).toBe('Dein Anmeldelink für den Vereinsbote');
+		});
+
+		it('stores de as the default locale', async () => {
+			const { db } = await setup();
+			await insertUser(db, { email: 'anna@verein.de', name: 'Anna' });
+			await expect(findUserByEmail(db, 'anna@verein.de')).resolves.toMatchObject({ locale: 'de' });
 		});
 
 		it('sends a link to an active user', async () => {

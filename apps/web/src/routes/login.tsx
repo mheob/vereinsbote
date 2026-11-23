@@ -1,22 +1,26 @@
-/* oxlint-disable react/forbid-component-props -- React Aria components are styled through className */
 import { createFileRoute, useLoaderData, useSearch } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
 import { useActionState } from 'react';
 import type { ReactNode } from 'react';
-import { Button, FieldError, Form, Input, Label, TextField } from 'react-aria-components';
+import { FieldError, Form, Input, Label, TextField } from 'react-aria-components';
 import { z } from 'zod';
 
-import { t } from '@/i18n/t';
+import { SubmitButton } from '@/components/submit-button';
+import type { MessageKey, MessageParams } from '@/i18n/translate';
+import { useT } from '@/i18n/use-t';
 import { normalizeEmail } from '@/server/auth/email';
 
 /** Where Better Auth sends the user after signing in, and back to after a failure. */
 const AFTER_SIGN_IN_PATH = '/';
 const LOGIN_PATH = '/login';
-
-const buttonClass =
-	'rounded-md bg-blue-700 px-4 py-2 font-semibold text-white data-focus-visible:outline-2 data-focus-visible:outline-offset-2 data-focus-visible:outline-blue-700 data-hovered:bg-blue-800 data-pending:opacity-70';
+const HTTP_TOO_MANY_REQUESTS = 429;
 
 const socialSignInResponse = z.object({ url: z.url() });
+
+/** The text of the status region, as key and params; null shows nothing. */
+type StatusMessage = Readonly<{ key: MessageKey; params?: MessageParams }> | null;
+
+const REQUEST_FAILED: StatusMessage = { key: 'auth.requestFailed' };
 
 // Server modules are imported inside the handler, so they stay out of the client bundle.
 const loadLoginOptions = createServerFn({ method: 'GET' }).handler(async () => {
@@ -42,14 +46,26 @@ async function postToAuth(path: string, body: Readonly<Record<string, string>>):
 }
 
 /**
- * Form action of the e-mail form: requests a login link.
+ * The message for a failed response: the rate limiter's 429 gets its own.
  *
- * @param _previous The previous message (unused).
- * @param formData The submitted form.
+ * @param response The response that is not ok.
+ * @returns The message.
+ */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Response cannot be made readonly
+function failureMessage(response: Response): StatusMessage {
+	return response.status === HTTP_TOO_MANY_REQUESTS
+		? { key: 'auth.tooManyRequests' }
+		: REQUEST_FAILED;
+}
+
+/**
+ * Requests a login link for the address in the form.
+ *
+ * @param formData The submitted e-mail form.
  * @returns The message for the status region.
  */
 // oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- FormData cannot be made readonly
-async function requestLinkAction(_previous: string, formData: FormData): Promise<string> {
+async function requestLink(formData: FormData): Promise<StatusMessage> {
 	const entered = formData.get('email');
 	const email = normalizeEmail(typeof entered === 'string' ? entered : '');
 	try {
@@ -58,42 +74,55 @@ async function requestLinkAction(_previous: string, formData: FormData): Promise
 			email,
 			errorCallbackURL: LOGIN_PATH,
 		});
-		return response.ok ? t('auth.linkSent', { email }) : t('auth.requestFailed');
+		return response.ok ? { key: 'auth.linkSent', params: { email } } : failureMessage(response);
 	} catch {
-		return t('auth.requestFailed');
+		return REQUEST_FAILED;
 	}
 }
 
 /**
- * Form action of the Microsoft button: starts the sign-in the way the Better Auth client does,
- * then follows its redirect to Microsoft.
+ * Starts the Microsoft sign-in the way the Better Auth client does, then follows its redirect to
+ * Microsoft.
  *
- * @returns An empty message on success, the failure message otherwise.
+ * @returns No message on success (the page leaves), the failure message otherwise.
  */
-async function microsoftAction(): Promise<string> {
+async function startMicrosoftSignIn(): Promise<StatusMessage> {
 	try {
 		const response = await postToAuth('/sign-in/social', {
 			callbackURL: AFTER_SIGN_IN_PATH,
 			errorCallbackURL: LOGIN_PATH,
 			provider: 'microsoft',
 		});
-		if (!response.ok) return t('auth.requestFailed');
+		if (!response.ok) return failureMessage(response);
 		const { url } = socialSignInResponse.parse(await response.json());
 		globalThis.location.assign(url);
-		return '';
+		return null;
 	} catch {
-		return t('auth.requestFailed');
+		return REQUEST_FAILED;
 	}
+}
+
+/**
+ * The one action of both forms, so the status region has one message and the last action
+ * replaces it. The Microsoft form says so in its hidden `intent` field.
+ *
+ * @param _previous The previous message (replaced).
+ * @param formData The submitted form.
+ * @returns The message for the status region.
+ */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- FormData cannot be made readonly
+async function loginAction(_previous: StatusMessage, formData: FormData): Promise<StatusMessage> {
+	return formData.get('intent') === 'microsoft' ? startMicrosoftSignIn() : requestLink(formData);
 }
 
 export const Route = createFileRoute('/login')({
 	// The name gives React a component (hooks rules, DevTools); TanStack Router names the property.
 	// oxlint-disable-next-line func-name-matching -- see above
 	component: function LoginPage(): ReactNode {
+		const t = useT();
 		const { microsoft } = useLoaderData({ from: '/login' });
 		const { error } = useSearch({ from: '/login' });
-		const [linkMessage, submitEmail, isRequesting] = useActionState(requestLinkAction, '');
-		const [microsoftMessage, submitMicrosoft, isRedirecting] = useActionState(microsoftAction, '');
+		const [message, submit] = useActionState(loginAction, null);
 
 		return (
 			<div className="mx-auto flex max-w-md flex-col gap-6 p-6">
@@ -103,7 +132,7 @@ export const Route = createFileRoute('/login')({
 						{t('auth.signInFailed')}
 					</p>
 				)}
-				<Form action={submitEmail} className="flex flex-col gap-4">
+				<Form action={submit} className="flex flex-col gap-4">
 					<TextField
 						autoComplete="email"
 						className="flex flex-col gap-1"
@@ -115,20 +144,15 @@ export const Route = createFileRoute('/login')({
 						<Input className="rounded-md border border-gray-600 px-3 py-2 data-focused:outline-2 data-focused:outline-offset-2 data-focused:outline-blue-700" />
 						<FieldError className="text-sm text-red-700" />
 					</TextField>
-					<Button className={buttonClass} isPending={isRequesting} type="submit">
-						{t('auth.requestLink')}
-					</Button>
+					<SubmitButton>{t('auth.requestLink')}</SubmitButton>
 				</Form>
 				{microsoft ? (
-					<Form action={submitMicrosoft}>
-						<Button className={buttonClass} isPending={isRedirecting} type="submit">
-							{t('auth.microsoft')}
-						</Button>
+					<Form action={submit}>
+						<input name="intent" type="hidden" value="microsoft" />
+						<SubmitButton>{t('auth.microsoft')}</SubmitButton>
 					</Form>
 				) : null}
-				<output aria-live="polite">
-					{microsoftMessage === '' ? linkMessage : microsoftMessage}
-				</output>
+				<output aria-live="polite">{message === null ? '' : t(message.key, message.params)}</output>
 			</div>
 		);
 	},

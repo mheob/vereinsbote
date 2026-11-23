@@ -13,10 +13,12 @@ import {
 import { relations } from 'drizzle-orm/relations';
 import { sql } from 'drizzle-orm/sql';
 
+import { DEFAULT_LOCALE, SUPPORTED_LOCALES } from '@/i18n/locale';
+
 /*
  * The tables of Better Auth (user, session, account, verification, rate_limit) with the columns it expects,
- * plus the app's own user columns `is_admin` and `status`. Better Auth reads and writes these
- * through its Drizzle adapter; it can never set `is_admin` or `status` (see `createAuth`).
+ * plus the app's own user columns `is_admin`, `status` and `locale`. Better Auth reads and writes
+ * these through its Drizzle adapter; it can never set `is_admin` or `status` (see `createAuth`).
  */
 
 /** `invited` until the first sign-in, then `active`; `disabled` users cannot sign in. */
@@ -35,6 +37,8 @@ export const user = pgTable(
 			.$defaultFn(() => crypto.randomUUID()),
 		image: text('image'),
 		isAdmin: boolean('is_admin').notNull().default(false),
+		/** The language of the user's system mails, set by the language switcher. */
+		locale: text('locale', { enum: SUPPORTED_LOCALES }).notNull().default(DEFAULT_LOCALE),
 		name: text('name').notNull(),
 		status: text('status', { enum: userStatuses }).notNull().default('invited'),
 		updatedAt: timestamp('updated_at', { withTimezone: true })
@@ -45,6 +49,7 @@ export const user = pgTable(
 	(table) => [
 		uniqueIndex('user_email_lower_idx').on(sql`lower(${table.email})`),
 		check('user_status_check', sql`${table.status} in ('invited', 'active', 'disabled')`),
+		check('user_locale_check', sql`${table.locale} in ('de', 'en')`),
 	],
 );
 

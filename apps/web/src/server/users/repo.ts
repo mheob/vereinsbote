@@ -1,5 +1,7 @@
 import { and, eq, sql } from 'drizzle-orm';
 
+import { DEFAULT_LOCALE } from '@/i18n/locale';
+import type { Locale } from '@/i18n/locale';
 import { normalizeEmail } from '@/server/auth/email';
 import type { Db } from '@/server/db/client';
 import { session, user } from '@/server/db/schema';
@@ -13,12 +15,15 @@ interface UserRecord {
 	name: string;
 	isAdmin: boolean;
 	status: UserStatus;
+	/** The language of the user's system mails. */
+	locale: Locale;
 }
 
 const userRecord = {
 	email: user.email,
 	id: user.id,
 	isAdmin: user.isAdmin,
+	locale: user.locale,
 	name: user.name,
 	status: user.status,
 };
@@ -28,19 +33,27 @@ const userRecord = {
  * on the unique index on `lower(email)`.
  *
  * @param db The database.
- * @param input The user's address and name; `isAdmin` defaults to false, `status` to `invited`.
+ * @param input The user's address and name; `isAdmin` defaults to false, `status` to `invited`,
+ *   `locale` to `de`.
  * @returns The id of the new user.
  */
 async function insertUser(
 	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Drizzle clients are mutable class instances
 	db: Db,
-	input: Readonly<{ email: string; name: string; isAdmin?: boolean; status?: UserStatus }>,
+	input: Readonly<{
+		email: string;
+		name: string;
+		isAdmin?: boolean;
+		status?: UserStatus;
+		locale?: Locale;
+	}>,
 ): Promise<{ id: string }> {
 	const [row] = await db
 		.insert(user)
 		.values({
 			email: normalizeEmail(input.email),
 			isAdmin: input.isAdmin ?? false,
+			locale: input.locale ?? DEFAULT_LOCALE,
 			name: input.name,
 			status: input.status ?? 'invited',
 		})
@@ -60,9 +73,9 @@ async function findUserByEmail(
 	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Drizzle clients are mutable class instances
 	db: Db,
 	email: string,
-): Promise<{ id: string; status: UserStatus; isAdmin: boolean } | null> {
+): Promise<{ id: string; status: UserStatus; isAdmin: boolean; locale: Locale } | null> {
 	const [row] = await db
-		.select({ id: user.id, isAdmin: user.isAdmin, status: user.status })
+		.select({ id: user.id, isAdmin: user.isAdmin, locale: user.locale, status: user.status })
 		.from(user)
 		.where(sql`lower(${user.email}) = ${normalizeEmail(email)}`);
 	return row ?? null;
@@ -96,6 +109,18 @@ async function activateInvitedUser(db: Db, id: string): Promise<void> {
 }
 
 /**
+ * Stores the language of a user, used for the user's system mails.
+ *
+ * @param db The database.
+ * @param id The user id.
+ * @param locale The language.
+ */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Drizzle clients are mutable class instances
+async function setUserLocale(db: Db, id: string, locale: Locale): Promise<void> {
+	await db.update(user).set({ locale }).where(eq(user.id, id));
+}
+
+/**
  * Ends all sessions of a user, so the next request is signed out.
  *
  * @param db The database.
@@ -106,5 +131,12 @@ async function revokeSessions(db: Db, userId: string): Promise<void> {
 	await db.delete(session).where(eq(session.userId, userId));
 }
 
-export { activateInvitedUser, findUserByEmail, findUserById, insertUser, revokeSessions };
+export {
+	activateInvitedUser,
+	findUserByEmail,
+	findUserById,
+	insertUser,
+	revokeSessions,
+	setUserLocale,
+};
 export type { UserRecord, UserStatus };

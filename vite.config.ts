@@ -24,6 +24,18 @@ export default defineConfig({
 		],
 		jsPlugins: [{ name: 'vite-plus', specifier: 'vite-plus/oxlint-plugin' }],
 		options: { typeAware: true, typeCheck: true },
+		overrides: [
+			{
+				// The React rules come from an override of `reactConfig`; an override changes them only
+				// when it names the plugin as well.
+				files: ['**/*.tsx'],
+				plugins: ['react'],
+				rules: {
+					// React Aria components are styled with Tailwind through `className`; `style` stays forbidden.
+					'react/forbid-component-props': ['warn', { forbid: ['style'] }],
+				},
+			},
+		],
 		rules: {
 			// oxfmt (`sortTailwindcss`) owns the formatting of class lists and joins wrapped lines again.
 			'better-tailwindcss/enforce-consistent-line-wrapping': 'off',

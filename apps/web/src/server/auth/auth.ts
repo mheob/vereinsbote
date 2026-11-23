@@ -6,7 +6,8 @@ import { magicLink } from 'better-auth/plugins/magic-link';
 import { tanstackStartCookies } from 'better-auth/tanstack-start';
 import { sql } from 'drizzle-orm';
 
-import { t } from '@/i18n/t';
+import type { Locale } from '@/i18n/locale';
+import { translate } from '@/i18n/translate';
 import {
 	deriveAuthSecret,
 	deriveLoginWindowKey,
@@ -129,21 +130,23 @@ function runDetached(promise: Promise<unknown>): void {
 }
 
 /**
- * Sends a login link. Never rejects: a failure is logged, since nobody waits for it.
+ * Sends a login link in the recipient's language. Never rejects: a failure is logged, since
+ * nobody waits for it.
  *
  * @param mailer The mailer.
- * @param to The normalized address.
- * @param link The login link.
+ * @param mail The mail.
+ * @param mail.to The normalized address.
+ * @param mail.link The login link.
+ * @param mail.locale The recipient's stored language (`user.locale`).
  */
 async function sendLoginLink(
 	mailer: Readonly<SystemMailer>,
-	to: string,
-	link: string,
+	{ to, link, locale }: Readonly<{ to: string; link: string; locale: Locale }>,
 ): Promise<void> {
 	try {
 		await mailer.send({
-			subject: t('mail.login.subject'),
-			text: t('mail.login.text', { link }),
+			subject: translate(locale, 'mail.login.subject'),
+			text: translate(locale, 'mail.login.text', { link }),
 			to,
 		});
 	} catch (error) {
@@ -179,10 +182,10 @@ async function openLoginLinkWindow(
 
 /**
  * Builds the `sendMagicLink` callback. It sends only when the request opened the login link
- * window of the address and the user exists and is not disabled. Every request runs the same two
- * statements (window upsert, user lookup), whether the address is invited or not, and the mail
- * goes out after the response, so neither the result nor the response time tells which
- * addresses are invited.
+ * window of the address and the user exists and is not disabled, in the user's stored language.
+ * Every request runs the same two statements (window upsert, user lookup), whether the address
+ * is invited or not, and the mail goes out after the response, so neither the result nor the
+ * response time tells which addresses are invited.
  *
  * @param deps The dependencies of the auth instance.
  * @param deps.db The database.
@@ -206,7 +209,7 @@ function createLinkSender(
 		]);
 		if (!openedWindow || found === null || found.status === 'disabled') return;
 		// The mail touches no database, so it may outlive the request's pool (Cloudflare).
-		runInBackground(sendLoginLink(mailer, to, url));
+		runInBackground(sendLoginLink(mailer, { link: url, locale: found.locale, to }));
 	};
 }
 

@@ -1,4 +1,5 @@
-import { t } from '@/i18n/t';
+import { DEFAULT_LOCALE } from '@/i18n/locale';
+import { translate } from '@/i18n/translate';
 import type { Env } from '@/server/env';
 
 import type { SmtpTransport } from './smtp-transport';
@@ -75,7 +76,9 @@ function createSystemMailer(env: Readonly<Env>): SystemMailer {
 		import.meta.env.VITE_VB_PLATFORM !== 'vercel' &&
 		env.devSmtpUrl !== null
 	) {
-		return createSmtpMailer(env.devSmtpUrl, `${t('app.name')} <noreply@${env.appUrl.hostname}>`);
+		// The sender name is the app name, the same in every language.
+		const sender = translate(DEFAULT_LOCALE, 'app.name');
+		return createSmtpMailer(env.devSmtpUrl, `${sender} <noreply@${env.appUrl.hostname}>`);
 	}
 	return notConfiguredMailer;
 }
