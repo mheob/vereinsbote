@@ -36,6 +36,13 @@
       "when": 1795440542857,
       "tag": "0004_white_the_hunter",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1795441500488,
+      "tag": "0005_magenta_captain_midlands",
+      "breakpoints": true
     }
   ]
 }

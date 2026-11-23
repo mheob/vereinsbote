@@ -1,0 +1,41 @@
+import type { Db } from '@/server/db/client';
+import { auditLog } from '@/server/db/schema';
+
+type AuditAction =
+	| 'area.created'
+	| 'area.renamed'
+	| 'setup.completed'
+	| 'user.admin_changed'
+	| 'user.area_level_changed'
+	| 'user.disabled'
+	| 'user.invited';
+
+interface AuditEntry {
+	/** The acting user, or null for the system. */
+	readonly actorUserId: string | null;
+	readonly action: AuditAction;
+	readonly target?: string;
+	/** Never put secrets or e-mail addresses here. */
+	readonly details?: Readonly<Record<string, unknown>>;
+	readonly at?: Date;
+}
+
+/**
+ * Appends an entry to the audit log.
+ *
+ * @param db The database.
+ * @param entry What happened; `at` defaults to now.
+ */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Drizzle clients are mutable class instances
+async function writeAudit(db: Db, entry: AuditEntry): Promise<void> {
+	await db.insert(auditLog).values({
+		action: entry.action,
+		actorUserId: entry.actorUserId,
+		at: entry.at,
+		details: entry.details,
+		target: entry.target,
+	});
+}
+
+export { writeAudit };
+export type { AuditAction, AuditEntry };
