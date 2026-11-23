@@ -36,6 +36,13 @@
 - **Lizenz:** MIT (Spec 8).
 - **Namen:** Alles, was Code ist, ist englisch: Bezeichner (nach dem Glossar im Fahrplan), Dateinamen, URL-Pfade, HTML-IDs, CSS-Klassen, Cookie-Namen und Testtitel. Nur sichtbare Texte sind übersetzt.
 - **E-Mail-Adressen:** Sie werden überall über `normalizeEmail` (trim + lowercase) gespeichert und verglichen.
+- **Sicherheit und Lieferkette** (Wunsch des Projekts, hohe Priorität):
+  - GitHub Actions werden per vollständigem Commit-SHA gepinnt (`uses: owner/action@<sha> # vX.Y.Z`), nie per Tag oder Branch.
+  - Container-Images werden per Digest gepinnt (`image:tag@sha256:…`) – im Dockerfile, in Compose-Dateien und in CI-Services.
+  - Dependabot hält SHA-, Digest- und Catalog-Pins aktuell.
+  - CI mit minimalen Rechten (`permissions: contents: read`, `persist-credentials: false`, kein `pull_request_target`).
+  - pnpm-Lieferkettenschutz, soweit von pnpm 12 unterstützt: `minimumReleaseAge`, `trustPolicy: no-downgrade`, `strictDepBuilds`, `blockExoticSubdeps`.
+  - Container laufen als Nicht-Root-Benutzer ohne Dev-Abhängigkeiten.
 - **Imports:** Innerhalb von `apps/web/src` laufen Imports über den Alias `@/` (zeigt auf `apps/web/src`), z. B. `import { getAppContext } from '@/platform/context'`. Relative Imports mit `../` sind verboten (Lint-Regel); `./` im selben Ordner ist erlaubt. Gilt ab Task 5a (Wunsch des Projekts).
 - **Secrets:** Ihre Werte erscheinen nie in Fehlermeldungen oder Logs.
 - **Versionen:** Immer die neueste stabile Version verwenden: Node (derzeit 26 LTS), pnpm, TypeScript, jede Abhängigkeit im Catalog, Docker-Images (`node:26-alpine`, `postgres:19`, `axllent/mailpit:latest`) und GitHub Actions. Eine ältere Version ist nur erlaubt, wenn die neueste nachweislich nicht funktioniert. Dann steht der Grund als Kommentar am Catalog-Eintrag.
