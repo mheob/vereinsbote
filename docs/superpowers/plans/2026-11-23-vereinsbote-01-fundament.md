@@ -36,6 +36,7 @@
 - **Lizenz:** MIT (Spec 8).
 - **Namen:** Alles, was Code ist, ist englisch: Bezeichner (nach dem Glossar im Fahrplan), Dateinamen, URL-Pfade, HTML-IDs, CSS-Klassen, Cookie-Namen und Testtitel. Nur sichtbare Texte sind übersetzt.
 - **E-Mail-Adressen:** Sie werden überall über `normalizeEmail` (trim + lowercase) gespeichert und verglichen.
+- **Imports:** Innerhalb von `apps/web/src` laufen Imports über den Alias `@/` (zeigt auf `apps/web/src`), z. B. `import { getAppContext } from '@/platform/context'`. Relative Imports mit `../` sind verboten (Lint-Regel); `./` im selben Ordner ist erlaubt. Gilt ab Task 5a (Wunsch des Projekts).
 - **Secrets:** Ihre Werte erscheinen nie in Fehlermeldungen oder Logs.
 - **Versionen:** Immer die neueste stabile Version verwenden: Node (derzeit 26 LTS), pnpm, TypeScript, jede Abhängigkeit im Catalog, Docker-Images (`node:26-alpine`, `postgres:19`, `axllent/mailpit:latest`) und GitHub Actions. Eine ältere Version ist nur erlaubt, wenn die neueste nachweislich nicht funktioniert. Dann steht der Grund als Kommentar am Catalog-Eintrag.
 
@@ -653,6 +654,14 @@ export function getRequestLocale(headers: Headers): Locale
   - `'mail.login.text'`: „Hello,\n\nhere is your sign-in link:\n{link}\n\nThe link is valid for 15 minutes and works once.“
   - Feld „Email“, Button „Request sign-in link“, Button „Sign in with Microsoft“
   - `'app.name'` ist in beiden Sprachen „Vereinsbote“.
+
+- [ ] **Step 0: Pfad-Alias `@/` einführen** (eigener Commit vor der Zweisprachigkeit, Wunsch des Projekts)
+  - `apps/web/tsconfig.json`: `"paths": { "@/*": ["./src/*"] }`.
+  - Vite und Vitest lösen `@/` auf (über `resolve.tsconfigPaths` von Vite+ oder einen `resolve.alias` in `apps/web/vite.config.ts`). Auch `drizzle-kit` und `tsx` (für `db:migrate`) müssen den Alias auflösen.
+  - Root-`vite.config.ts`, Lint-Regel: `'no-restricted-imports': ['error', { patterns: [{ group: ['../*'], message: 'Use the @/ alias' }] }]`.
+  - Alle bestehenden `../`-Imports unter `apps/web/src` auf `@/…` umstellen.
+  - Prüfen: `vp check` (0 Fehler, 0 Warnungen), `vp test`, `vp run --filter web build:node`, `build:cloudflare`, `build:vercel`, `vp run --filter web db:generate` meldet „No schema changes“.
+  - Commit: `refactor: use @ path alias for imports`
 
 - [ ] **Step 1: Failing Tests schreiben**
 
