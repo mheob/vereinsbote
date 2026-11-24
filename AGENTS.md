@@ -56,12 +56,14 @@ Run them from the repository root.
 | Format, lint, types | `vp check` (`vp check --fix` fixes what it can) |
 | Format only | `vp fmt` |
 | All unit tests | `vp test` |
+| Unit tests incl. the PostgreSQL concurrency tests | `TEST_POSTGRES_URL=postgres://vereinsbote:vereinsbote@localhost:5432/vereinsbote vp test` (dev services running) |
 | One test file | `vp test run apps/web/src/i18n/translate.test.ts` |
 | Catalog and Vite+ version checks | `pnpm check:catalog`, `pnpm check:vite-plus` |
 | Build per target | `vp run --filter web build:node`, `build:vercel`, `build:cloudflare` |
 | Generate a migration | `vp run --filter web db:generate` |
 | Apply migrations | `vp run --filter web db:migrate` |
 | E2E (Playwright) | `docker compose -f docker/compose.dev.yml up -d`, then `vp run --filter web e2e` |
+| Local smoke test of the Cloudflare build (workerd) | see README, "Local smoke test of the Cloudflare build" (Compose profile `cloudflare`, `wrangler dev`) |
 | Commit (czg) | `pnpm commit` |
 
 - The first E2E run needs `pnpm --filter web exec playwright install chromium`. E2E empties the database `vereinsbote_e2e` and the Mailpit inbox. Details are in the README.
@@ -72,34 +74,42 @@ Run them from the repository root.
 - **Everything that is code is English:** identifiers (per the glossary), file names, URL paths, HTML ids, CSS classes, cookie names, test titles. Only visible text is translated.
 - **Imports** inside `apps/web/src` use the `@/` alias (it points to `apps/web/src`). No `../` imports (lint error); `./` in the same folder is fine.
 - **UI text** lives only in `apps/web/src/i18n/de.ts` and `en.ts`. Every key exists in both. Read it with `useT()` in components and `translate(locale, key, params)` on the server. System mails use the recipient's language.
+- **Page titles:** every route sets `head: (context) => pageHead(context, '<key>')` (`apps/web/src/i18n/page-title.ts`), which gives „{Seite} – Vereinsbote“ in the request's language and names the error or not-found page when the route fails. Admin pages use `adminPageHead` with a typed context.
+- **Paths** used in code (`LOGIN_PATH`, `AFTER_SIGN_IN_PATH`) come from `apps/web/src/paths.ts`.
+- **Access levels** are defined once in `apps/web/src/server/permissions/levels.ts` (`accessLevels`); the schema and the level selects use that list.
 - **Accessibility:** WCAG 2.2 AA.
   - Use React Aria Components. Show errors at the field. Announce changes in live regions.
   - Every page gets an axe check in E2E (`expectNoA11yViolations` in `apps/web/e2e/helpers/a11y.ts`) with no violations for `wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa`, `wcag22aa`.
 - **Forms** use `PostForm` (`apps/web/src/components/post-form.tsx`): `method="post"` and a hydration gate, so a native submission never puts values into the URL. Submit buttons are `SubmitButton`.
 - **Server functions** (`apps/web/src/functions/`):
   - They run behind the CSRF middleware (`apps/web/src/platform/csrf.ts`).
+  - Expected refusals (a taken address, the last admin) are returned as results, never thrown. Anything thrown reaches the browser only as a generic `ServerFunctionError` (`apps/web/src/platform/server-fn-errors.ts`, a function middleware in `start.ts`); redirects and not-found results pass.
   - Each function authorizes itself from the session principal (`requireRequestPrincipal`), never from client input. A server function is reachable without its page.
   - Server modules are imported inside the handlers, so they stay out of the client bundle.
   - Validate input with zod.
 - **Cloudflare:**
   - The database and auth instance are request-scoped (`apps/web/src/platform/request-scope.ts`). Never cache an I/O object across requests.
   - `nodemailer` and `pg` must never end up in the Cloudflare bundle. Load them only on the Node path, behind build-constant branches (`import.meta.env.VITE_VB_PLATFORM`). CI checks the bundle.
-- **No secrets, e-mail addresses or tokens** in logs, URLs or error messages. Log error codes only.
+- **No secrets, e-mail addresses or tokens** in logs, URLs or error messages. Log error codes only, through `errorLabel` / `errorLabelWithCause` (`apps/web/src/server/error-label.ts`). Better Auth logs through the same labels (`logger` in `auth.ts`), and its HTTP errors go through `handleAuthRequest`.
+- **Pages and responses:** `routerDefaults` (`apps/web/src/router-defaults.ts`) sets the generic, translated error and not-found pages; they never show an error's message. Every response gets the security headers of `apps/web/src/platform/security-headers.ts`.
+- **Work after the response** goes through `platform.waitUntil` (`createBackgroundRunner`): it never rejects into the runtime and warns once on Vercel or Cloudflare when the runtime offers no `waitUntil`.
 - E-mail addresses are stored and compared through `normalizeEmail` (trim and lowercase).
 - Credentials are encrypted with AES-GCM through WebCrypto only, so the code runs on Node and on Workers.
 - **Tick steps** go into `apps/web/src/server/tick/steps.ts` and respect the tick's time budget. A step resumes at the next tick.
-- Migrations run automatically on deploy and must stay compatible with older data.
+- Migrations run automatically on deploy and must stay compatible with older data. On Vercel they run in production builds only, in preview builds only with `MIGRATE_ON_PREVIEW=1` (`db:migrate:vercel`).
 
 ## Testing
 
 - **TDD:** write the failing test first, see it fail, then implement.
 - Unit tests sit next to the code (`*.test.ts`, `*.test.tsx`). Database tests use PGlite through `createTestDb()` (`apps/web/src/server/db/test-db.ts`), a fresh migrated in-memory database per call.
+- PGlite runs one statement at a time, so it cannot show races. Tests that need real concurrency are `*.postgres.test.ts`, run against PostgreSQL when `TEST_POSTGRES_URL` is set (CI sets it), create and drop a database of their own, and are skipped otherwise (`describe.skipIf`, with the reason in the title).
 - E2E tests are Playwright files named `*.e2e.ts` in `apps/web/e2e/`. They run against the Node build on port 3100 with the fixed values in `apps/web/e2e/env.ts`.
 
 ## Security and supply chain
 
 - GitHub Actions are pinned by the full commit SHA with the version as a comment: `uses: owner/action@<sha> # vX.Y.Z`. Never a tag or branch.
-- Container images are pinned by digest (`image:tag@sha256:…`) in the Dockerfile, both Compose files and the CI services.
+- Container images are pinned by digest (`image:tag@sha256:…`) in the Dockerfile, both Compose files (including Neon's `wsproxy` behind the Compose profile `cloudflare`) and the CI services.
+- Vulnerabilities are reported privately (`SECURITY.md`).
 - Renovate (`.github/renovate.json`) maintains the SHA, digest and catalog pins. Do not edit pins by hand without a reason.
 - CI runs with least privilege: `permissions: contents: read`, `persist-credentials: false`, no `pull_request_target`.
 - `pnpm-workspace.yaml` sets `minimumReleaseAge`, `trustPolicy: no-downgrade`, `strictDepBuilds` with `allowBuilds`, and `blockExoticSubdeps`. Do not weaken them. A new install script needs an entry in `allowBuilds` and a reason.

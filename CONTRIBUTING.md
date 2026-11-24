@@ -25,7 +25,7 @@ vp dev                                    # http://localhost:3000
 ## Development workflow
 
 1. Create a branch from `main`.
-2. Write the failing test first (TDD), then the code. Database tests use PGlite through `createTestDb()`.
+2. Write the failing test first (TDD), then the code. Database tests use PGlite through `createTestDb()`. Tests that need real PostgreSQL concurrency (`*.postgres.test.ts`) run when `TEST_POSTGRES_URL` is set, e.g. `TEST_POSTGRES_URL=postgres://vereinsbote:vereinsbote@localhost:5432/vereinsbote vp test`; CI always runs them.
 3. Run `vp check` (format, lint, types; it must report 0 errors and 0 warnings) and `vp test`. After a dependency change also run `pnpm check:catalog` and `pnpm check:vite-plus`.
 4. For pages and flows, run the E2E tests: `vp run --filter web e2e` (Playwright, files `*.e2e.ts`).
 5. Commit and open a pull request.
@@ -51,15 +51,19 @@ The `pre-commit` hook runs `vp staged`, which fixes and checks the staged files.
 
 ## Translations
 
-Every visible string goes into both `apps/web/src/i18n/de.ts` and `en.ts`, with the same key. Read it with `useT()` (components) or `translate()` (server). Never hard-code UI text.
+Every visible string goes into both `apps/web/src/i18n/de.ts` and `en.ts`, with the same key. Read it with `useT()` (components) or `translate()` (server). Never hard-code UI text. Every new page also sets its document title with `pageHead` (`apps/web/src/i18n/page-title.ts`).
 
 ## Accessibility and security
 
 - The app meets WCAG 2.2 AA. Use React Aria Components, show errors at the field, announce changes in live regions, and add an axe check for every new page in the E2E tests.
 - Forms use `PostForm`. Server functions run behind the CSRF middleware and authorize from the session, never from client input.
-- Keep secrets, e-mail addresses and tokens out of logs, URLs and error messages; log codes only.
+- Keep secrets, e-mail addresses and tokens out of logs, URLs and error messages; log codes only (`errorLabel`). Server functions return expected refusals as results; anything they throw reaches the browser only as a generic error.
 - On Cloudflare, never share the database or other I/O objects across requests, and keep `nodemailer` and `pg` out of that bundle.
 - GitHub Actions are pinned by commit SHA and images by digest. Renovate maintains the pins.
+
+## Reporting a vulnerability
+
+Do not open a public issue. Use GitHub's private vulnerability reporting, see [SECURITY.md](SECURITY.md).
 
 ## Keeping the docs current
 
