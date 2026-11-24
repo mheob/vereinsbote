@@ -13,6 +13,12 @@ const ON_SUBMIT_FORMS = [
 	'admin/invite-form.tsx',
 	'admin/create-area-form.tsx',
 	'admin/areas-table.tsx',
+	'admin/contact-settings/contact-areas-form.tsx',
+	'admin/contact-settings/stale-weeks-form.tsx',
+	'contacts/contact-search.tsx',
+	'contacts/import/mapping-step.tsx',
+	'contacts/partner-form.tsx',
+	'contacts/import/preview-step.tsx',
 	'../routes/setup.tsx',
 ];
 

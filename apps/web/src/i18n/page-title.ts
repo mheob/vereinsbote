@@ -1,3 +1,5 @@
+import type { ContactKind } from '@/server/contacts/fields';
+
 import { DEFAULT_LOCALE, isLocale } from './locale';
 import type { Locale } from './locale';
 import { translate } from './translate';
@@ -85,5 +87,35 @@ function adminPageHead(
 	return pageHead(context, context.match.context.isAdmin ? page : 'admin.forbidden');
 }
 
-export { adminPageHead, pageHead };
-export type { AdminTitleContext };
+/** The `head` context of a contacts page, whose layout put the user's access into the context. */
+type ContactsTitleContext = TitleContext & {
+	readonly match: TitleMatch & {
+		readonly context: Readonly<{
+			access: Readonly<{ canList: boolean; canManage: Readonly<Record<ContactKind, boolean>> }>;
+		}>;
+	};
+};
+
+/**
+ * The `head` of a contacts page: its own title with the right it needs, the one of "no access"
+ * otherwise (the contacts layout or the page shows that instead). Every contacts page needs the
+ * list; a page that manages a kind (import, partner upkeep) needs `edit` in its area as well.
+ * Routes annotate the context with `ContactsTitleContext`, like `AdminTitleContext`.
+ *
+ * @param context The `head` context of the route.
+ * @param page The key of the page's name.
+ * @param manage The kind the page manages, if any.
+ * @returns The head with the title.
+ */
+function contactsPageHead(
+	context: ContactsTitleContext,
+	page: MessageKey,
+	manage?: ContactKind,
+): { meta: [{ title: string }] } {
+	const { access } = context.match.context;
+	const allowed = access.canList && (manage === undefined || access.canManage[manage]);
+	return pageHead(context, allowed ? page : 'admin.forbidden');
+}
+
+export { adminPageHead, contactsPageHead, pageHead };
+export type { AdminTitleContext, ContactsTitleContext };

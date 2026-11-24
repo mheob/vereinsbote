@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vite-plus/test';
 
+import { getContactSettings } from '@/server/contacts/settings';
 import type { Db } from '@/server/db/client';
 import { areaMemberships, areas, auditLog, systemState, user } from '@/server/db/schema';
 import { createTestDb } from '@/server/db/test-db';
@@ -162,6 +163,16 @@ describe(completeSetup, () => {
 		await expect(db.select().from(areaMemberships)).resolves.toStrictEqual([
 			{ areaId: await areaIdOf(db, 'Mitglieder'), level: 'edit', userId: adminUserId },
 		]);
+	});
+
+	it('stores Mitglieder and Finanzen as members and partners area', async () => {
+		const db = await createTestDb();
+		await completeSetup(db, input);
+		await expect(getContactSettings(db)).resolves.toStrictEqual({
+			membersAreaId: await areaIdOf(db, 'Mitglieder'),
+			partnersAreaId: await areaIdOf(db, 'Finanzen'),
+			staleImportWeeks: 8,
+		});
 	});
 
 	it('writes one audit entry that names the admin by id only', async () => {

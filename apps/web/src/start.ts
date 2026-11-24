@@ -1,5 +1,6 @@
 import { createMiddleware, createServerOnlyFn, createStart } from '@tanstack/react-start';
 
+import { formBodyLimit } from './platform/body-limit';
 import { createServerFnCsrfMiddleware } from './platform/csrf';
 import { releaseWhenBodyDone } from './platform/request-scope';
 import { SECURITY_HEADERS } from './platform/security-headers';
@@ -52,9 +53,10 @@ const hideServerFnErrors = createMiddleware({ type: 'function' }).server(async (
 	}
 });
 
-// `securityHeaders` comes first, so it also covers the refusal of `csrf`; `releaseDb` comes before
-// `csrf`, so it also ends a database that a later middleware opened.
+// `securityHeaders` comes first, so it also covers the refusals of `csrf` and `formBodyLimit`;
+// `releaseDb` comes before `csrf`, so it also ends a database that a later middleware opened. A
+// cross-site request is refused before its body is counted.
 export const startInstance = createStart(() => ({
 	functionMiddleware: [hideServerFnErrors],
-	requestMiddleware: [securityHeaders, releaseDb, csrf],
+	requestMiddleware: [securityHeaders, releaseDb, csrf, formBodyLimit],
 }));

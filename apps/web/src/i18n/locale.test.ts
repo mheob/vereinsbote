@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 
-import { DEFAULT_LOCALE, isLocale, resolveLocale, SUPPORTED_LOCALES } from './locale';
+import { DEFAULT_LOCALE, intlLocale, isLocale, resolveLocale, SUPPORTED_LOCALES } from './locale';
 
 describe(resolveLocale, () => {
 	it.each([
@@ -50,5 +50,14 @@ describe(isLocale, () => {
 			false,
 			false,
 		]);
+	});
+});
+
+describe(intlLocale, () => {
+	it.each([
+		['de', 'de-DE'],
+		['en', 'en-US'],
+	] as const)('formats %s with %s', (locale, expected) => {
+		expect(intlLocale(locale)).toBe(expected);
 	});
 });

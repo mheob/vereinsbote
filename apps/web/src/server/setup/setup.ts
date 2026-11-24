@@ -2,6 +2,7 @@
 import type { Locale } from '@/i18n/locale';
 import { writeAudit } from '@/server/audit/audit';
 import { normalizeEmail } from '@/server/auth/email';
+import { saveContactAreas } from '@/server/contacts/settings';
 import { secretsMatch } from '@/server/crypto/constant-time';
 import type { Db } from '@/server/db/client';
 import { isUniqueViolation } from '@/server/db/errors';
@@ -149,10 +150,34 @@ async function hasSetupSession(db: Db): Promise<boolean> {
 }
 
 /**
+ * Creates the areas "Mitglieder" and "Finanzen", gives the admin `edit` in "Mitglieder" and
+ * stores the two as the members and partners area of the contacts.
+ *
+ * @param db The setup's transaction.
+ * @param adminUserId The admin who gets `edit` in "Mitglieder".
+ */
+async function createDefaultAreas(db: Db, adminUserId: string): Promise<void> {
+	const created = await db
+		.insert(areas)
+		.values([{ name: MEMBERS_AREA }, { name: FINANCE_AREA }])
+		.returning({ id: areas.id, name: areas.name });
+	const members = created.find((area) => area.name === MEMBERS_AREA);
+	const finance = created.find((area) => area.name === FINANCE_AREA);
+	if (members === undefined || finance === undefined) {
+		throw new Error('Inserting the default areas returned no row.');
+	}
+	await db
+		.insert(areaMemberships)
+		.values({ areaId: members.id, level: 'edit', userId: adminUserId });
+	await saveContactAreas(db, { membersAreaId: members.id, partnersAreaId: finance.id });
+}
+
+/**
  * Completes the one-time setup: creates the first admin (active), the areas "Mitglieder" and
- * "Finanzen", gives the admin `edit` in "Mitglieder" (Spec 6.7, for the first import) and writes
- * the audit entry. Everything happens in one transaction that starts by marking the setup as
- * done, so of two concurrent attempts exactly one succeeds.
+ * "Finanzen", gives the admin `edit` in "Mitglieder" (Spec 6.7, for the first import), stores the
+ * two areas as the members and partners area of the contacts and writes the audit entry.
+ * Everything happens in one transaction that starts by marking the setup as done, so of two
+ * concurrent attempts exactly one succeeds.
  *
  * @param db The database.
  * @param input The setup form and the configured token, see `SetupInput`.
@@ -178,17 +203,9 @@ async function completeSetup(
 			status: 'active',
 			...(input.adminLocale === undefined ? {} : { locale: input.adminLocale }),
 		});
-		const created = await tx
-			.insert(areas)
-			.values([{ name: MEMBERS_AREA }, { name: FINANCE_AREA }])
-			.returning({ id: areas.id, name: areas.name });
+		await createDefaultAreas(tx, adminUserId);
 		const marker: SetupMarker = { adminUserId, at };
 		await setState(tx, SETUP_DONE_KEY, marker);
-		const members = created.find((area) => area.name === MEMBERS_AREA);
-		if (members === undefined) throw new Error('Inserting the default areas returned no row.');
-		await tx
-			.insert(areaMemberships)
-			.values({ areaId: members.id, level: 'edit', userId: adminUserId });
 		await writeAudit(tx, {
 			action: 'setup.completed',
 			actorUserId: adminUserId,

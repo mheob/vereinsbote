@@ -31,3 +31,16 @@ export function CheckIcon(): ReactNode {
 		</svg>
 	);
 }
+
+/**
+ * The cross of a remove button: decoration, the button names itself.
+ *
+ * @returns The icon.
+ */
+export function CloseIcon(): ReactNode {
+	return (
+		<svg aria-hidden="true" className="size-3.5" fill="none" viewBox="0 0 16 16">
+			<path d="m4 4 8 8M12 4l-8 8" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+		</svg>
+	);
+}

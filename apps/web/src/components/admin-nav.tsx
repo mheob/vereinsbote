@@ -27,6 +27,11 @@ export function AdminNav(): ReactNode {
 						{t('admin.navAreas')}
 					</Link>
 				</li>
+				<li>
+					<Link className={linkClass} to="/admin/contact-settings">
+						{t('admin.navContactSettings')}
+					</Link>
+				</li>
 			</ul>
 		</nav>
 	);

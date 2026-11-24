@@ -41,6 +41,11 @@ export default defineConfig({
 					'react/forbid-component-props': ['warn', { forbid: ['style'] }],
 				},
 			},
+			{
+				// TanStack Router names a path parameter after its file, e.g. `$contactId.tsx`.
+				files: ['apps/web/src/routes/**/$*.tsx'],
+				rules: { 'unicorn/filename-case': 'off' },
+			},
 		],
 		rules: {
 			// oxfmt (`sortTailwindcss`) owns the formatting of class lists and joins wrapped lines again.
