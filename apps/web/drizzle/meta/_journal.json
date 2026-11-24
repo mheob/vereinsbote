@@ -57,6 +57,13 @@
       "when": 1795518449241,
       "tag": "0007_rainy_mastermind",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1795557524619,
+      "tag": "0008_easy_siren",
+      "breakpoints": true
     }
   ]
 }

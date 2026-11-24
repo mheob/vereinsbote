@@ -9,6 +9,8 @@ type AuditAction =
 	| 'contact.suppressed'
 	| 'contact.unsuppressed'
 	| 'contacts.settings_changed'
+	| 'media.deleted'
+	| 'media.uploaded'
 	| 'import.members'
 	| 'import.partners'
 	| 'import.stale_warning'

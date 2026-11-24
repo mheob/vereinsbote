@@ -23,6 +23,7 @@ import { Route as ApiTickRouteImport } from './routes/api/tick'
 import { Route as ContactsIndexRouteImport } from './routes/contacts/index'
 import { Route as ContactsContactIdRouteImport } from './routes/contacts/$contactId'
 import { Route as ContactsNewRouteImport } from './routes/contacts/new'
+import { Route as MediaFileRouteImport } from './routes/media/$file'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ContactsImportMembersRouteImport } from './routes/contacts/import/members'
 import { Route as ContactsImportPartnersRouteImport } from './routes/contacts/import/partners'
@@ -97,6 +98,11 @@ const ContactsNewRoute = ContactsNewRouteImport.update({
   path: '/new',
   getParentRoute: () => ContactsRouteRoute,
 } as any)
+const MediaFileRoute = MediaFileRouteImport.update({
+  id: '/media/$file',
+  path: '/media/$file',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -126,6 +132,7 @@ export interface FileRoutesByFullPath {
   '/api/tick': typeof ApiTickRoute
   '/contacts/$contactId': typeof ContactsContactIdRoute
   '/contacts/new': typeof ContactsNewRoute
+  '/media/$file': typeof MediaFileRoute
   '/admin/': typeof AdminIndexRoute
   '/contacts/': typeof ContactsIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -143,6 +150,7 @@ export interface FileRoutesByTo {
   '/api/tick': typeof ApiTickRoute
   '/contacts/$contactId': typeof ContactsContactIdRoute
   '/contacts/new': typeof ContactsNewRoute
+  '/media/$file': typeof MediaFileRoute
   '/admin': typeof AdminIndexRoute
   '/contacts': typeof ContactsIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -163,6 +171,7 @@ export interface FileRoutesById {
   '/api/tick': typeof ApiTickRoute
   '/contacts/$contactId': typeof ContactsContactIdRoute
   '/contacts/new': typeof ContactsNewRoute
+  '/media/$file': typeof MediaFileRoute
   '/admin/': typeof AdminIndexRoute
   '/contacts/': typeof ContactsIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -184,6 +193,7 @@ export interface FileRouteTypes {
     | '/api/tick'
     | '/contacts/$contactId'
     | '/contacts/new'
+    | '/media/$file'
     | '/admin/'
     | '/contacts/'
     | '/api/auth/$'
@@ -201,6 +211,7 @@ export interface FileRouteTypes {
     | '/api/tick'
     | '/contacts/$contactId'
     | '/contacts/new'
+    | '/media/$file'
     | '/admin'
     | '/contacts'
     | '/api/auth/$'
@@ -220,6 +231,7 @@ export interface FileRouteTypes {
     | '/api/tick'
     | '/contacts/$contactId'
     | '/contacts/new'
+    | '/media/$file'
     | '/admin/'
     | '/contacts/'
     | '/api/auth/$'
@@ -235,6 +247,7 @@ export interface RootRouteChildren {
   SetupRoute: typeof SetupRoute
   ApiHealthRoute: typeof ApiHealthRoute
   ApiTickRoute: typeof ApiTickRoute
+  MediaFileRoute: typeof MediaFileRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
 
@@ -338,6 +351,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ContactsNewRouteImport
       parentRoute: typeof ContactsRouteRoute
     }
+    '/media/$file': {
+      id: '/media/$file'
+      path: '/media/$file'
+      fullPath: '/media/$file'
+      preLoaderRoute: typeof MediaFileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -408,6 +428,7 @@ const rootRouteChildren: RootRouteChildren = {
   SetupRoute: SetupRoute,
   ApiHealthRoute: ApiHealthRoute,
   ApiTickRoute: ApiTickRoute,
+  MediaFileRoute: MediaFileRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
 }
 export const routeTree = rootRouteImport

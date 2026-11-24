@@ -4,4 +4,5 @@ export * from './areas';
 export * from './audit';
 export * from './auth';
 export * from './contacts';
+export * from './media';
 export * from './system';
