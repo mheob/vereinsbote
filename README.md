@@ -186,7 +186,7 @@ Versions, the changelog, git tags and GitHub Releases come from [Changesets](htt
 - **Release:** merging that pull request leaves no changesets, so the next run executes `pnpm run release` (`changeset git-tag`: a git tag `web@<version>` for the new version), pushes the tag and creates the GitHub Release from the changelog entry.
 - **First release:** the initial changeset (`minor`) turns `0.0.0` into `0.1.0`.
 - **Repository secrets** the owner must create (Settings, Secrets and variables, Actions): `MACHINE_USER_TOKEN` (a personal access token of the machine user with write access to contents and pull requests; a `GITHUB_TOKEN` would not trigger CI on the release pull request), `MACHINE_USER_NAME` and `MACHINE_USER_EMAIL` (the Git identity of its commits).
-- The workflow is the only one with a write token (`contents: write`, `pull-requests: write`); it runs no repository code from pull requests.
+- The workflow is the only one with a write token (`contents: write`, `pull-requests: write`) and with persisted checkout credentials (`changeset git-tag` checks existing tags with an authenticated `git ls-remote`); it runs only on `main`, never code from pull requests.
 
 ## Supply-chain security
 
