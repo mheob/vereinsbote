@@ -45,6 +45,8 @@ Die Details stehen in Teilplan 1 unter „Global Constraints“ und „Task 1“
   - Teilplan 7: Aufbewahrungsfristen inkl. Aktivitätsprotokoll.
   - Später: automatisierter Smoke-Test der Cloudflare-Laufzeit in CI.
 
+- **Betriebsüberwachung (Wunsch des Projekts, nach Einarbeitung aller offenen Punkte):** Ein System, das sicherstellt, dass jede Instanz läuft, eingebaut und in der Doku beschrieben. Kandidaten: Better Stack (Uptime-Checks, Heartbeat für die Zeitsteuerung, Logs) und Sentry (Fehler-Tracking für Server und Browser). Rahmen: optional pro Instanz über Umgebungsvariablen, EU-Region, keine personenbezogenen Daten und keine Secrets in Events (Scrubbing wie bei `errorLabel`), Auftragsverarbeiter in der Datenschutz-Doku ergänzen, auf allen drei Plattformen (Node, Vercel, Cloudflare). Passt zu Teilplan 5 (Dashboard, `HEARTBEAT_URL`) bzw. als eigener Teilplan vor der Veröffentlichung; wird beim Schreiben dieses Teilplans im Brainstorming geklärt.
+
 ## Glossar: Fachbegriff und Name im Code
 
 Alles, was Code ist, ist englisch: Bezeichner, Dateinamen, URL-Pfade, HTML-IDs, CSS-Klassen, Cookie-Namen und Testtitel. Die Oberfläche ist zweisprachig (Deutsch als Standard, Englisch). Diese Zuordnung gilt für alle Teilpläne.
