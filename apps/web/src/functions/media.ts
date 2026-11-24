@@ -1,6 +1,7 @@
 import { createServerFn } from '@tanstack/react-start';
 import { z } from 'zod';
 
+import { MAX_IMAGE_BYTES } from '@/server/media/limits';
 import type { UploadImageResult } from '@/server/media/media';
 
 /*
@@ -45,9 +46,10 @@ function parseUploadFormData(data: unknown): UploadImageRequest {
 const uploadImage = createServerFn({ method: 'POST' })
 	.validator(parseUploadFormData)
 	.handler(async ({ data }): Promise<UploadImageResult> => {
-		const [{ requireRequestPrincipal }, { MAX_IMAGE_BYTES, uploadImageResult }] = await Promise.all(
-			[import('@/platform/request-principal'), import('@/server/media/media')],
-		);
+		const [{ requireRequestPrincipal }, { uploadImageResult }] = await Promise.all([
+			import('@/platform/request-principal'),
+			import('@/server/media/media'),
+		]);
 		const { context, principal } = await requireRequestPrincipal();
 		// Refuse by the declared size before the bytes are read; `storeImage` checks the real ones.
 		if (data.file.size > MAX_IMAGE_BYTES) return { failure: 'invalidImage', ok: false };

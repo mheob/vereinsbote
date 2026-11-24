@@ -15,11 +15,8 @@ import { newMediaId, parseMediaFileName } from './ids';
 import type { ImageType } from './ids';
 import { readImageHeader } from './image-header';
 import type { ImageHeader } from './image-header';
+import { MAX_IMAGE_BYTES, MAX_IMAGE_HEIGHT, MAX_IMAGE_WIDTH } from './limits';
 
-const MEBIBYTE = 1_048_576;
-const MAX_IMAGE_BYTES = 2 * MEBIBYTE;
-const MAX_IMAGE_WIDTH = 1200;
-const MAX_IMAGE_HEIGHT = 4000;
 const MAX_NAME_LENGTH = 200;
 /** One day, in seconds (plan decision 7). */
 const CACHE_CONTROL = 'public, max-age=86400';
@@ -270,14 +267,5 @@ function mediaResponse(
 	return new Response(null, { headers });
 }
 
-export {
-	InvalidImageError,
-	MAX_IMAGE_BYTES,
-	MAX_IMAGE_HEIGHT,
-	MAX_IMAGE_WIDTH,
-	mediaResponse,
-	openMedia,
-	storeImage,
-	uploadImageResult,
-};
+export { InvalidImageError, mediaResponse, openMedia, storeImage, uploadImageResult };
 export type { MediaPurpose, MediaRecord, UploadImageResult };

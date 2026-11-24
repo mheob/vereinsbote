@@ -145,6 +145,28 @@ export const de = {
 	'home.noAreas': 'Du hast noch keinen Zugriff auf einen Bereich.',
 	'home.startFirstImport': 'Ersten Import starten',
 	'home.title': 'Deine Bereiche',
+	'imageUpload.chooseFile': 'Bild auswählen',
+	'imageUpload.dropZone': 'Bild hier ablegen',
+	'imageUpload.failed': 'Das Bild konnte nicht hochgeladen werden. Bitte versuche es noch einmal.',
+	'imageUpload.flattenedGif': 'Das animierte GIF wird als Standbild hochgeladen.',
+	'imageUpload.gone': 'Der Bereich wurde inzwischen gelöscht.',
+	'imageUpload.help':
+		'JPEG, PNG, GIF oder WebP. Das Bild wird in deinem Browser auf höchstens 1200 Pixel Breite verkleinert, Metadaten wie der Aufnahmeort werden entfernt.',
+	'imageUpload.helpSvg':
+		'JPEG, PNG, GIF, WebP oder SVG. Das Bild wird in deinem Browser auf höchstens 1200 Pixel Breite verkleinert, Metadaten wie der Aufnahmeort werden entfernt.',
+	'imageUpload.invalidImage':
+		'Der Server hat das Bild nicht angenommen. Erlaubt sind JPEG und PNG bis 2 MB.',
+	'imageUpload.processing': 'Das Bild wird verarbeitet …',
+	'imageUpload.resized': 'Bild verkleinert: {before} → {after}',
+	'imageUpload.storageMissing':
+		'Für Bilder ist noch kein Speicher eingerichtet. Bitte wende dich an den Betrieb.',
+	'imageUpload.svgNotAllowed':
+		'SVG-Dateien sind hier nicht erlaubt. Bitte wähle ein JPEG, PNG, GIF oder WebP.',
+	'imageUpload.tooLarge': 'Das Bild ist auch nach dem Verkleinern größer als 2 MB.',
+	'imageUpload.tooTall':
+		'Das Bild ist zu hoch. Nach dem Verkleinern darf es höchstens 4000 Pixel hoch sein.',
+	'imageUpload.unreadable': 'Diese Datei konnte nicht als Bild gelesen werden.',
+	'imageUpload.uploaded': 'Das Bild wurde hochgeladen.',
 	'import.backToMapping': 'Zurück zur Zuordnung',
 	'import.blockedText':
 		'Der Import ist so nicht möglich. Korrigiere diese Punkte in der Datei oder in der Zuordnung:',

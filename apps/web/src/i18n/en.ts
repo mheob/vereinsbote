@@ -143,6 +143,26 @@ export const en: Record<keyof typeof de, string> = {
 	'home.noAreas': 'You do not have access to any area yet.',
 	'home.startFirstImport': 'Start the first import',
 	'home.title': 'Your areas',
+	'imageUpload.chooseFile': 'Choose an image',
+	'imageUpload.dropZone': 'Drop an image here',
+	'imageUpload.failed': 'The image could not be uploaded. Please try again.',
+	'imageUpload.flattenedGif': 'The animated GIF is uploaded as a still image.',
+	'imageUpload.gone': 'The area has been deleted in the meantime.',
+	'imageUpload.help':
+		'JPEG, PNG, GIF or WebP. Your browser scales the image to at most 1200 pixels wide and removes metadata such as the place it was taken.',
+	'imageUpload.helpSvg':
+		'JPEG, PNG, GIF, WebP or SVG. Your browser scales the image to at most 1200 pixels wide and removes metadata such as the place it was taken.',
+	'imageUpload.invalidImage':
+		'The server did not accept the image. JPEG and PNG up to 2 MB are allowed.',
+	'imageUpload.processing': 'The image is being processed …',
+	'imageUpload.resized': 'Image scaled down: {before} → {after}',
+	'imageUpload.storageMissing': 'No storage is set up for images yet. Please contact the operator.',
+	'imageUpload.svgNotAllowed':
+		'SVG files are not allowed here. Please choose a JPEG, PNG, GIF or WebP.',
+	'imageUpload.tooLarge': 'The image is still larger than 2 MB after scaling it down.',
+	'imageUpload.tooTall': 'The image is too tall. After scaling it may be at most 4000 pixels high.',
+	'imageUpload.unreadable': 'This file could not be read as an image.',
+	'imageUpload.uploaded': 'The image was uploaded.',
 	'import.backToMapping': 'Back to the mapping',
 	'import.blockedText':
 		'The import is not possible like this. Correct these points in the file or in the mapping:',

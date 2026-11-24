@@ -14,9 +14,9 @@ import { createMemoryStorage } from '@/server/storage/memory';
 import type { ObjectStorage } from '@/server/storage/storage';
 
 import { mediaFileName } from './ids';
+import { MAX_IMAGE_BYTES } from './limits';
 import {
 	InvalidImageError,
-	MAX_IMAGE_BYTES,
 	mediaResponse,
 	openMedia,
 	storeImage,
