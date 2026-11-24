@@ -22,7 +22,7 @@ vp dev                                           # http://localhost:3000
 
 - Generate the secrets in `apps/web/.env` (the commands are in the file) and set `DEV_SMTP_URL=smtp://localhost:1025`. All mails then end up in Mailpit at <http://localhost:8025>.
 - On first start, `/setup` walks you through creating the first admin with the `SETUP_TOKEN`.
-- Checks: `vp check` (format, lint, types), `vp test`, `pnpm check:catalog` and `pnpm check:vite-plus`.
+- Checks: `vp check` (format, lint, types), `vp test`, `pnpm check:catalog`, `pnpm check:vite-plus` and `pnpm cve`.
 - Tests that need real PostgreSQL concurrency (`*.postgres.test.ts`) run only when `TEST_POSTGRES_URL` is set; otherwise `vp test` counts them as skipped, and `vp test --reporter=verbose` shows why (the reason is in the test's title). With the dev services running: `TEST_POSTGRES_URL=postgres://vereinsbote:vereinsbote@localhost:5432/vereinsbote vp test`. Each such test creates a database of its own and drops it again. CI sets the variable.
 - Commits: `pnpm commit` starts czg for Conventional Commits. `pnpm install` installs the Git hooks (`.vite-hooks/`) through `vp config`.
 - Changesets: every user-facing change needs one, add it with `pnpm changeset`. The `pre-push` hook runs `pnpm exec changeset status --since=origin/main` (skipped when `CI` is set) and refuses a push of changed packages without a changeset. For a change without a user-facing effect (docs, tests, CI), add an empty one: `pnpm changeset --empty`. See [Releases](#releases).
@@ -169,13 +169,30 @@ Preview deployments sit behind Vercel's Deployment Protection by default, so a p
 
 `.github/workflows/ci.yml` runs on every push and every pull request:
 
-- `check`: `vp check`, `pnpm check:catalog`, `pnpm check:vite-plus` and, on pull requests, commitlint over all commits of the pull request
-- `test`: `vp test`, with a PostgreSQL service container and `TEST_POSTGRES_URL`, so the concurrency tests run as well
+- `check`: `vp check`, `pnpm check:catalog`, `pnpm check:vite-plus`, `pnpm cve` (dependency advisories) and, on pull requests, commitlint over all commits of the pull request
+- `test`: `vp test --coverage`, with a PostgreSQL service container and `TEST_POSTGRES_URL`, so the concurrency tests run as well; then the SonarQube Cloud scan (see [Security scanning](#security-scanning))
 - `build`: the three targets. The job also checks that `nodemailer` and `pg` (with `pg-pool` and `pg-protocol`) do not end up in the Cloudflare bundle: it fails on their module paths (`node_modules/pg-pool/…`), which the bundle keeps in comments and source maps, but not on the copy of pg's `package.json` that Neon's driver carries as text.
 - `docker`: builds `docker/Dockerfile` (without pushing)
 - `e2e`: the end-to-end tests, against PostgreSQL and Mailpit as service containers
 
 `voidzero-dev/setup-vp` sets up Vite+, Node (from `.node-version`) and pnpm (from `packageManager`), and installs the dependencies with `--frozen-lockfile`. A newer push cancels the running checks of the same branch or pull request; on `main`, every commit keeps its run.
+
+## Security scanning
+
+Three scanners look at the code and the dependencies. None needs a secret except SonarQube Cloud.
+
+- **cve-lite (`pnpm cve`):**
+  - It checks `pnpm-lock.yaml` against OSV and the npm registry advisories and fails on `high` or `critical` (`cve-lite . --fail-on high --verbose`, cache in `.cache/cve-lite`).
+  - It runs locally in the `pre-push` hook (skipped when `CI` is set) and in the CI `check` job.
+  - It knows only OSV and npm advisories. Snyk uses its own database and can report more, so a clean `pnpm cve` does not mean a clean Snyk check.
+  - Fix a finding by updating the dependency or, when the parent has no fix yet, with a scoped entry in `overrides` (like the esbuild one in `pnpm-workspace.yaml`).
+- **SonarQube Cloud** analyzes in CI, not through Automatic Analysis (that cannot import coverage).
+  - `sonar-project.properties` holds the organization `mheob`, the project key `mheob_vereinsbote` and the paths. The `test` job runs `vp test --coverage` (provider v8, report `coverage/lcov.info`, configured in the root `vite.config.ts`) and then the scan action. The scan runs on pushes to `main` and on pull requests of this repository, not on forks (they get no secrets).
+  - Setup by the owner: in SonarQube Cloud import `mheob/vereinsbote` into the organization `mheob` (it gets the key `mheob_vereinsbote`), switch Automatic Analysis off in the project's administration (Analysis Method), create a token (My Account, Security) and add it as the repository secret `SONAR_TOKEN`. Optionally add the SonarQube Cloud check to the `main` ruleset as a required status check.
+  - `@vitest/coverage-v8` must have the version of Vitest that Vite+ bundles. It is part of the `vite-plus toolchain` Renovate group and of `pnpm check:vite-plus`.
+- **Snyk** checks the pull requests through its GitHub integration; there is no Snyk CLI or token in CI.
+  - Setup by the owner: import the repository in Snyk. Its PR check then reports new vulnerabilities in the lockfile.
+  - `.snyk` is the policy file. Ignore only a finding that no released version fixes, with a reason and an expiry date, so it gets reviewed again. Otherwise update the dependency.
 
 ## Releases
 
@@ -217,7 +234,7 @@ The [Renovate GitHub App](https://github.com/apps/renovate) must be installed fo
 
 Rules of this repository in `.github/renovate.json`:
 
-- `vite-plus`, its core (`vite` in the catalog) and `vitest` come together in one pull request. `pnpm check:vite-plus` (`scripts/check-vite-plus-versions.ts`) fails CI when the installed versions differ from what `vite-plus` declares.
+- `vite-plus`, its core (`vite` in the catalog), `vitest` and `@vitest/coverage-v8` come together in one pull request. `pnpm check:vite-plus` (`scripts/check-vite-plus-versions.ts`) fails CI when the installed versions differ from what `vite-plus` declares.
 - `oxfmt` and `oxlint` get no updates of their own. They follow the versions that ship with Vite+.
 - `nitro` (Nitro 3 is a release candidate) waits for approval on the Dependency Dashboard and gets a pull request of its own.
 

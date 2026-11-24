@@ -38,7 +38,7 @@ Access levels are cumulative (`read` < `edit` < `send`). The admin role gives no
   - Tests import from `vite-plus/test`, Vite APIs from `vite-plus` (lint rule `vite-plus/prefer-vite-plus-imports`).
 - **pnpm 12** with `catalogMode: strict` in `pnpm-workspace.yaml`.
   - Every external dependency is `"catalog:"` in every `package.json`. Versions live only in the catalog.
-  - Run `pnpm check:catalog` and `pnpm check:vite-plus` after touching dependencies. The Vite+ versions (`vite-plus`, `vite`, `vitest`) move together.
+  - Run `pnpm check:catalog` and `pnpm check:vite-plus` after touching dependencies. The Vite+ versions (`vite-plus`, `vite`, `vitest`, `@vitest/coverage-v8`) move together.
 - **Always the newest stable version** of Node (26, see `.node-version`), pnpm, TypeScript, every dependency and every image. An older version needs a proven reason, written as a comment at the catalog entry.
 - App: TanStack Start, React, React Aria Components, Tailwind CSS v4, Drizzle ORM, Better Auth, zod. Tests: Vite+ (Vitest), PGlite, Playwright with axe.
 - Layout: `apps/web` (the app), `docker/`, `scripts/` (the two check scripts), `docs/superpowers/`.
@@ -59,6 +59,8 @@ Run them from the repository root.
 | Unit tests incl. the PostgreSQL concurrency tests | `TEST_POSTGRES_URL=postgres://vereinsbote:vereinsbote@localhost:5432/vereinsbote vp test` (dev services running) |
 | One test file | `vp test run apps/web/src/i18n/translate.test.ts` |
 | Catalog and Vite+ version checks | `pnpm check:catalog`, `pnpm check:vite-plus` |
+| Dependency advisories (cve-lite, fails on high/critical) | `pnpm cve` |
+| Unit tests with coverage (`coverage/lcov.info`, read by SonarQube Cloud) | `vp test --coverage` |
 | Build per target | `vp run --filter web build:node`, `build:vercel`, `build:cloudflare` |
 | Generate a migration | `vp run --filter web db:generate` |
 | Apply migrations | `vp run --filter web db:migrate` |
@@ -114,6 +116,8 @@ Run them from the repository root.
 - GitHub Actions are pinned by the full commit SHA with the version as a comment: `uses: owner/action@<sha> # vX.Y.Z`. Never a tag or branch.
 - Container images are pinned by digest (`image:tag@sha256:…`) in the Dockerfile, both Compose files (including Neon's `wsproxy` behind the Compose profile `cloudflare`) and the CI services.
 - Vulnerabilities are reported privately (`SECURITY.md`).
+- `pnpm cve` (cve-lite) scans `pnpm-lock.yaml` and fails on high or critical advisories. It runs in the `pre-push` hook and in the CI `check` job. It knows only OSV and npm advisories; Snyk (GitHub integration, PR check) uses its own database and can report more. Fix a finding by updating, or with a scoped `overrides` entry like the esbuild one. Snyk findings without a fixed version go into `.snyk`, each with a reason and an expiry date.
+- SonarQube Cloud analyzes in CI (`sonar-project.properties`, step in the `test` job, coverage from `vp test --coverage`). Automatic Analysis stays off.
 - Renovate (`.github/renovate.json`) maintains the SHA, digest and catalog pins. Do not edit pins by hand without a reason.
 - CI runs with least privilege: `permissions: contents: read`, `persist-credentials: false`, no `pull_request_target`. The one exception is `.github/workflows/release.yml` (`contents: write`, `pull-requests: write`, persisted checkout credentials for authenticated tag lookups; runs on `main` only): do not "fix" it.
 - `pnpm-workspace.yaml` sets `minimumReleaseAge`, `trustPolicy: no-downgrade`, `strictDepBuilds` with `allowBuilds`, and `blockExoticSubdeps`. Do not weaken them. A new install script needs an entry in `allowBuilds` and a reason.

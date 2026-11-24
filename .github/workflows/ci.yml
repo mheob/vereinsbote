@@ -44,6 +44,9 @@ jobs:
         run: pnpm check:catalog
       - name: Vite+ toolchain versions
         run: pnpm check:vite-plus
+      # Fails on a high or critical advisory in pnpm-lock.yaml (OSV and npm advisories).
+      - name: Dependency advisories
+        run: pnpm cve
       - name: Commit messages
         if: github.event_name == 'pull_request'
         env:
@@ -71,6 +74,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # SonarQube Cloud needs the history to detect new code and to assign issues.
+          fetch-depth: 0
           persist-credentials: false
       - uses: voidzero-dev/setup-vp@cab1ab9eaff52d4857875f4f2c016e36af8f2c76 # v1.22.0
         with:
@@ -81,7 +86,17 @@ jobs:
       - name: Unit and integration tests
         env:
           TEST_POSTGRES_URL: postgres://vereinsbote:vereinsbote@localhost:5432/vereinsbote
-        run: vp test
+        run: vp test --coverage
+      # Pushes to main and pull requests of this repository only: other pushes would analyze the
+      # same code twice, and pull requests from forks get no secrets. Needs the repository secret
+      # SONAR_TOKEN and Automatic Analysis switched off (see README, "Security scanning").
+      - name: SonarQube Cloud scan
+        if: >-
+          (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository)
+        uses: SonarSource/sonarqube-scan-action@70bad232163b09d998ea0707ee80c0ec80798c16 # v8.5.1
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
   build:
     runs-on: ubuntu-latest

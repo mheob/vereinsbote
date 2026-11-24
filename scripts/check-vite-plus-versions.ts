@@ -1,6 +1,6 @@
 // Checks that the installed toolchain is the one `vite-plus` was released with. `vite-plus` pins
 // `vite` (an `npm:` alias of its core package) and `vitest` to exact versions in its
-// package.json. The `vite@*` and `vitest@*` overrides in pnpm-workspace.yaml force the catalog's
+// package.json; `@vitest/coverage-v8` must match `vitest`. The `vite@*` and `vitest@*` overrides in pnpm-workspace.yaml force the catalog's
 // versions onto those pins, so a catalog entry that drifts from them installs without an error.
 // This script compares what is installed with what `vite-plus` declares and exits with code 1 on
 // a mismatch. Run it after `pnpm install`: `pnpm check:vite-plus`.
@@ -105,6 +105,13 @@ const vitest = declaredDependency(vitePlusManifest, 'vitest');
 const expectations: readonly Expectation[] = [
 	{ expected: vite, from: 'vite-plus', fromManifest: vitePlus.path, specifier: 'vite' },
 	{ expected: vitest, from: 'vite-plus', fromManifest: vitePlus.path, specifier: 'vitest' },
+	// The coverage provider must be the Vitest it measures for (it is a root devDependency).
+	{
+		expected: { name: '@vitest/coverage-v8', version: vitest.version },
+		from: 'the root',
+		fromManifest: rootManifest,
+		specifier: '@vitest/coverage-v8',
+	},
 	// The app declares `vite` itself (catalog entry); it must get the same copy.
 	{ expected: vite, from: 'apps/web', fromManifest: webManifest, specifier: 'vite' },
 ];
@@ -129,7 +136,7 @@ if (mismatches.length > 0) {
 		[
 			...mismatches,
 			'Set the catalog entries of vite and vitest in pnpm-workspace.yaml to these versions',
-			'(`vp toolchain vite-plus-core`, `vp toolchain vitest`) and run `pnpm install`.',
+			'(`vp toolchain vite-plus-core`, `vp toolchain vitest`; @vitest/coverage-v8 takes the vitest version) and run `pnpm install`.',
 		].join('\n'),
 	);
 	process.exitCode = 1;

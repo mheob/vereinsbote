@@ -14,6 +14,10 @@ test-results
 playwright-report
 blob-report
 
+# Coverage report and the cve-lite advisory cache
+coverage
+.cache
+
 # Environment, only the example is committed
 .env*
 !.env.example

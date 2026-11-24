@@ -86,5 +86,19 @@ export default defineConfig({
 		'*': 'vp check --fix',
 		'**/package.json': 'pnpm check:catalog',
 	},
-	test: { projects: ['apps/web'] },
+	test: {
+		// Reported to SonarQube Cloud through `coverage/lcov.info` (see `sonar-project.properties`).
+		coverage: {
+			exclude: [
+				'apps/web/src/routeTree.gen.ts',
+				'apps/web/src/**/*.d.ts',
+				'apps/web/src/**/*.test.{ts,tsx}',
+			],
+			include: ['apps/web/src/**/*.{ts,tsx}'],
+			provider: 'v8',
+			reporter: ['text', 'lcov'],
+			reportsDirectory: 'coverage',
+		},
+		projects: ['apps/web'],
+	},
 });
