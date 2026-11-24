@@ -14,6 +14,7 @@ import {
 	isTargetOfKind,
 	mappedTargetSchema,
 	MAX_COLUMNS,
+	MAX_FILTER_RULES,
 } from './mapping';
 import type {
 	ColumnTarget,
@@ -121,7 +122,7 @@ const importPayloadSchema: z.ZodType<ImportPayload> = z
 	.object({
 		columns: z.array(columnSchema).max(MAX_COLUMNS),
 		discardedHeaders: z.array(headerSchema).max(MAX_COLUMNS),
-		filters: z.array(filterRuleSchema),
+		filters: z.array(filterRuleSchema).max(MAX_FILTER_RULES),
 		kind: z.enum(CONTACT_KINDS),
 		options: importOptionsSchema,
 		rows: z.array(rowSchema),

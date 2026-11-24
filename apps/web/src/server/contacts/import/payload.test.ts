@@ -4,6 +4,7 @@ import {
 	DEFAULT_IMPORT_OPTIONS,
 	MAX_COLUMNS,
 	MAX_EMPTY_MARKERS,
+	MAX_FILTER_RULES,
 	MAX_HEADER_LENGTH,
 	savedMappingSchema,
 } from './mapping';
@@ -51,6 +52,12 @@ function labels(count: number): string[] {
 /** As many discarded headers as fit beside the mapped columns of `PAYLOAD`. */
 const DISCARDED_AT_LIMIT = labels(MAX_COLUMNS - PAYLOAD.columns.length);
 const TOO_MANY_MARKERS = labels(MAX_EMPTY_MARKERS + 1);
+/** Filter rules on the discarded column `Typ`, as many as allowed. */
+const FILTERS_AT_LIMIT = labels(MAX_FILTER_RULES).map((value) => ({
+	column: 'Typ',
+	operator: 'isNot' as const,
+	value,
+}));
 
 /** JSON the schema refuses, each case built from a valid payload. */
 const INVALID_JSON: [string, unknown][] = [
@@ -83,6 +90,13 @@ const INVALID_JSON: [string, unknown][] = [
 	[
 		'too many empty markers',
 		{ ...PAYLOAD, options: { ...PAYLOAD.options, emptyMarkers: TOO_MANY_MARKERS } },
+	],
+	[
+		'more filter rules than the limit',
+		{
+			...PAYLOAD,
+			filters: [...FILTERS_AT_LIMIT, { column: 'Typ', operator: 'is', value: 'Mitglied' }],
+		},
 	],
 	[
 		'more columns than the limit with the discarded ones',
@@ -181,6 +195,15 @@ describe(decodeImportPayload, () => {
 		const refusal = decodeImportPayload(body);
 		await expect(refusal).rejects.toBeInstanceOf(ImportPayloadError);
 		await expect(refusal).rejects.toMatchObject({ reason: 'invalid' });
+	});
+
+	it('reads a payload at the filter limit and saves a mapping the schema reads back', async () => {
+		const filtered = { ...PAYLOAD, filters: FILTERS_AT_LIMIT };
+		const decoded = await decodeImportPayload(await encodeImportPayload(filtered));
+		expect(decoded).toStrictEqual(filtered);
+		expect(savedMappingSchema.parse(toSavedMapping(decoded)).filters).toStrictEqual(
+			FILTERS_AT_LIMIT,
+		);
 	});
 
 	it('reads a payload at the column limit and saves a mapping the schema reads back', async () => {
