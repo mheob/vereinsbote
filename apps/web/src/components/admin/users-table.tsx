@@ -61,7 +61,8 @@ type AreaColumn = Readonly<{ id: string; name: string }>;
  * @returns True for a level or no access.
  */
 function isLevelChoice(key: Key | null): key is LevelChoice {
-	return LEVEL_CHOICES.some((choice) => choice === key);
+	const choices: readonly (Key | null)[] = LEVEL_CHOICES;
+	return choices.includes(key);
 }
 
 /**
