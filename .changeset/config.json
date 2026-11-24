@@ -1,0 +1,12 @@
+{
+	"$schema": "https://unpkg.com/@changesets/config@4.0.1/schema.json",
+	"access": "restricted",
+	"baseBranch": "main",
+	"changelog": ["@mheob/changeset-changelog", { "repo": "mheob/vereinsbote" }],
+	"commit": false,
+	"fixed": [],
+	"ignore": [],
+	"linked": [],
+	"privatePackages": { "tag": true, "version": true },
+	"updateInternalDependencies": "patch"
+}

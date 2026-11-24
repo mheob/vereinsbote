@@ -65,6 +65,8 @@ Run them from the repository root.
 | E2E (Playwright) | `docker compose -f docker/compose.dev.yml up -d`, then `vp run --filter web e2e` |
 | Local smoke test of the Cloudflare build (workerd) | see README, "Local smoke test of the Cloudflare build" (Compose profile `cloudflare`, `wrangler dev`) |
 | Commit (czg) | `pnpm commit` |
+| Add a changeset | `pnpm changeset` (`pnpm changeset --empty` for a change without a user-facing effect) |
+| Changeset status | `pnpm exec changeset status --since=origin/main` |
 
 - The first E2E run needs `pnpm --filter web exec playwright install chromium`. E2E empties the database `vereinsbote_e2e` and the Mailpit inbox. Details are in the README.
 - A change is done when `vp check` reports 0 errors and 0 warnings and `vp test` passes. Changes to pages or flows also run the E2E tests.
@@ -117,6 +119,13 @@ Run them from the repository root.
 - `pnpm-workspace.yaml` sets `minimumReleaseAge`, `trustPolicy: no-downgrade`, `strictDepBuilds` with `allowBuilds`, and `blockExoticSubdeps`. Do not weaken them. A new install script needs an entry in `allowBuilds` and a reason.
 - A vulnerable transitive version is lifted with a scoped override in `pnpm-workspace.yaml` (range in the key, `"catalog:"` as the value, a comment with the advisory), e.g. `esbuild@<0.25.0`. Remove it once the dependency ships a fixed version.
 - Containers run as a non-root user without dev dependencies.
+
+## Releases
+
+- Releases use Changesets (`.changeset/`). Only `web` (`apps/web`) is versioned; the root package is not, and nothing goes to npm.
+- **Every user-facing change gets a changeset** (`pnpm changeset`, text in English, `patch` fix, `minor` feature, `major` breaking). Docs, tests, CI and dependency updates need none (`pnpm changeset --empty` if the `pre-push` hook asks).
+- Never edit `apps/web/package.json`'s `version` or `apps/web/CHANGELOG.md` by hand and never run `changeset version` in a branch: the release pull request ("chore(release): version packages", `.github/workflows/release.yml`) does it. `vp fmt` ignores `CHANGELOG.md`.
+- The `pre-push` hook (`.vite-hooks/pre-push`) runs `changeset status --since=origin/main`; it is skipped when `CI` is set.
 
 ## Commits
 

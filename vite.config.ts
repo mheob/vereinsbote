@@ -6,8 +6,14 @@ export default defineConfig({
 	defaultPackage: './apps/web',
 	fmt: {
 		...fmtBaseConfig,
-		// Plans and specs keep their code samples as written, `vp fmt` would rewrite them.
-		ignorePatterns: ['**/drizzle/**', 'apps/web/src/routeTree.gen.ts', 'docs/superpowers/**'],
+		// Plans and specs keep their code samples as written, `vp fmt` would rewrite them. Changesets
+		// writes the changelog.
+		ignorePatterns: [
+			'**/CHANGELOG.md',
+			'**/drizzle/**',
+			'apps/web/src/routeTree.gen.ts',
+			'docs/superpowers/**',
+		],
 	},
 	lint: {
 		extends: [

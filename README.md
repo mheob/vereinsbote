@@ -25,6 +25,7 @@ vp dev                                           # http://localhost:3000
 - Checks: `vp check` (format, lint, types), `vp test`, `pnpm check:catalog` and `pnpm check:vite-plus`.
 - Tests that need real PostgreSQL concurrency (`*.postgres.test.ts`) run only when `TEST_POSTGRES_URL` is set; otherwise `vp test` counts them as skipped, and `vp test --reporter=verbose` shows why (the reason is in the test's title). With the dev services running: `TEST_POSTGRES_URL=postgres://vereinsbote:vereinsbote@localhost:5432/vereinsbote vp test`. Each such test creates a database of its own and drops it again. CI sets the variable.
 - Commits: `pnpm commit` starts czg for Conventional Commits. `pnpm install` installs the Git hooks (`.vite-hooks/`) through `vp config`.
+- Changesets: every user-facing change needs one, add it with `pnpm changeset`. The `pre-push` hook runs `pnpm exec changeset status --since=origin/main` (skipped when `CI` is set) and refuses a push of changed packages without a changeset. For a change without a user-facing effect (docs, tests, CI), add an empty one: `pnpm changeset --empty`. See [Releases](#releases).
 
 ### End-to-end tests
 
@@ -176,13 +177,24 @@ Preview deployments sit behind Vercel's Deployment Protection by default, so a p
 
 `voidzero-dev/setup-vp` sets up Vite+, Node (from `.node-version`) and pnpm (from `packageManager`), and installs the dependencies with `--frozen-lockfile`. A newer push cancels the running checks of the same branch or pull request; on `main`, every commit keeps its run.
 
+## Releases
+
+Versions, the changelog, git tags and GitHub Releases come from [Changesets](https://github.com/changesets/changesets) (`.changeset/`). Only the app (`apps/web`, package `web`) is versioned; the root package is not. Nothing is published to npm (`access: restricted`).
+
+- **Changesets:** a pull request with a user-facing change carries a Markdown file in `.changeset/` (`pnpm changeset`) that names the bump (`patch`, `minor`, `major`) and the changelog text. Dependency updates and other changes without a user-facing effect need none; nothing in CI requires one.
+- **Release pull request:** on every push to `main` that touches `.changeset/`, `apps/`, `pnpm-lock.yaml` or the workflow, `.github/workflows/release.yml` runs [`changesets/action`](https://github.com/changesets/action). With changesets present it opens or updates the pull request "chore(release): version packages". It runs `pnpm run version-packages` (`changeset version`, which raises the version in `apps/web/package.json`, writes `apps/web/CHANGELOG.md` through `@mheob/changeset-changelog` and deletes the used changesets).
+- **Release:** merging that pull request leaves no changesets, so the next run executes `pnpm run release` (`changeset git-tag`: a git tag `web@<version>` for the new version), pushes the tag and creates the GitHub Release from the changelog entry.
+- **First release:** the initial changeset (`minor`) turns `0.0.0` into `0.1.0`.
+- **Repository secrets** the owner must create (Settings, Secrets and variables, Actions): `MACHINE_USER_TOKEN` (a personal access token of the machine user with write access to contents and pull requests; a `GITHUB_TOKEN` would not trigger CI on the release pull request), `MACHINE_USER_NAME` and `MACHINE_USER_EMAIL` (the Git identity of its commits).
+- The workflow is the only one with a write token (`contents: write`, `pull-requests: write`); it runs no repository code from pull requests.
+
 ## Supply-chain security
 
 - **Pins:**
   - GitHub Actions are pinned to the commit SHA of their release (`uses: owner/action@<sha> # vX.Y.Z`).
   - Container images are pinned by digest (`image:tag@sha256:…`) in the Dockerfile, in both Compose files and in the CI service containers.
 - **CI:**
-  - The workflow runs with a read-only token (`permissions: contents: read`) and `persist-credentials: false`, without `pull_request_target`.
+  - The CI workflow runs with a read-only token (`permissions: contents: read`) and `persist-credentials: false`, without `pull_request_target`. The release workflow runs only on `main` and needs write access (see [Releases](#releases)).
 - **pnpm (`pnpm-workspace.yaml`):**
   - It installs only versions that are at least a day old (`minimumReleaseAge`).
   - It refuses versions published with less trust evidence than their predecessors (`trustPolicy: no-downgrade`).

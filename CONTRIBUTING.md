@@ -28,7 +28,8 @@ vp dev                                    # http://localhost:3000
 2. Write the failing test first (TDD), then the code. Database tests use PGlite through `createTestDb()`. Tests that need real PostgreSQL concurrency (`*.postgres.test.ts`) run when `TEST_POSTGRES_URL` is set, e.g. `TEST_POSTGRES_URL=postgres://vereinsbote:vereinsbote@localhost:5432/vereinsbote vp test`; CI always runs them.
 3. Run `vp check` (format, lint, types; it must report 0 errors and 0 warnings) and `vp test`. After a dependency change also run `pnpm check:catalog` and `pnpm check:vite-plus`.
 4. For pages and flows, run the E2E tests: `vp run --filter web e2e` (Playwright, files `*.e2e.ts`).
-5. Commit and open a pull request.
+5. For a user-facing change, add a changeset: `pnpm changeset`, pick `web`, choose the bump (`patch` for a fix, `minor` for a feature, `major` for a breaking change) and write the changelog text in English. Commit the file in `.changeset/` with the change. Docs, tests, CI and dependency updates need none; for them `pnpm changeset --empty` satisfies the `pre-push` hook.
+6. Commit and open a pull request.
 
 Everything that is code is English: identifiers, file names, URL paths, HTML ids, CSS classes, cookie names and test titles. Imports inside `apps/web/src` use the `@/` alias, never `../`. Dependencies are `"catalog:"` in `package.json`, and versions live only in `pnpm-workspace.yaml`.
 
@@ -40,7 +41,9 @@ Run `pnpm commit` (czg) for a Conventional Commit. The `commit-msg` hook checks 
 - description at most 50 characters, starting lowercase, no period at the end
 - header at most 72 characters
 
-The `pre-commit` hook runs `vp staged`, which fixes and checks the staged files.
+The `pre-commit` hook runs `vp staged`, which fixes and checks the staged files. The `pre-push` hook runs `pnpm exec changeset status --since=origin/main` and refuses a push of changed packages without a changeset (skipped in CI).
+
+Releases are automatic: after a merge to `main`, the Release workflow opens a pull request "chore(release): version packages" that bumps the version and writes `apps/web/CHANGELOG.md`. Do not edit the version or the changelog by hand. See the [README](README.md#releases).
 
 ## Pull requests
 

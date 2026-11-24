@@ -5,9 +5,11 @@ catalogMode: strict
 
 catalog:
   "@axe-core/playwright": ^4.14.0
+  "@changesets/cli": ^3.0.3
   "@cloudflare/vite-plugin": ^1.70.1
   "@commitlint/cli": ^21.2.4
   "@electric-sql/pglite": ^0.6.0
+  "@mheob/changeset-changelog": ^3.0.2
   "@mheob/commitlint-config": ^3.0.0
   "@mheob/oxfmt-config": ^1.3.3
   "@mheob/oxlint-config": ^4.1.3
