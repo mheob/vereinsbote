@@ -46,6 +46,9 @@ Die Details stehen in Teilplan 1 unter „Global Constraints“ und „Task 1“
   - Teilplan 7 (aus dem Design von Teilplan 2): Ansicht und Löschfrist für verwaiste Sperren und Widersprüche (Kontakt nicht mehr im Bestand).
   - Später: automatisierter Smoke-Test der Cloudflare-Laufzeit in CI.
 
+- **Aus Teilplan 2** (verbindlich für die genannten Teilpläne):
+  - Teilplan 3 (CSP): zod v4 prüft beim Anlegen des ersten Objekt-Schemas mit `new Function("")`, ob es seinen JIT nutzen darf. Der Fehlschlag wird abgefangen, eine CSP ohne `unsafe-eval` meldet ihn aber als Verstoß (`securitypolicyviolation`, Report). Vor einer solchen CSP `z.config({ jitless: true })` setzen, bevor das erste Schema entsteht (ein eigenes Modul, das der Client-Einstieg zuerst importiert; dann entfällt die Prüfung), oder den Verstoß bewusst zulassen.
+
 - **Betriebsüberwachung (Wunsch des Projekts, nach Einarbeitung aller offenen Punkte):** Ein System, das sicherstellt, dass jede Instanz läuft, eingebaut und in der Doku beschrieben. Kandidaten: Better Stack (Uptime-Checks, Heartbeat für die Zeitsteuerung, Logs) und Sentry (Fehler-Tracking für Server und Browser). Rahmen: optional pro Instanz über Umgebungsvariablen, EU-Region, keine personenbezogenen Daten und keine Secrets in Events (Scrubbing wie bei `errorLabel`), Auftragsverarbeiter in der Datenschutz-Doku ergänzen, auf allen drei Plattformen (Node, Vercel, Cloudflare). Passt zu Teilplan 5 (Dashboard, `HEARTBEAT_URL`) bzw. als eigener Teilplan vor der Veröffentlichung; wird beim Schreiben dieses Teilplans im Brainstorming geklärt.
 
 ## Glossar: Fachbegriff und Name im Code

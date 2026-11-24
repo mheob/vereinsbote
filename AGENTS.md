@@ -8,7 +8,7 @@ Vereinsbote is an open-source web app a club uses to send e-mails to its members
 
 - **Spec:** `docs/superpowers/specs/2026-11-23-vereinsbote-design.md`; each sub-plan may add a design next to it (`…-02-kontakte-design.md`), which wins where it differs.
 - **Roadmap** (eight sub-plans, written one after the other): `docs/superpowers/plans/2026-11-23-vereinsbote-00-fahrplan.md`
-- **Plans:** `docs/superpowers/plans/` (currently `…-01-fundament.md`). The spec and the plans are in German; their "Global Constraints" are summarized below.
+- **Plans:** `docs/superpowers/plans/` (currently `…-01-fundament.md` and `…-02-kontakte.md`). The spec and the plans are in German; their "Global Constraints" are summarized below.
 
 Domain terms are German in the spec and English in the code:
 
@@ -45,7 +45,8 @@ Access levels are cumulative (`read` < `edit` < `send`). The admin role gives no
   - Every external dependency is `"catalog:"` in every `package.json`. Versions live only in the catalog.
   - Run `pnpm check:catalog` and `pnpm check:vite-plus` after touching dependencies. The Vite+ versions (`vite-plus`, `vite`, `vitest`, `@vitest/coverage-v8`) move together.
 - **Always the newest stable version** of Node (26, see `.node-version`), pnpm, TypeScript, every dependency and every image. An older version needs a proven reason, written as a comment at the catalog entry.
-- App: TanStack Start, React, React Aria Components, Tailwind CSS v4, Drizzle ORM, Better Auth, zod. Tests: Vite+ (Vitest), PGlite, Playwright with axe.
+- App: TanStack Start, React, React Aria Components (dates through `@internationalized/date`), Tailwind CSS v4, Drizzle ORM, Better Auth, zod. Import files: `read-excel-file` (XLSX), `papaparse` (CSV) and `fflate`, which unzips XLSX synchronously because its asynchronous unzip starts a `blob:` Worker that a CSP without `worker-src blob:` blocks. Tests: Vite+ (Vitest), PGlite, Playwright with axe, `write-excel-file` for XLSX test files.
+- A library must not need Node modules that the browser or Workers lack (`nodemailer` and `pg` are the Node-only exceptions, see Cloudflare below), nor `eval` or `new Function`: sub-plan 3 brings a CSP without `unsafe-eval` (zod's JIT probe is an open point in the roadmap).
 - Layout: `apps/web` (the app), `docker/`, `scripts/` (the two check scripts), `docs/superpowers/`.
 
 ## Commands
@@ -85,7 +86,10 @@ Run them from the repository root.
 - **UI text** lives only in `apps/web/src/i18n/de.ts` and `en.ts`. Every key exists in both. Read it with `useT()` in components and `translate(locale, key, params)` on the server. System mails use the recipient's language.
 - **Page titles:** every route sets `head: (context) => pageHead(context, '<key>')` (`apps/web/src/i18n/page-title.ts`), which gives „{Seite} – Vereinsbote“ in the request's language and names the error or not-found page when the route fails. Admin pages use `adminPageHead` with a typed context.
 - **Paths** used in code (`LOGIN_PATH`, `AFTER_SIGN_IN_PATH`) come from `apps/web/src/paths.ts`.
-- **The page frame** (language, signed in or not) comes from the root loader, once per document; client navigation does not ask again. Whatever changes it loads a new document: a redirect with `reloadDocument: true` (setup's sign-in, `requireRequestPrincipal`), `location.assign` or `location.reload` (Sign out, language switcher). Protected pages and server functions still check the session themselves.
+- **The page frame** (language, signed in or not, and for a signed-in user the navigation and the notice about the member data from `loadFrameInfo` in `apps/web/src/server/frame.ts`) comes from the root loader, once per document (`staleTime: Infinity`); client navigation does not ask again. Whatever changes the language or the session loads a new document: a redirect with `reloadDocument: true` (setup's sign-in, `requireRequestPrincipal`), `location.assign` or `location.reload` (Sign out, language switcher). The exception is a change of the navigation or the notice: a confirmed import and every save on the contact settings call `router.invalidate()`, which runs the root loader again. Protected pages and server functions still check the session themselves.
+- **React Aria's `I18nProvider`** wraps the app once, in `apps/web/src/routes/__root.tsx`, with the request's language through `intlLocale` (`de-DE`, `en-US`), so React Aria's dates, numbers and own texts follow the page's language, not the browser's, also in the server render. Do not add local providers.
+- **Notices for the next page** (a partner just deleted or created) go into the router's history state (`HistoryState` in `apps/web/src/router.tsx`), never into the URL; the page shows them once and removes them with `clearHistoryNotice` (`apps/web/src/components/contacts/history-notice.ts`).
+- **Route files** named after a path parameter (`$contactId.tsx`) are exempt from `unicorn/filename-case` through an override in the root `vite.config.ts`.
 - **Access levels** are defined once in `apps/web/src/server/permissions/levels.ts` (`accessLevels`); the schema and the level selects use that list.
 - **Accessibility:** WCAG 2.2 AA.
   - Use React Aria Components. Show errors at the field. Announce changes in live regions.
@@ -93,8 +97,10 @@ Run them from the repository root.
 - **Forms** use `PostForm` (`apps/web/src/components/post-form.tsx`): `method="post"` and a hydration gate, so a native submission never puts values into the URL. Submit buttons are `SubmitButton`.
 - **Server functions** (`apps/web/src/functions/`):
   - They run behind the CSRF middleware (`apps/web/src/platform/csrf.ts`).
-  - Expected refusals (a taken address, the last admin) are returned as results, never thrown. Anything thrown reaches the browser only as a generic `ServerFunctionError` (`apps/web/src/platform/server-fn-errors.ts`, a function middleware in `start.ts`); redirects and not-found results pass.
+  - Expected refusals (a taken address, the last admin, a contact or area deleted in another tab) are returned as results, never thrown. Domain modules signal them with typed errors (for contacts in `apps/web/src/server/contacts/errors.ts`, e.g. `ContactNotFoundError`, `UnknownAreaError`), which the server function maps to a result (`CONTACT_GONE`, `{ ok: false, failure: 'gone' }`). Anything thrown reaches the browser only as a generic `ServerFunctionError` (`apps/web/src/platform/server-fn-errors.ts`, a function middleware in `start.ts`); redirects and not-found results pass.
+  - A component waits for a `useServerFn` call with `settle` (`apps/web/src/components/settle.ts`): it gives `FAILED` when the call failed and `undefined` when the server redirected (the session ended). On `undefined` return without touching state.
   - An error thrown in a request middleware (`requestMiddleware` in `start.ts`) during a server-function request bypasses that function middleware: Start serializes it with its message to the browser. Request middleware must therefore only throw errors whose message is safe to show (or return a `Response`).
+  - Start reads the whole body of a call with form data before the function runs. The request middleware `formBodyLimit` (`apps/web/src/platform/body-limit.ts`, after `csrf` in `start.ts`) answers such a call above 4.5 MB with 413 before the body is read, and one whose body breaks off with 400; it returns responses, never throws.
   - Each function authorizes itself from the session principal (`requireRequestPrincipal`), never from client input. A server function is reachable without its page.
   - Server modules are imported inside the handlers, so they stay out of the client bundle.
   - Validate input with zod.
@@ -105,6 +111,15 @@ Run them from the repository root.
 - **Pages and responses:** `routerDefaults` (`apps/web/src/router-defaults.ts`) sets the generic, translated error and not-found pages; they never show an error's message. Every response gets the security headers of `apps/web/src/platform/security-headers.ts`: pages and API responses through the request middleware in `start.ts`, the built assets under `/assets/` (served by Nitro, Vercel's CDN or Workers assets, never by Start) through `apps/web/src/platform/static-headers.ts` and `vite.config.ts`.
 - **Work after the response** goes through `platform.waitUntil` (`createBackgroundRunner`): it never rejects into the runtime and warns once on Vercel or Cloudflare when the runtime offers no `waitUntil`.
 - E-mail addresses are stored and compared through `normalizeEmail` (trim and lowercase).
+- **Contacts** (`apps/web/src/server/contacts/`):
+  - Contact data leaves the server only through `loadContactAccess` (`access.ts`): protected fields the user may not see are not delivered, not just hidden, and search and filters cover them only for users who see them. The admin role alone gives no access.
+  - Never call `loadContactAccess` inside a transaction: it runs queries in parallel, which pg warns about on one client. Load the access first, then open the transaction.
+  - A write that changes contacts, suppressions or opt-outs takes the import-state lock of the kind (`lockImportState`, `import-state.ts`) before it changes anything, so it waits for a running import of that kind and cannot deadlock with it. It bumps the stock version, so a preview made before it cannot be confirmed.
+  - Search terms and filter values go by POST, never into a URL; the URL of the contact list carries only `kind`. The list route sets `gcTime: 0`: the list keeps its first page as its own state, so every visit loads it anew instead of showing a cached page.
+  - The import sends the mapped columns only (of discarded ones just the header, for the remembered mapping) as gzip-compressed JSON in `FormData` (`encodeImportPayload` / `decodeImportPayload`); the limits (10,000 rows, 4,000,000 bytes compressed, 16 MiB unpacked) are in `import/payload.ts`. The file itself is read in the browser and never sent.
+  - "Today" (the import day, a reached exit date) is `todayInClubZone` (`calendar.ts`, `Europe/Berlin`), never the server's or the browser's day. Date fields are calendar dates (`YYYY-MM-DD`, Postgres `date`).
+  - Suppressions and opt-outs hang on `contact_key` (`nr:<number>`, for a partner without customer number `email:<address>`), not on the contact, so they survive every import. When a partner's key changes they follow it (`rekeyContactKey`), or are copied when another partner keeps the old key (`copyContactKey`). Partners without number that share an address therefore share them, also when an edit moves one onto the other's address.
+  - The activity log names a contact by number or id (`member:<nr>`, `partner:<nr>`, `contact:<uuid>`, `auditTarget`), never by name or address.
 - `DEV_SMTP_URL` (`apps/web/src/server/mail/smtp-transport.ts`) sends unencrypted only to the local machine; any other host must offer STARTTLS. No credentials in workflows either: the CI PostgreSQL services use trust authentication.
 - Credentials are encrypted with AES-GCM through WebCrypto only, so the code runs on Node and on Workers.
 - **Tick steps** go into `apps/web/src/server/tick/steps.ts` and respect the tick's time budget. A step resumes at the next tick.
@@ -117,6 +132,8 @@ Run them from the repository root.
 - Each database test starts its own PGlite instance, which is slow on CI runners with coverage; the test and hook timeouts are therefore 30 s (`apps/web/vite.config.ts`). Do not lower them.
 - PGlite runs one statement at a time, so it cannot show races. Tests that need real concurrency are `*.postgres.test.ts`, run against PostgreSQL when `TEST_POSTGRES_URL` is set (CI sets it), create and drop a database of their own, and are skipped otherwise (`describe.skipIf`, with the reason in the title).
 - E2E tests are Playwright files named `*.e2e.ts` in `apps/web/e2e/`. They run against the Node build on port 3100 with the fixed values in `apps/web/e2e/env.ts`.
+- Every E2E file belongs to a Playwright project of its own in `apps/web/playwright.config.ts` (`fundament`, `contacts`); a file without one does not run. A file that builds on another file's data names that project in `dependencies`, as `contacts` does with `fundament`.
+- **Test data is always invented** (made-up names, addresses at `example.org` or a `.test`/`.example` domain). A club's real exports never go into the repository, not even shortened. Import files for tests are built in the test: XLSX with `write-excel-file`, CSV as text (e.g. encoded as Windows-1252 in the test); no binary fixtures.
 
 ## Security and supply chain
 

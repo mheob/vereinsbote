@@ -27,9 +27,11 @@ vp dev                                    # http://localhost:3000
 1. Create a branch from `main`.
 2. Write the failing test first (TDD), then the code. Database tests use PGlite through `createTestDb()`. Tests that need real PostgreSQL concurrency (`*.postgres.test.ts`) run when `TEST_POSTGRES_URL` is set, e.g. `TEST_POSTGRES_URL=postgres://vereinsbote:vereinsbote@localhost:5432/vereinsbote vp test`; CI always runs them.
 3. Run `vp check` (format, lint, types; it must report 0 errors and 0 warnings) and `vp test`. After a dependency change also run `pnpm check:catalog`, `pnpm check:vite-plus` and `pnpm cve` (dependency advisories; the `pre-push` hook and CI run it too).
-4. For pages and flows, run the E2E tests: `vp run --filter web e2e` (Playwright, files `*.e2e.ts`).
+4. For pages and flows, run the E2E tests: `vp run --filter web e2e` (Playwright, files `*.e2e.ts`). Each file is a Playwright project of its own in `apps/web/playwright.config.ts`; a new file needs a project entry, with `dependencies` when it builds on another file's data (like `contacts` on `fundament`), or it does not run.
 5. For a user-facing change, add a changeset: `pnpm changeset`, pick `web`, choose the bump (`patch` for a fix, `minor` for a feature, `major` for a breaking change) and write the changelog text in English. Commit the file in `.changeset/` with the change. Docs, tests, CI and dependency updates need none; for them `pnpm changeset --empty` satisfies the `pre-push` hook.
 6. Commit and open a pull request.
+
+Test data is always invented: made-up names, addresses at `example.org` (or a `.test` or `.example` domain). Never commit a club's real export, not even a shortened one. Import files for tests are built in the test, XLSX files with `write-excel-file` and CSV files as text, so the repository holds no binary fixtures.
 
 Everything that is code is English: identifiers, file names, URL paths, HTML ids, CSS classes, cookie names and test titles. Imports inside `apps/web/src` use the `@/` alias, never `../`. Dependencies are `"catalog:"` in `package.json`, and versions live only in `pnpm-workspace.yaml`.
 
@@ -61,7 +63,7 @@ Every visible string goes into both `apps/web/src/i18n/de.ts` and `en.ts`, with 
 
 - The app meets WCAG 2.2 AA. Use React Aria Components, show errors at the field, announce changes in live regions, and add an axe check for every new page in the E2E tests.
 - Forms use `PostForm`. Server functions run behind the CSRF middleware and authorize from the session, never from client input.
-- Keep secrets, e-mail addresses and tokens out of logs, URLs and error messages; log codes only (`errorLabel`). Server functions return expected refusals as results; anything they throw reaches the browser only as a generic error. Request middleware is not covered by that: what it throws reaches the browser with its message.
+- Keep secrets, e-mail addresses, tokens and contact data out of logs, URLs and error messages; log codes only (`errorLabel`). Search terms and filter values go by POST. Server functions return expected refusals as results; anything they throw reaches the browser only as a generic error. Request middleware is not covered by that: what it throws reaches the browser with its message.
 - On Cloudflare, never share the database or other I/O objects across requests, and keep `nodemailer` and `pg` out of that bundle.
 - GitHub Actions are pinned by commit SHA and images by digest. Renovate maintains the pins.
 
