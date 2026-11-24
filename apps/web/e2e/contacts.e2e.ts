@@ -205,6 +205,30 @@ test('imports members again with the remembered mapping and the safety check', a
 });
 
 // oxlint-disable-next-line max-statements -- one flow, step by step, as the admin sees it
+test('asks for the sheet of a workbook and names an empty one', async () => {
+	await admin.goto('/contacts/import/members');
+	const rows = memberExportRows(new Date()).slice(0, KEPT_MEMBERS);
+	const buffer = await memberExportXlsx(rows, 'Deckblatt');
+	await upload(admin, { buffer, mimeType: XLSX_MIME, name: 'mitglieder.xlsx' });
+	// React Aria's hidden select carries the label as well, so the select is found as its button.
+	const sheet = admin.getByRole('button', { name: /Blatt$/u });
+	await expect(sheet).toBeFocused();
+	await expect(sheet).toContainText('Mitglieder');
+	await expectNoA11yViolations(admin);
+	await sheet.click();
+	await admin.getByRole('option', { name: 'Deckblatt' }).click();
+	// The read ends after the focus is back on the select: an alert reads the error out.
+	await expect(admin.getByRole('alert')).toHaveText('Die Datei oder das Blatt ist leer.');
+	await expect(admin.getByRole('button', { name: 'Weiter zur Zuordnung' })).toHaveCount(0);
+	await expectNoA11yViolations(admin);
+	await sheet.click();
+	await admin.getByRole('option', { name: 'Mitglieder' }).click();
+	await expect(admin.getByRole('alert')).toHaveCount(0);
+	await admin.getByRole('button', { name: 'Weiter zur Zuordnung' }).click();
+	await expect(admin.getByRole('heading', { name: 'Schritt 2 von 4: Zuordnung' })).toBeFocused();
+});
+
+// oxlint-disable-next-line max-statements -- one flow, step by step, as the admin sees it
 test('imports partners from a Windows-1252 CSV with semicolons', async () => {
 	await admin.goto('/contacts/import/partners');
 	await expect(admin).toHaveTitle('Partner importieren – Vereinsbote');
@@ -220,4 +244,29 @@ test('imports partners from a Windows-1252 CSV with semicolons', async () => {
 		'Import abgeschlossen: 6 neu, 0 geändert, 0 gelöscht.',
 	);
 	await expect(admin.getByText(/^Letzter Import am /u)).toBeVisible();
+});
+
+// oxlint-disable-next-line max-statements -- one flow, step by step, as the admin sees it
+test('deletes a partner missing from the export only when it is ticked', async () => {
+	await admin.goto('/contacts/import/partners');
+	const buffer = partnerExportCsv(['100003', '100004']);
+	await upload(admin, { buffer, mimeType: 'text/csv', name: 'partner.csv' });
+	// The remembered mapping keeps the organization rule, so the stored partners stay as they are.
+	const rule = 'Ist der Vorname leer, ist der Nachname die Firma';
+	await expect(admin.getByRole('checkbox', { name: rule })).toBeChecked();
+	await toPreview(admin);
+	const missing = admin.getByRole('group', {
+		name: 'Nicht mehr im Export – zum Löschen ankreuzen',
+	});
+	await expect(missing.getByRole('checkbox')).toHaveCount(2);
+	await tick(admin, '100004 Autohaus Schäfer OHG');
+	await expectNoA11yViolations(admin);
+	await admin.getByRole('button', { name: 'Import bestätigen' }).click();
+	await expect(admin.getByRole('status')).toHaveText(
+		'Import abgeschlossen: 0 neu, 0 geändert, 1 gelöscht.',
+	);
+	// Only the ticked partner is gone; the other one missing from the export stays.
+	await admin.goto('/contacts?kind=partner');
+	await expect(admin.getByText('Sporthaus Großmann')).toBeVisible();
+	await expect(admin.getByText('Autohaus Schäfer OHG')).toHaveCount(0);
 });

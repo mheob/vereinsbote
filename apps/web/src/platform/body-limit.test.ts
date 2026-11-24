@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vite-plus/test';
 import { MAX_COMPRESSED_PAYLOAD_BYTES } from '@/server/contacts/import/payload';
 import { startInstance } from '@/start';
 
-import { exceedsBodyLimit, formBodyLimit, MAX_FORM_BODY_BYTES } from './body-limit';
+import { checkBodySize, formBodyLimit, MAX_FORM_BODY_BYTES } from './body-limit';
 
 // Start's response helpers need its request context, which the stand-in executor has not.
 vi.mock(import('@tanstack/react-start/server'), async (importOriginal) => ({
@@ -14,10 +14,13 @@ vi.mock(import('@tanstack/react-start/server'), async (importOriginal) => ({
 
 const APP_ORIGIN = 'https://bote.example.org';
 const SERVER_FN_URL = `${APP_ORIGIN}/_serverFn/preview-import`;
-/** The limit of the tests of `exceedsBodyLimit`. */
+/** The limit of the tests of `checkBodySize`. */
 const LIMIT = 10;
 const OK = 200;
 const PAYLOAD_TOO_LARGE = 413;
+const BAD_REQUEST = 400;
+/** A chunk of an endless body; five of them are above the app's limit. */
+const MEGABYTE = 1_000_000;
 
 type HandlerType = 'router' | 'serverFn';
 
@@ -58,6 +61,37 @@ function chunks(sizes: readonly number[]): ReadableStream<Uint8Array> {
 		start(controller) {
 			for (const size of sizes) controller.enqueue(new Uint8Array(size));
 			controller.close();
+		},
+	});
+}
+
+/**
+ * A body that never ends: a chunk on every read, until it is cancelled.
+ *
+ * @param size The size of each chunk.
+ * @param onCancel Called when the source is cancelled.
+ * @returns The stream.
+ */
+function endless(size: number, onCancel: () => void): ReadableStream<Uint8Array> {
+	return new ReadableStream({
+		cancel() {
+			onCancel();
+		},
+		pull(controller) {
+			controller.enqueue(new Uint8Array(size));
+		},
+	});
+}
+
+/**
+ * A body that breaks off, as when the client goes away or the chunked encoding is malformed.
+ *
+ * @returns The stream.
+ */
+function broken(): ReadableStream<Uint8Array> {
+	return new ReadableStream({
+		pull(controller) {
+			controller.error(new TypeError('The client went away.'));
 		},
 	});
 }
@@ -126,28 +160,40 @@ const SAME_ORIGIN = { origin: APP_ORIGIN, 'sec-fetch-site': 'same-origin' };
 /** A body one byte above the limit of the app. */
 const TOO_LARGE = 'x'.repeat(MAX_FORM_BODY_BYTES + 1);
 
-describe(exceedsBodyLimit, () => {
+describe(checkBodySize, () => {
 	it('refuses a declared length above the limit or one that is no number', async () => {
 		const declaredLarge = formPost('x', { 'content-length': '11' });
 		const declaredNonsense = formPost('x', { 'content-length': 'many' });
-		await expect(exceedsBodyLimit(declaredLarge, LIMIT)).resolves.toBe(true);
-		await expect(exceedsBodyLimit(declaredNonsense, LIMIT)).resolves.toBe(true);
+		await expect(checkBodySize(declaredLarge, LIMIT)).resolves.toBe('tooLarge');
+		await expect(checkBodySize(declaredNonsense, LIMIT)).resolves.toBe('tooLarge');
 	});
 
 	it('counts a body without declared length', async () => {
 		const above = formPost(chunks([4, 4, 3]));
 		const within = formPost(chunks([4, 4, 2]));
-		await expect(exceedsBodyLimit(above, LIMIT)).resolves.toBe(true);
-		await expect(exceedsBodyLimit(within, LIMIT)).resolves.toBe(false);
+		await expect(checkBodySize(above, LIMIT)).resolves.toBe('tooLarge');
+		await expect(checkBodySize(within, LIMIT)).resolves.toBe('within');
 	});
 
 	it('counts the body even when the declared length is small', async () => {
 		const request = formPost(chunks([6, 6]), { 'content-length': '5' });
-		await expect(exceedsBodyLimit(request, LIMIT)).resolves.toBe(true);
+		await expect(checkBodySize(request, LIMIT)).resolves.toBe('tooLarge');
 	});
 
 	it('passes a request without body', async () => {
-		await expect(exceedsBodyLimit(new Request(SERVER_FN_URL), LIMIT)).resolves.toBe(false);
+		await expect(checkBodySize(new Request(SERVER_FN_URL), LIMIT)).resolves.toBe('within');
+	});
+
+	it('cancels the source of a body above the limit', async () => {
+		const cancel = vi.fn<() => void>();
+		const request = formPost(endless(4, cancel));
+		await expect(checkBodySize(request, LIMIT)).resolves.toBe('tooLarge');
+		expect(cancel).toHaveBeenCalledOnce();
+	});
+
+	it('reads a body that breaks off as unreadable instead of throwing', async () => {
+		const request = formPost(broken());
+		await expect(checkBodySize(request, LIMIT)).resolves.toBe('unreadable');
 	});
 });
 
@@ -164,6 +210,24 @@ describe('the form body limit', () => {
 		await expect(run([limitStep], formPost(body))).resolves.toStrictEqual({
 			read: body,
 			status: OK,
+		});
+	});
+
+	it('cancels the source of a refused body, so the connection holds no buffer', async () => {
+		const cancel = vi.fn<() => void>();
+		const request = formPost(endless(MEGABYTE, cancel));
+		await expect(run([limitStep], request)).resolves.toStrictEqual({
+			read: null,
+			status: PAYLOAD_TOO_LARGE,
+		});
+		expect(cancel).toHaveBeenCalledOnce();
+	});
+
+	it('answers 400 to a body that breaks off, without throwing', async () => {
+		const request = formPost(broken());
+		await expect(run([limitStep], request)).resolves.toStrictEqual({
+			read: null,
+			status: BAD_REQUEST,
 		});
 	});
 

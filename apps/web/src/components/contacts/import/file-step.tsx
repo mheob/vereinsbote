@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useId, useRef, useState, useTransition } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useTransition } from 'react';
 import type { ReactNode, RefObject } from 'react';
 import {
 	Button,
 	DropZone,
-	FieldError,
 	FileTrigger,
 	Label,
 	ListBox,
@@ -61,7 +60,7 @@ type Workbook = Readonly<{
  *
  * @param props The props.
  * @param props.buttonRef The select's button, focused when the select appears.
- * @param props.error The error of the last choice, if any.
+ * @param props.error The error of the last choice and its number, if any.
  * @param props.onChoose Reads the chosen sheet.
  * @param props.onContinue Goes on with the read sheet.
  * @param props.workbook The workbook.
@@ -76,12 +75,13 @@ function SheetChoiceFields({
 	workbook,
 }: Readonly<{
 	buttonRef: RefObject<HTMLButtonElement | null>;
-	error: string | null;
+	error: Readonly<{ id: number; text: string }> | null;
 	onChoose: (sheetName: string) => void;
 	onContinue: (file: ReadFile) => void;
 	workbook: NonNullable<Workbook>;
 }>): ReactNode {
 	const t = useT();
+	const errorId = useId();
 	const onChange = useCallback(
 		(key: Key | null) => {
 			if (typeof key === 'string') onChoose(key);
@@ -96,6 +96,7 @@ function SheetChoiceFields({
 		<div className="flex max-w-md flex-col gap-4">
 			<p>{t('import.fileName', { name: workbook.file.name })}</p>
 			<Select
+				aria-describedby={error === null ? undefined : errorId}
 				className="flex flex-col gap-1"
 				isInvalid={error !== null}
 				onChange={onChange}
@@ -109,7 +110,6 @@ function SheetChoiceFields({
 				<Text className="text-sm text-gray-700" slot="description">
 					{t('import.sheetsFound')}
 				</Text>
-				<FieldError className="text-sm text-red-700">{error}</FieldError>
 				<Popover className={popoverClass}>
 					<ListBox className="max-h-80 overflow-auto outline-none">
 						{workbook.sheetNames.map((name) => (
@@ -120,6 +120,12 @@ function SheetChoiceFields({
 					</ListBox>
 				</Popover>
 			</Select>
+			{error === null ? null : (
+				// The read ends after the focus is back on the select: an alert has the error read out.
+				<p className="text-sm text-red-700" id={errorId} key={error.id} role="alert">
+					{error.text}
+				</p>
+			)}
 			{read === null ? null : (
 				<div>
 					<Button className={primaryButtonClass} onPress={next}>
@@ -198,6 +204,13 @@ export function FileStep({ onRead }: Readonly<{ onRead: (file: ReadFile) => void
 		[read, workbook],
 	);
 	const fileError = error?.at === 'file' ? error : null;
+	const sheetError = useMemo(
+		() =>
+			error?.at === 'sheet'
+				? { id: error.id, text: t(error.message.key, error.message.params) }
+				: null,
+		[error, t],
+	);
 	const getDropOperation = useCallback(() => 'copy' as const, []);
 	return (
 		<div className="flex flex-col gap-4">
@@ -224,7 +237,7 @@ export function FileStep({ onRead }: Readonly<{ onRead: (file: ReadFile) => void
 			{workbook === null ? null : (
 				<SheetChoiceFields
 					buttonRef={sheetButtonRef}
-					error={error?.at === 'sheet' ? t(error.message.key, error.message.params) : null}
+					error={sheetError}
 					onChoose={onChooseSheet}
 					onContinue={onRead}
 					workbook={workbook}

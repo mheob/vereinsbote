@@ -42,10 +42,14 @@ function windows1252(text: string): Buffer {
 /**
  * The partner export with six rows: four organizations (one without address) and two people.
  *
+ * @param omit Customer numbers whose rows the export leaves out.
  * @returns The bytes of the CSV file.
  */
-function partnerExportCsv(): Buffer {
-	return windows1252(`${PARTNER_EXPORT_LINES.join('\r\n')}\r\n`);
+function partnerExportCsv(omit: readonly string[] = []): Buffer {
+	const lines = PARTNER_EXPORT_LINES.filter(
+		(line) => !omit.some((nr) => line.startsWith(`${nr};`)),
+	);
+	return windows1252(`${lines.join('\r\n')}\r\n`);
 }
 
 export { partnerExportCsv, windows1252 };

@@ -264,12 +264,17 @@ function dateCell(value: Readonly<Date>): Row[number] {
 }
 
 /**
- * The export as an XLSX workbook with one sheet, written with write-excel-file.
+ * The export as an XLSX workbook, written with write-excel-file: one sheet „Mitglieder“, or that
+ * sheet after an empty cover sheet.
  *
  * @param rows The rows.
+ * @param coverSheet The name of an empty sheet before the data, if any.
  * @returns The bytes of the file.
  */
-async function memberExportXlsx(rows: readonly MemberExportRow[]): Promise<Buffer> {
+async function memberExportXlsx(
+	rows: readonly MemberExportRow[],
+	coverSheet?: string,
+): Promise<Buffer> {
 	const data: SheetData = [
 		HEADERS,
 		...rows.map((row): Row => [
@@ -286,7 +291,10 @@ async function memberExportXlsx(rows: readonly MemberExportRow[]): Promise<Buffe
 			row.gender,
 		]),
 	];
-	return writeXlsxFile(data).toBuffer();
+	const members = { data, sheet: 'Mitglieder' };
+	const sheets =
+		coverSheet === undefined ? [members] : [{ data: [[null]], sheet: coverSheet }, members];
+	return writeXlsxFile(sheets).toBuffer();
 }
 
 export { memberExportRows, memberExportXlsx, XLSX_MIME };
