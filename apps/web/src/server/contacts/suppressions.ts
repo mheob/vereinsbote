@@ -2,13 +2,21 @@ import { and, eq, sql } from 'drizzle-orm';
 
 import { writeAudit } from '@/server/audit/audit';
 import type { Db } from '@/server/db/client';
-import { contactOptOuts, contacts, contactSuppressions } from '@/server/db/schema';
+import { areas, contactOptOuts, contacts, contactSuppressions } from '@/server/db/schema';
 import { ForbiddenError } from '@/server/permissions/principal';
 import type { Principal } from '@/server/permissions/principal';
 
 import { assertCanManage, loadContactAccess } from './access';
 import type { ContactKind } from './fields';
 import { bumpStockVersion } from './import-state';
+
+/** The area of an opt-out does not exist. The message names no contact data. */
+class UnknownAreaError extends Error {
+	public constructor() {
+		super('Unknown area.');
+		this.name = 'UnknownAreaError';
+	}
+}
 
 /** The columns that identify a contact. */
 interface ContactIdentity {
@@ -139,6 +147,7 @@ async function setSuppression(
  * @param input The contact, the area and whether the contact objects afterwards.
  * @throws {ForbiddenError} Without the right.
  * @throws {Error} For an unknown contact.
+ * @throws {UnknownAreaError} For an unknown area.
  */
 async function setOptOut(
 	db: Db,
@@ -147,6 +156,8 @@ async function setOptOut(
 ): Promise<void> {
 	await db.transaction(async (tx) => {
 		const { contact, key } = await loadManagedContact(tx, principal, input.contactId);
+		const [area] = await tx.select({ id: areas.id }).from(areas).where(eq(areas.id, input.areaId));
+		if (area === undefined) throw new UnknownAreaError();
 		const changed = input.optedOut
 			? await tx
 					.insert(contactOptOuts)
@@ -216,4 +227,4 @@ async function rekeyContactKey(tx: Db, kind: ContactKind, from: string, to: stri
 		.where(and(eq(contactOptOuts.kind, kind), eq(contactOptOuts.contactKey, from)));
 }
 
-export { auditTarget, contactKey, rekeyContactKey, setSuppression, setOptOut };
+export { auditTarget, contactKey, rekeyContactKey, setOptOut, setSuppression, UnknownAreaError };

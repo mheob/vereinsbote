@@ -15,6 +15,7 @@ import {
 	rekeyContactKey,
 	setOptOut,
 	setSuppression,
+	UnknownAreaError,
 } from './suppressions';
 import { insertContact, setUpClub, userWith } from './testing';
 
@@ -219,6 +220,24 @@ describe(setOptOut, () => {
 			'contact.opted_out',
 			'contact.opt_out_removed',
 		]);
+	});
+
+	it('refuses an unknown area and changes nothing', async () => {
+		const db = await createTestDb();
+		const { partnersAreaId } = await setUpClub(db);
+		const id = await insertContact(db, { email: 'info@example.org', kind: 'partner' });
+		const partnerEditor = await userWith(db, { [partnersAreaId]: 'edit' });
+		const set = setOptOut(db, partnerEditor, { areaId: UNKNOWN_ID, contactId: id, optedOut: true });
+		await expect(set).rejects.toThrow(new UnknownAreaError());
+		const clear = setOptOut(db, partnerEditor, {
+			areaId: UNKNOWN_ID,
+			contactId: id,
+			optedOut: false,
+		});
+		await expect(clear).rejects.toBeInstanceOf(UnknownAreaError);
+		await expect(db.select().from(contactOptOuts)).resolves.toStrictEqual([]);
+		await expect(contactAudit(db)).resolves.toStrictEqual([]);
+		await expect(stockVersions(db)).resolves.toStrictEqual([0, 0]);
 	});
 
 	it('refuses a user who may not manage the kind', async () => {
