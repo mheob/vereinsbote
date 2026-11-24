@@ -60,13 +60,37 @@ function ignore(): void {
 }
 
 /**
+ * Copies the own properties of one response to another, where TanStack Start keeps its markers.
+ * Properties the target has itself (a runtime's fields of every Response) stay as they are.
+ *
+ * @param source The original response.
+ * @param target The response that replaces it.
+ * @returns The target.
+ */
+function withOwnPropertiesOf(source: Response, target: Response): Response {
+	for (const key of Reflect.ownKeys(source)) {
+		const descriptor = Object.getOwnPropertyDescriptor(source, key);
+		if (descriptor !== undefined && !Object.hasOwn(target, key)) {
+			Object.defineProperty(target, key, descriptor);
+		}
+	}
+	return target;
+}
+
+/**
  * Runs `release` once the body of the response is done: fully read, cancelled or failed. A
  * response without a body releases at once. Releasing when the response is produced would end
  * the resource while a streamed body may still need it.
  *
+ * A response without a body comes back as the same object: TanStack Start recognizes a redirect
+ * by the `options` on it and resolves its target only then. A response with a body comes back as
+ * a new `Response` with the same status, status text and headers and with the own properties of
+ * the original, which is where Start keeps its markers (such as the transport headers of a
+ * server function's reply).
+ *
  * @param response The response to wrap.
  * @param release Called exactly once.
- * @returns A response with the same status and headers.
+ * @returns The response itself, or one with the same status, headers and markers.
  */
 function releaseWhenBodyDone(response: Response, release: () => Promise<void> | void): Response {
 	const source = response.body;
@@ -109,7 +133,7 @@ function releaseWhenBodyDone(response: Response, release: () => Promise<void> | 
 			}
 		},
 	});
-	return new Response(body, response);
+	return withOwnPropertiesOf(response, new Response(body, response));
 }
 
 export { createRequestScope, releaseWhenBodyDone };

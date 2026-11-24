@@ -1,3 +1,4 @@
+import { isRedirect, redirect } from '@tanstack/react-router';
 import { describe, expect, it } from 'vite-plus/test';
 
 import { createRequestScope, releaseWhenBodyDone } from './request-scope';
@@ -126,6 +127,36 @@ describe('response body release', () => {
 		});
 		await response.body?.cancel();
 		expect(calls).toBe(1);
+	});
+
+	it('returns a redirect itself, so TanStack Start still resolves its target', () => {
+		const toLogin = redirect({ to: '/login' });
+		const response = releaseWhenBodyDone(toLogin, noop);
+		expect(response).toBe(toLogin);
+		expect(isRedirect(response)).toBe(true);
+	});
+
+	it('keeps the status and headers of a not-found page', () => {
+		const page = new Response(streamOf('<h1>404</h1>'), {
+			headers: { 'content-type': 'text/html; charset=utf-8', 'x-frame-options': 'DENY' },
+			status: 404,
+			statusText: 'Not Found',
+		});
+		const response = releaseWhenBodyDone(page, noop);
+		expect([response.status, response.statusText]).toStrictEqual([404, 'Not Found']);
+		expect(Object.fromEntries(response.headers)).toStrictEqual(Object.fromEntries(page.headers));
+	});
+
+	it('keeps the markers TanStack Start puts on a response with a body', () => {
+		const marker = Symbol.for('tanstack-start:protected-response-headers');
+		const transport = new Map([['content-type', 'application/json']]);
+		const reply = Object.defineProperty(new Response(streamOf('{}')), marker, {
+			configurable: true,
+			value: transport,
+		});
+		const response = releaseWhenBodyDone(reply, noop);
+		expect(response).not.toBe(reply);
+		expect(Reflect.get(response, marker)).toBe(transport);
 	});
 
 	it('releases at once for a response without a body', () => {

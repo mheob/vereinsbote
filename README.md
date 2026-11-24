@@ -117,6 +117,8 @@ cd apps/web && pnpm exec wrangler dev --config dist/cloudflare/server/wrangler.j
 `DATABASE_URL` names the host `postgres` as the proxy sees it, inside the Compose network. Then check:
 
 - `curl -s localhost:8787/api/health` returns `{"ok":true}` (database through the Neon driver).
+- Signed out, `curl -s -o /dev/null -D - localhost:8787/admin/users` answers `307` with `Location: /login`: a page's redirect survives the request middleware that ends the request's database.
+- `curl -s -o /dev/null -w '%{http_code}\n' localhost:8787/does-not-exist` answers `404`, and `curl -s localhost:8787/does-not-exist | grep '<h1'` shows the translated not-found page („Seite nicht gefunden“; with `-H 'Cookie: locale=en'`, "Page not found").
 - `/login` renders; `/setup` with the `SETUP_TOKEN` creates the first admin and leads to `/admin/users` (a POST server function, a transaction and a session on workerd); „Abmelden“ leads back to `/login`.
 - The cron handler: `curl -s -X POST -H 'content-type: application/json' -d '{"cron":"*/15 * * * *"}' 'localhost:8787/cdn-cgi/local/explorer/api/local/scheduled?worker=vereinsbote'` answers `"outcome":"ok"`, and an expired row in `verification` is gone afterwards. (`wrangler dev --test-scheduled` and `/__scheduled` do not reach this build: its generated config sets `no_bundle`, so wrangler injects no test middleware.)
 
