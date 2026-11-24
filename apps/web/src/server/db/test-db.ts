@@ -1,5 +1,6 @@
 import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
+import { onTestFinished } from 'vite-plus/test';
 
 import type { Db } from './client';
 import { runMigrations } from './migrate';
@@ -29,12 +30,18 @@ async function createTemplate(): Promise<Blob> {
 const templateDump = await createTemplate();
 
 /**
- * Creates an in-memory PGlite database with all migrations applied.
+ * Creates an in-memory PGlite database with all migrations applied, closed when the calling test
+ * ends. An open PGlite keeps its WebAssembly memory until the garbage collector finds it, so a
+ * worker running many database tests grew by gigabytes.
  *
  * @returns A fresh, isolated database.
+ * @throws {Error} When called outside a test, e.g. in `beforeAll`.
  */
 async function createTestDb(): Promise<Db> {
 	const client = new PGlite({ loadDataDir: templateDump });
+	onTestFinished(async () => {
+		await client.close();
+	});
 	await client.waitReady;
 	const db: Db = drizzle(client, { schema });
 	return db;
