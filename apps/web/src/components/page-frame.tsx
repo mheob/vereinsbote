@@ -7,7 +7,7 @@ import { SignOutButton } from './sign-out-button';
 
 /**
  * The frame of every page: skip link, header with the language switcher and, for a signed-in
- * user, „Abmelden“, then the main content.
+ * user, the Sign out button, then the main content.
  *
  * @param props The frame's props.
  * @param props.children The page.

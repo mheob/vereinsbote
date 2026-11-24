@@ -57,7 +57,7 @@ Every visible string goes into both `apps/web/src/i18n/de.ts` and `en.ts`, with 
 
 - The app meets WCAG 2.2 AA. Use React Aria Components, show errors at the field, announce changes in live regions, and add an axe check for every new page in the E2E tests.
 - Forms use `PostForm`. Server functions run behind the CSRF middleware and authorize from the session, never from client input.
-- Keep secrets, e-mail addresses and tokens out of logs, URLs and error messages; log codes only (`errorLabel`). Server functions return expected refusals as results; anything they throw reaches the browser only as a generic error.
+- Keep secrets, e-mail addresses and tokens out of logs, URLs and error messages; log codes only (`errorLabel`). Server functions return expected refusals as results; anything they throw reaches the browser only as a generic error. Request middleware is not covered by that: what it throws reaches the browser with its message.
 - On Cloudflare, never share the database or other I/O objects across requests, and keep `nodemailer` and `pg` out of that bundle.
 - GitHub Actions are pinned by commit SHA and images by digest. Renovate maintains the pins.
 

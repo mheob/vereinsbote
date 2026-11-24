@@ -10,7 +10,7 @@ import { secondaryButtonClass } from './styles';
 import { useHydrated } from './use-hydrated';
 
 /**
- * „Abmelden“: ends the session, then loads the sign-in page, which also drops every page state
+ * Sign out: ends the session, then loads the sign-in page, which also drops every page state
  * of the signed-in user. Until the page is hydrated the button is pending and does nothing. A
  * failure is announced next to it and the user stays where they are.
  *

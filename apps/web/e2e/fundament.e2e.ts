@@ -6,6 +6,7 @@ import { expectNoA11yViolations } from './helpers/a11y';
 import { latestLink } from './helpers/mailpit';
 
 const HTTP_NOT_FOUND = 404;
+const HTTP_OK = 200;
 
 /**
  * The response bodies of the server function calls a page makes while `act` runs.
@@ -168,4 +169,10 @@ test('sends the security headers with pages and API responses', async ({ page, r
 	expect(response?.headers()).toMatchObject(securityHeaders);
 	const health = await request.get('/api/health');
 	expect(health.headers()).toMatchObject(securityHeaders);
+	// The built assets bypass the app's middleware; the server's own route rule covers them.
+	const stylesheet = await page.locator('link[rel="stylesheet"]').first().getAttribute('href');
+	expect(stylesheet).toMatch(/^\/assets\//u);
+	const asset = await request.get(stylesheet ?? '/assets/missing.css');
+	expect(asset.status()).toBe(HTTP_OK);
+	expect(asset.headers()).toMatchObject(securityHeaders);
 });

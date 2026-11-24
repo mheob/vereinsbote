@@ -119,7 +119,7 @@ cd apps/web && pnpm exec wrangler dev --config dist/cloudflare/server/wrangler.j
 - `curl -s localhost:8787/api/health` returns `{"ok":true}` (database through the Neon driver).
 - Signed out, `curl -s -o /dev/null -D - localhost:8787/admin/users` answers `307` with `Location: /login`: a page's redirect survives the request middleware that ends the request's database.
 - `curl -s -o /dev/null -w '%{http_code}\n' localhost:8787/does-not-exist` answers `404`, and `curl -s localhost:8787/does-not-exist | grep '<h1'` shows the translated not-found page („Seite nicht gefunden“; with `-H 'Cookie: locale=en'`, "Page not found").
-- `/login` renders; `/setup` with the `SETUP_TOKEN` creates the first admin and leads to `/admin/users` (a POST server function, a transaction and a session on workerd); „Abmelden“ leads back to `/login`.
+- `/login` renders; `/setup` with the `SETUP_TOKEN` creates the first admin and leads to `/admin/users` (a POST server function, a transaction and a session on workerd); the header's Sign out button (de: „Abmelden“) leads back to `/login`.
 - The cron handler: `curl -s -X POST -H 'content-type: application/json' -d '{"cron":"*/15 * * * *"}' 'localhost:8787/cdn-cgi/local/explorer/api/local/scheduled?worker=vereinsbote'` answers `"outcome":"ok"`, and an expired row in `verification` is gone afterwards. (`wrangler dev --test-scheduled` and `/__scheduled` do not reach this build: its generated config sets `no_bundle`, so wrangler injects no test middleware.)
 
 Afterwards: stop `wrangler dev`, drop the database (`dropdb --username=vereinsbote vereinsbote_smoke` in the `postgres` container) and run `docker compose -f docker/compose.dev.yml --profile cloudflare stop wsproxy`. This covers the Worker's code paths, not Cloudflare's network, Hyperdrive or Neon itself; see the checklist below.
@@ -130,18 +130,20 @@ The deployment itself is the owner's step. Before the first production deploymen
 
 **Vercel (preview deployment first):**
 
+Preview deployments sit behind Vercel's Deployment Protection by default, so a plain `curl` gets Vercel's login page instead of the app. For the `curl` checks, create a "Protection Bypass for Automation" secret (Settings → Deployment Protection) and send it as the `x-vercel-protection-bypass` header, e.g. `curl -s -H "x-vercel-protection-bypass: $VERCEL_BYPASS" https://<preview>/api/health`, or switch the protection off for the duration of the test and on again afterwards. The browser checks work after signing in to Vercel.
+
 1. In the project settings: root directory `apps/web`, Node.js version 26.x; the variables of `apps/web/.env.example` for Preview, with a `DATABASE_URL` of a database of its own (Neon branch) and `MIGRATE_ON_PREVIEW=1`.
 2. Push a branch. The build log shows `pnpm v12`, the build, then `Migrations applied.`
-3. On the preview URL: `/api/health` returns `{"ok":true}`; `/setup` creates the first admin; `/admin/users` and `/admin/areas` load; an invitation and a level change are saved; „Abmelden“ works; an unknown address shows the 404 page.
-4. Call the tick the way Vercel Cron does: `curl -s -H "Authorization: Bearer $CRON_SECRET" https://<preview>/api/tick` returns the report of a completed tick. The function log shows no `no waitUntil` warning.
-5. Check the response headers of a page (`X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'`).
+3. On the preview URL: `/api/health` returns `{"ok":true}`; `/setup` creates the first admin; `/admin/users` and `/admin/areas` load; an invitation and a level change are saved; Sign out works; signed out, `/admin/users` redirects to `/login`; an unknown address shows the 404 page.
+4. Call the tick the way Vercel Cron does: `curl -s -H "Authorization: Bearer $CRON_SECRET" -H "x-vercel-protection-bypass: $VERCEL_BYPASS" https://<preview>/api/tick` returns the report of a completed tick. The function log shows no `no waitUntil` warning.
+5. Check the response headers of a page and of a built asset under `/assets/` (`X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'`); the asset comes from Vercel's CDN, which takes its headers from `.vercel/output/config.json`.
 6. Then promote with the production variables (without `MIGRATE_ON_PREVIEW`). Promoting rebuilds the deployment for production: its build log must show `Migrations applied.` as well (not `Migrations skipped`, and no `Migrations not run` error). Check that the cron job `/api/tick` appears under Settings → Cron Jobs.
 
 **Cloudflare Workers:**
 
 1. `wrangler secret put` for every variable; `DATABASE_URL` points at a Neon database (the Worker reaches PostgreSQL through Neon's WebSocket endpoint).
 2. `vp run --filter web deploy:cloudflare` with `DATABASE_URL` in the shell: build, `Migrations applied.`, deploy.
-3. On the Worker's URL: the same checks as for Vercel (health, setup, admin pages, sign-out, 404, headers).
+3. On the Worker's URL: the same checks as for Vercel (health, setup, admin pages, sign-out, the redirect of a signed-out `/admin/users`, 404, headers of a page and of an asset under `/assets/`, which Cloudflare serves with the `_headers` file of the build).
 4. Run the cron trigger once from the dashboard (Triggers → Cron → run), then check in `wrangler tail` that it logged no `scheduled tick failed` and no `no waitUntil` warning, and that `system_state` has a fresh `last_tick`.
 
 ## Operations
@@ -149,7 +151,7 @@ The deployment itself is the owner's step. Before the first production deploymen
 - **Remove `SETUP_TOKEN` after the setup.** `/setup` is then switched off.
 - **No production mail transport yet.** In this stage the app can send system mails (sign-in links, invitations) only through `DEV_SMTP_URL` (development) or not at all; users can still sign in with Microsoft when it is configured. The setup's own session is then the only way in for the first admin. Sessions last 7 days and are renewed when used, so it lapses after 7 days without use; keep it alive or configure Microsoft sign-in.
 - **Rotating `APP_SECRET` signs everyone out** (the session cookies no longer verify) and resets the login link windows. Credentials stored encrypted with the old secret could no longer be read; this stage stores none yet.
-- **Security headers:** every response carries `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'`, `X-Content-Type-Options: nosniff` and `Referrer-Policy: strict-origin-when-cross-origin` (`apps/web/src/start.ts`). A full Content Security Policy follows in a later stage.
+- **Security headers:** pages and API responses carry `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'`, `X-Content-Type-Options: nosniff` and `Referrer-Policy: strict-origin-when-cross-origin`, set by the request middleware in `apps/web/src/start.ts`. The built assets under `/assets/` never reach that middleware: Nitro's static handler (Node), Vercel's CDN and Cloudflare's Workers assets serve them. They get the same headers from each platform's configuration (`apps/web/src/platform/static-headers.ts`): a Nitro route rule on Node, the routes of `.vercel/output/config.json` on Vercel, and a `_headers` file in `dist/cloudflare/client` on Cloudflare. A full Content Security Policy follows in a later stage.
 - **Errors:** pages show a generic error or not-found page, and a failed server function sends a generic error to the browser. The server logs only the error's code or name, also for Better Auth's own errors, and a 5xx response of Better Auth only as `better auth HTTP <status>`, so no query parameters, tokens or addresses end up in the logs.
 - **Housekeeping:** every tick deletes expired login links, closed login link windows, expired sessions and rate limiter rows idle for more than two minutes.
 - **Run Node/Docker only behind a reverse proxy.**
@@ -210,6 +212,7 @@ Rules of this repository in `.github/renovate.json`:
   - Its configuration is shared by all repositories and lives in `mheob/.github` (`.github/.kodiak.toml`); this repository has none of its own.
   - It squash-merges: the pull request's title and description become the commit message, then the branch is deleted.
   - So the title follows Conventional Commits, and closing keywords such as `Closes #123` belong in the pull request's description, not only in individual commits.
+- **Private vulnerability reporting** must be switched on in the repository settings (the "Private vulnerability reporting" switch on the security settings page, called "Advanced Security" or "Code security" depending on the GitHub plan). Without it the Security tab offers no "Report a vulnerability" button, and `SECURITY.md` points nowhere.
 - **Major updates:** Renovate labels them `major ⚠️`. Kodiak does not merge them; they are reviewed and merged by hand.
 - **Code-owner review:**
   - Pull requests need the approval of a code owner (`.github/CODEOWNERS`), which matters above all for Renovate's.

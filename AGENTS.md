@@ -85,6 +85,7 @@ Run them from the repository root.
 - **Server functions** (`apps/web/src/functions/`):
   - They run behind the CSRF middleware (`apps/web/src/platform/csrf.ts`).
   - Expected refusals (a taken address, the last admin) are returned as results, never thrown. Anything thrown reaches the browser only as a generic `ServerFunctionError` (`apps/web/src/platform/server-fn-errors.ts`, a function middleware in `start.ts`); redirects and not-found results pass.
+  - An error thrown in a request middleware (`requestMiddleware` in `start.ts`) during a server-function request bypasses that function middleware: Start serializes it with its message to the browser. Request middleware must therefore only throw errors whose message is safe to show (or return a `Response`).
   - Each function authorizes itself from the session principal (`requireRequestPrincipal`), never from client input. A server function is reachable without its page.
   - Server modules are imported inside the handlers, so they stay out of the client bundle.
   - Validate input with zod.
@@ -92,7 +93,7 @@ Run them from the repository root.
   - The database and auth instance are request-scoped (`apps/web/src/platform/request-scope.ts`). Never cache an I/O object across requests.
   - `nodemailer` and `pg` must never end up in the Cloudflare bundle. Load them only on the Node path, behind build-constant branches (`import.meta.env.VITE_VB_PLATFORM`). CI checks the bundle.
 - **No secrets, e-mail addresses or tokens** in logs, URLs or error messages. Log error codes only, through `errorLabel` / `errorLabelWithCause` (`apps/web/src/server/error-label.ts`). Better Auth logs through the same labels (`logger` in `auth.ts`), and its HTTP errors go through `handleAuthRequest`, which logs a thrown error by code and a 5xx response by its status only.
-- **Pages and responses:** `routerDefaults` (`apps/web/src/router-defaults.ts`) sets the generic, translated error and not-found pages; they never show an error's message. Every response gets the security headers of `apps/web/src/platform/security-headers.ts`.
+- **Pages and responses:** `routerDefaults` (`apps/web/src/router-defaults.ts`) sets the generic, translated error and not-found pages; they never show an error's message. Every response gets the security headers of `apps/web/src/platform/security-headers.ts`: pages and API responses through the request middleware in `start.ts`, the built assets under `/assets/` (served by Nitro, Vercel's CDN or Workers assets, never by Start) through `apps/web/src/platform/static-headers.ts` and `vite.config.ts`.
 - **Work after the response** goes through `platform.waitUntil` (`createBackgroundRunner`): it never rejects into the runtime and warns once on Vercel or Cloudflare when the runtime offers no `waitUntil`.
 - E-mail addresses are stored and compared through `normalizeEmail` (trim and lowercase).
 - Credentials are encrypted with AES-GCM through WebCrypto only, so the code runs on Node and on Workers.
