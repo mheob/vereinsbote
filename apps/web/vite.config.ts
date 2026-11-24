@@ -88,7 +88,9 @@ const resolve: UserConfig['resolve'] = { tsconfigPaths: true };
 
 export default defineConfig((): UserConfig => {
 	// The unit tests import plain modules, they need none of the app plugins.
-	if (VITEST !== undefined) return { resolve };
+	// Every database test starts its own PGlite instance; on CI runners with coverage that takes
+	// several seconds, so the default 5 s timeout fails tests at random (seen on PR #2).
+	if (VITEST !== undefined) return { resolve, test: { hookTimeout: 30_000, testTimeout: 30_000 } };
 
 	const { plugins = [], ...adapterConfig } = platformConfig(VITE_VB_PLATFORM);
 	return {
