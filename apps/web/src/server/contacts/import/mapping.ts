@@ -178,6 +178,18 @@ function isTargetOfKind(target: ColumnTarget, kind: ContactKind): boolean {
 }
 
 /**
+ * Strips the dots at the end of a text (a pattern for it is quadratic on long runs of dots).
+ *
+ * @param text The text.
+ * @returns The text without trailing dots.
+ */
+function withoutTrailingDots(text: string): string {
+	let end = text.length;
+	while (end > 0 && text.charAt(end - 1) === '.') end -= 1;
+	return text.slice(0, end);
+}
+
+/**
  * Suggests a target from a column header of a known export.
  *
  * @param header The column header.
@@ -185,7 +197,7 @@ function isTargetOfKind(target: ColumnTarget, kind: ContactKind): boolean {
  * @returns The target; `discard` for an unknown header or a field the kind does not have.
  */
 function suggestTarget(header: string, kind: ContactKind): ColumnTarget {
-	const key = cleanText(header).toLowerCase().replace(/\.+$/u, '');
+	const key = withoutTrailingDots(cleanText(header).toLowerCase());
 	if (!Object.hasOwn(HEADER_SUGGESTIONS, key)) return DISCARD;
 	const suggestion = HEADER_SUGGESTIONS[key];
 	if (suggestion === undefined) return DISCARD;

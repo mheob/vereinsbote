@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 
-import { keepLeadingZeros } from './leading-zeros';
+import { attributes, keepLeadingZeros } from './leading-zeros';
 
 const WORKBOOK = `<workbook xmlns:r="urn:r"><sheets>
 <sheet name="Mitglieder" sheetId="1" r:id="rId1"/></sheets></workbook>`;
@@ -62,5 +62,45 @@ describe(keepLeadingZeros, () => {
 		expect(keepLeadingZeros(entries(withoutStyles), 0, [[1067]])).toStrictEqual([[1067]]);
 		expect(keepLeadingZeros(entries(withoutRelations), 0, [[1067]])).toStrictEqual([[1067]]);
 		expect(keepLeadingZeros(entries(WORKBOOK_FILES), 1, [[1067]])).toStrictEqual([[1067]]);
+	});
+});
+
+describe(attributes, () => {
+	it('reads double and single quoted values', () => {
+		expect([...attributes(` a="1" b='2'`)]).toStrictEqual([
+			['a', '1'],
+			['b', '2'],
+		]);
+	});
+
+	it('allows white space around the equals sign', () => {
+		expect([...attributes(' a = "1"\n\tb\t=\t\'2\'')]).toStrictEqual([
+			['a', '1'],
+			['b', '2'],
+		]);
+	});
+
+	it('drops the namespace prefix and the namespace declarations', () => {
+		expect([...attributes(' xmlns:r="urn:r" xmlns="urn:x" r:id="rId1"')]).toStrictEqual([
+			['id', 'rId1'],
+		]);
+	});
+
+	it('skips names without a quoted value', () => {
+		expect([...attributes(' a b=c d="4" e =')]).toStrictEqual([['d', '4']]);
+	});
+
+	it('stops at an unterminated quote', () => {
+		expect([...attributes(' a="1" b="2 c="3"')]).toStrictEqual([
+			['a', '1'],
+			['b', '2 c='],
+		]);
+		expect([...attributes(' a="1" b="2')]).toStrictEqual([['a', '1']]);
+	});
+
+	it('stays fast on long runs of white space and name characters', () => {
+		const started = performance.now();
+		attributes(`${'a '.repeat(20_000)}${'a'.repeat(50_000)} = `);
+		expect(performance.now() - started).toBeLessThan(1000);
 	});
 });

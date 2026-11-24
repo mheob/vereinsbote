@@ -6,6 +6,7 @@
 import { and, eq, ne, sql } from 'drizzle-orm';
 
 import { writeAudit } from '@/server/audit/audit';
+import { compareCodePoints } from '@/server/compare-code-points';
 import type { Db } from '@/server/db/client';
 import { isUniqueViolation } from '@/server/db/errors';
 import { contacts } from '@/server/db/schema';
@@ -259,7 +260,7 @@ function changedColumns(before: PartnerColumns, after: PartnerColumns): string[]
 	const custom = [...ids]
 		.filter((id) => ownValue(before.customValues, id) !== ownValue(after.customValues, id))
 		.map((id) => `custom:${id}`)
-		.toSorted();
+		.toSorted(compareCodePoints);
 	return [...changed, ...custom];
 }
 

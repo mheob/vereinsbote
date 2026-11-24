@@ -28,7 +28,9 @@ const CELL_XFS =
 /** The number formats; `<numFmt>` also occurs in the formats of conditional formatting. */
 const NUM_FMTS =
 	/<(?:[\w.-]+:)?numFmts(?=[\s/>])[^>]*>(?<content>[\s\S]*?)<\/(?:[\w.-]+:)?numFmts>/u;
-const ATTRIBUTE = /(?<name>[\w.:-]+)\s*=\s*(?:"(?<double>[^"]*)"|'(?<single>[^']*)')/gu;
+const NAME_CHAR = /[\w.:-]/u;
+const WHITESPACE = /\s/u;
+const NOT_FOUND = -1;
 const RELATIONSHIP_TYPE = /\/relationships\/(?<kind>styles|worksheet)$/u;
 const CELL_ADDRESS = /^(?<letters>[A-Z]+)(?<row>[1-9]\d*)$/u;
 const ZERO_ONLY_FORMAT = /^0+$/u;
@@ -51,18 +53,77 @@ function entryText(entries: WorkbookEntries, path: string | undefined): string {
 }
 
 /**
- * Reads the attributes of an opening tag.
+ * The index of the first character at or after `from` that is not white space.
+ *
+ * @param source The text.
+ * @param from The index to start at.
+ * @returns The index; the length of the text when only white space follows.
+ */
+function skipWhitespace(source: string, from: number): number {
+	let index = from;
+	while (index < source.length && WHITESPACE.test(source.charAt(index))) index += 1;
+	return index;
+}
+
+/**
+ * The index of the first character at or after `from` that cannot be part of a name.
+ *
+ * @param source The text.
+ * @param from The index to start at.
+ * @returns The index.
+ */
+function skipName(source: string, from: number): number {
+	let index = from;
+	while (index < source.length && NAME_CHAR.test(source.charAt(index))) index += 1;
+	return index;
+}
+
+/** One attribute read by `readAttribute`, and where the scan goes on. */
+interface ScannedAttribute {
+	/** The index to continue at. */
+	readonly next: number;
+	/** The name and the value; undefined when no attribute starts here. */
+	readonly pair?: readonly [name: string, value: string];
+}
+
+/**
+ * Reads the attribute at an index: a name, optional white space, `=`, optional white space and a
+ * quoted value.
+ *
+ * @param source The text between the tag name and `>`.
+ * @param from The index to start at.
+ * @returns The attribute and the index to continue at.
+ */
+function readAttribute(source: string, from: number): ScannedAttribute {
+	const nameEnd = skipName(source, from);
+	if (nameEnd === from) return { next: from + 1 };
+	const equals = skipWhitespace(source, nameEnd);
+	if (source.charAt(equals) !== '=') return { next: nameEnd };
+	const quote = skipWhitespace(source, equals + 1);
+	const quoteChar = source.charAt(quote);
+	if (quoteChar !== '"' && quoteChar !== "'") return { next: quote };
+	const end = source.indexOf(quoteChar, quote + 1);
+	if (end === NOT_FOUND) return { next: source.length };
+	return { next: end + 1, pair: [source.slice(from, nameEnd), source.slice(quote + 1, end)] };
+}
+
+/**
+ * Reads the attributes of an opening tag in one pass (a pattern with nested repeats can backtrack
+ * super-linearly). Anything between attributes that is not one is skipped; an unterminated quote
+ * ends the scan.
  *
  * @param source The text between the tag name and `>`.
  * @returns The attributes; namespace declarations are left out.
  */
 function attributes(source: string): Attributes {
 	const result = new Map<string, string>();
-	for (const { groups } of source.matchAll(ATTRIBUTE)) {
-		const name = groups?.name ?? 'xmlns';
-		if (!name.startsWith('xmlns')) {
-			result.set(name.slice(name.indexOf(':') + 1), groups?.double ?? groups?.single ?? '');
+	let index = 0;
+	while (index < source.length) {
+		const { next, pair } = readAttribute(source, index);
+		if (pair !== undefined && !pair[0].startsWith('xmlns')) {
+			result.set(pair[0].slice(pair[0].indexOf(':') + 1), pair[1]);
 		}
+		index = next;
 	}
 	return result;
 }
@@ -217,4 +278,4 @@ function keepLeadingZeros(
 	);
 }
 
-export { keepLeadingZeros };
+export { attributes, keepLeadingZeros };

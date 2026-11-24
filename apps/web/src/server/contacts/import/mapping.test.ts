@@ -83,6 +83,16 @@ describe(suggestTarget, () => {
 		expect(suggestTarget('Nr.', 'partner')).toStrictEqual(field('customerNumber'));
 	});
 
+	it('strips any number of trailing dots', () => {
+		expect(suggestTarget('Nr....', 'partner')).toStrictEqual(field('customerNumber'));
+	});
+
+	it('stays fast on a header of many dots', () => {
+		const started = performance.now();
+		expect(suggestTarget(`${'.'.repeat(500)}x`, 'member')).toStrictEqual({ type: 'discard' });
+		expect(performance.now() - started).toBeLessThan(1000);
+	});
+
 	it.each<[string, ColumnTarget]>([
 		['Nr', field('memberNumber')],
 		['  nr.  ', field('memberNumber')],
