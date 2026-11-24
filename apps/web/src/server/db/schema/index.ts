@@ -3,4 +3,5 @@
 export * from './areas';
 export * from './audit';
 export * from './auth';
+export * from './contacts';
 export * from './system';

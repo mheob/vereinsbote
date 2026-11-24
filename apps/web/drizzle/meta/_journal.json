@@ -50,6 +50,13 @@
       "when": 1795462772220,
       "tag": "0006_daily_deathstrike",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1795517955810,
+      "tag": "0007_clumsy_longshot",
+      "breakpoints": true
     }
   ]
 }
