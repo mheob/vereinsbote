@@ -18,9 +18,7 @@ import { processImage } from './process-image';
 type UploadTarget = Readonly<{ purpose: 'brand' } | { purpose: 'library'; areaId: string }>;
 
 /** What the file chooser offers; the processing checks what really arrives (a drop is not filtered). */
-const RASTER_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-
-const SVG_TYPES = [...RASTER_TYPES, 'image/svg+xml'];
+const ACCEPTED_FILE_TYPES = ['image/*'];
 
 const dropZoneClass =
 	'flex flex-col items-start gap-3 rounded-md border-2 border-dashed border-gray-600 p-6 data-drop-target:border-blue-700 data-drop-target:bg-blue-50 data-focus-visible:outline-2 data-focus-visible:outline-offset-2 data-focus-visible:outline-blue-700';
@@ -129,7 +127,7 @@ export function ImageUpload({
 		<div className="flex flex-col gap-3">
 			<DropZone className={dropZoneClass} getDropOperation={getDropOperation} onDrop={onDrop}>
 				<Text slot="label">{t('imageUpload.dropZone')}</Text>
-				<FileTrigger acceptedFileTypes={allowSvg ? SVG_TYPES : RASTER_TYPES} onSelect={onSelect}>
+				<FileTrigger acceptedFileTypes={ACCEPTED_FILE_TYPES} onSelect={onSelect}>
 					<Button
 						aria-describedby={helpId}
 						className={primaryButtonClass}

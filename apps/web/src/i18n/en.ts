@@ -149,9 +149,9 @@ export const en: Record<keyof typeof de, string> = {
 	'imageUpload.flattenedGif': 'The animated GIF is uploaded as a still image.',
 	'imageUpload.gone': 'The area has been deleted in the meantime.',
 	'imageUpload.help':
-		'JPEG, PNG, GIF or WebP. Your browser scales the image to at most 1200 pixels wide and removes metadata such as the place it was taken.',
+		'JPEG, PNG, GIF, WebP or HEIC (anything but JPEG and PNG only if your browser can read it). Your browser scales the image to at most 1200 pixels wide and removes metadata such as the place it was taken.',
 	'imageUpload.helpSvg':
-		'JPEG, PNG, GIF, WebP or SVG. Your browser scales the image to at most 1200 pixels wide and removes metadata such as the place it was taken.',
+		'JPEG, PNG, GIF, WebP, HEIC or SVG (anything but JPEG and PNG only if your browser can read it). Your browser scales the image to at most 1200 pixels wide and removes metadata such as the place it was taken.',
 	'imageUpload.invalidImage':
 		'The server did not accept the image. JPEG and PNG up to 2 MB are allowed.',
 	'imageUpload.processing': 'The image is being processed …',

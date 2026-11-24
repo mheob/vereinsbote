@@ -151,9 +151,9 @@ export const de = {
 	'imageUpload.flattenedGif': 'Das animierte GIF wird als Standbild hochgeladen.',
 	'imageUpload.gone': 'Der Bereich wurde inzwischen gelöscht.',
 	'imageUpload.help':
-		'JPEG, PNG, GIF oder WebP. Das Bild wird in deinem Browser auf höchstens 1200 Pixel Breite verkleinert, Metadaten wie der Aufnahmeort werden entfernt.',
+		'JPEG, PNG, GIF, WebP oder HEIC (alles außer JPEG und PNG nur, wenn dein Browser es lesen kann). Das Bild wird in deinem Browser auf höchstens 1200 Pixel Breite verkleinert, Metadaten wie der Aufnahmeort werden entfernt.',
 	'imageUpload.helpSvg':
-		'JPEG, PNG, GIF, WebP oder SVG. Das Bild wird in deinem Browser auf höchstens 1200 Pixel Breite verkleinert, Metadaten wie der Aufnahmeort werden entfernt.',
+		'JPEG, PNG, GIF, WebP, HEIC oder SVG (alles außer JPEG und PNG nur, wenn dein Browser es lesen kann). Das Bild wird in deinem Browser auf höchstens 1200 Pixel Breite verkleinert, Metadaten wie der Aufnahmeort werden entfernt.',
 	'imageUpload.invalidImage':
 		'Der Server hat das Bild nicht angenommen. Erlaubt sind JPEG und PNG bis 2 MB.',
 	'imageUpload.processing': 'Das Bild wird verarbeitet …',

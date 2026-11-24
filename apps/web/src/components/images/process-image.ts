@@ -14,6 +14,8 @@ interface DecodedImage {
 	/** A GIF: only its first frame is kept. */
 	readonly animated: boolean;
 	readonly isSvg: boolean;
+	/** Frees the decoded pixels (bitmap or object URL); `processImage` calls it once, always. */
+	readonly release: () => void;
 	/** Draws the image at the given size and encodes it; the result carries no metadata. */
 	// oxlint-disable-next-line max-params -- the four arguments are the contract with the browser glue
 	readonly encode: (
@@ -115,22 +117,19 @@ async function tryEncode(
 }
 
 /**
- * Prepares an image for upload: decodes it with its EXIF rotation, scales it to at most 1200 px
- * wide and encodes it anew, which drops all metadata. JPEG, or PNG when it is transparent.
+ * Checks, scales and encodes a decoded image.
  *
  * @param file The chosen file.
+ * @param image Its decoded image.
  * @param options What is accepted.
- * @param options.allowSvg Accept SVG (the brand's logo).
- * @param deps The decoder; the browser's by default.
+ * @param options.allowSvg Accept SVG.
  * @returns The image to upload, or why it cannot be.
  */
-async function processImage(
+async function processDecoded(
 	file: File,
+	image: DecodedImage,
 	options: Readonly<{ allowSvg: boolean }>,
-	deps: ImageDeps = browserImageDeps,
 ): Promise<ProcessResult> {
-	const image = await tryDecode(deps, file);
-	if (image === null) return { ok: false, reason: 'unreadable' };
 	const { height, width } = fitWidth(image, MAX_IMAGE_WIDTH);
 	const reason = refusalFor(image, { allowSvg: options.allowSvg, height });
 	if (reason !== null) return { ok: false, reason };
@@ -148,6 +147,30 @@ async function processImage(
 		ok: true,
 		width,
 	};
+}
+
+/**
+ * Prepares an image for upload: decodes it with its EXIF rotation, scales it to at most 1200 px
+ * wide and encodes it anew, which drops all metadata. JPEG, or PNG when it is transparent.
+ *
+ * @param file The chosen file.
+ * @param options What is accepted.
+ * @param options.allowSvg Accept SVG (the brand's logo).
+ * @param deps The decoder; the browser's by default.
+ * @returns The image to upload, or why it cannot be.
+ */
+async function processImage(
+	file: File,
+	options: Readonly<{ allowSvg: boolean }>,
+	deps: ImageDeps = browserImageDeps,
+): Promise<ProcessResult> {
+	const image = await tryDecode(deps, file);
+	if (image === null) return { ok: false, reason: 'unreadable' };
+	try {
+		return await processDecoded(file, image, options);
+	} finally {
+		image.release();
+	}
 }
 
 export { processImage };

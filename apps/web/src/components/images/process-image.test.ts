@@ -8,18 +8,24 @@ type Overrides = Partial<Omit<DecodedImage, 'encode'>>;
 function fakeDeps(
 	overrides: Overrides = {},
 	encoded: Blob = new Blob(['x'.repeat(100)]),
-): { deps: ImageDeps; encode: ReturnType<typeof vi.fn<DecodedImage['encode']>> } {
+): {
+	deps: ImageDeps;
+	encode: ReturnType<typeof vi.fn<DecodedImage['encode']>>;
+	release: ReturnType<typeof vi.fn<() => void>>;
+} {
 	const encode = vi.fn<DecodedImage['encode']>().mockResolvedValue(encoded);
+	const release = vi.fn<() => void>();
 	const image: DecodedImage = {
 		animated: false,
 		encode,
 		hasAlpha: false,
 		height: 3024,
 		isSvg: false,
+		release,
 		width: 4032,
 		...overrides,
 	};
-	return { deps: { decode: vi.fn().mockResolvedValue(image) }, encode };
+	return { deps: { decode: vi.fn().mockResolvedValue(image) }, encode, release };
 }
 
 function file(name: string, type = 'image/jpeg', size = 10): File {
@@ -126,5 +132,25 @@ describe(processImage, () => {
 			ok: false,
 			reason: 'unreadable',
 		});
+	});
+
+	it('releases the decoded image exactly once on every path', async () => {
+		const options = { allowSvg: false };
+		const ok = fakeDeps();
+		await processImage(file('a.jpg'), options, ok.deps);
+		const svg = fakeDeps({ isSvg: true });
+		await processImage(file('a.svg'), options, svg.deps);
+		const tall = fakeDeps({ height: 10_000, width: 1 });
+		await processImage(file('a.png'), options, tall.deps);
+		const empty = fakeDeps({ width: 0 });
+		await processImage(file('a.png'), options, empty.deps);
+		const large = fakeDeps({}, new Blob([new Uint8Array(2 * 1_048_576 + 1)]));
+		await processImage(file('a.jpg'), options, large.deps);
+		const failing = fakeDeps();
+		failing.encode.mockRejectedValue(new Error('canvas'));
+		await processImage(file('a.jpg'), options, failing.deps);
+		for (const { release } of [ok, svg, tall, empty, large, failing]) {
+			expect(release).toHaveBeenCalledOnce();
+		}
 	});
 });

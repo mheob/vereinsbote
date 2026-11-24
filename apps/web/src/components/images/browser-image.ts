@@ -101,7 +101,7 @@ async function toBlob(canvas: HTMLCanvasElement, type: OutputType, quality: numb
  * Wraps a loaded image as the decoded image `processImage` works with.
  *
  * @param loaded The loaded image.
- * @returns The decoded image; encoding it frees the source.
+ * @returns The decoded image; release frees the source.
  */
 function toDecoded(loaded: Loaded): DecodedImage {
 	const { animated, height, isSvg, release, source, width } = loaded;
@@ -109,18 +109,15 @@ function toDecoded(loaded: Loaded): DecodedImage {
 		animated,
 		// oxlint-disable-next-line max-params -- the four arguments are the contract of `DecodedImage`
 		encode: async (type, quality, targetWidth, targetHeight) => {
-			try {
-				const background = type === 'image/jpeg' ? '#ffffff' : undefined;
-				const canvas = draw(source, { height: targetHeight, width: targetWidth }, background);
-				if (canvas === null) throw new Error('No 2D canvas.');
-				return await toBlob(canvas, type, quality);
-			} finally {
-				release();
-			}
+			const background = type === 'image/jpeg' ? '#ffffff' : undefined;
+			const canvas = draw(source, { height: targetHeight, width: targetWidth }, background);
+			if (canvas === null) throw new Error('No 2D canvas.');
+			return toBlob(canvas, type, quality);
 		},
 		hasAlpha: isSvg || (loaded.mayHaveAlpha && hasTransparentPixel(loaded)),
 		height,
 		isSvg,
+		release,
 		width,
 	};
 }
@@ -207,7 +204,14 @@ async function decode(file: Blob): Promise<DecodedImage | null> {
 	const isSvg =
 		file.type === 'image/svg+xml' || (file instanceof File && /\.svg$/iu.test(file.name));
 	const loaded = await (isSvg ? loadSvg(file) : loadRaster(file));
-	return loaded === null ? null : toDecoded(loaded);
+	if (loaded === null) return null;
+	try {
+		return toDecoded(loaded);
+	} catch {
+		// The pixel probe failed: nothing else owns the source yet.
+		loaded.release();
+		return null;
+	}
 }
 
 /** The decoder `processImage` uses in the browser. */
