@@ -47,24 +47,27 @@ type ChangedField = ContactField | 'groups' | `custom:${string}`;
 
 /** One entry of the change list of a preview. */
 interface ImportChange {
-	type: 'created' | 'changed' | 'removed';
+	readonly type: 'created' | 'changed' | 'removed';
 	/** The member number of a member, the customer number of a partner. */
-	number: string | null;
-	name: DisplayName;
+	readonly number: string | null;
+	readonly name: DisplayName;
 	/** For `changed`: only the fields the user may see. */
-	fields: ChangedField[];
+	readonly fields: readonly ChangedField[];
 	/** Further fields, which the user may not see, changed as well. */
-	hiddenFields: boolean;
+	readonly hiddenFields: boolean;
 	/** For `removed`: the exit date is reached (false for users who may not see it). */
-	exited: boolean;
+	readonly exited: boolean;
 }
 
 /** Why a confirm wrote nothing. */
 type ConfirmFailure = 'blocked' | 'confirmationRequired' | 'stockChanged';
 
 type ConfirmImportResult =
-	| { ok: true; counts: { created: number; changed: number; removed: number; warnings: number } }
-	| { ok: false; failure: ConfirmFailure };
+	| Readonly<{
+			ok: true;
+			counts: Readonly<{ created: number; changed: number; removed: number; warnings: number }>;
+	  }>
+	| Readonly<{ ok: false; failure: ConfirmFailure }>;
 
 /** The audit actions of the imports. */
 type ImportAuditAction = Extract<AuditAction, `import.${string}`>;

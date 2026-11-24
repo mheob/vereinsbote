@@ -54,11 +54,7 @@ export const Route = createFileRoute('/')({
 						<p>{t('home.firstImport')}</p>
 						{notice.canImport ? (
 							<p>
-								<Link
-									className={linkClass}
-									// @ts-expect-error -- the route comes with the import wizard; then this line goes
-									to="/contacts/import/members"
-								>
+								<Link className={linkClass} to="/contacts/import/members">
 									{t('home.startFirstImport')}
 								</Link>
 							</p>

@@ -45,32 +45,32 @@ const SAFETY_THRESHOLD = 0.2;
 
 /** What a member import does, in numbers. */
 interface MemberImportCounts {
-	created: number;
-	changed: number;
-	unchanged: number;
+	readonly created: number;
+	readonly changed: number;
+	readonly unchanged: number;
 	/** Deleted: missing from the file or exited. */
-	removed: number;
+	readonly removed: number;
 	/** Of `removed`, those whose exit date is reached; null without the right to see it. */
-	removedExited: number | null;
+	readonly removedExited: number | null;
 	/** Imported members without an address. */
-	withoutEmail: number;
+	readonly withoutEmail: number;
 	/** Imported members with an exit date after today; null without the right to see it. */
-	futureExit: number | null;
+	readonly futureExit: number | null;
 }
 
 /** What the preview of a member import shows. */
 interface MemberImportPreview {
 	/** The stock version the confirm must still find. */
-	stockVersion: number;
-	counts: MemberImportCounts;
+	readonly stockVersion: number;
+	readonly counts: MemberImportCounts;
 	/** Removed first, then changed, then created; at most `MAX_LISTED_CHANGES`. */
-	changes: ImportChange[];
-	moreChanges: number;
+	readonly changes: readonly ImportChange[];
+	readonly moreChanges: number;
 	/** At most `MAX_LISTED_ISSUES`. */
-	fieldIssues: FieldIssue[];
-	moreIssues: number;
-	blocking: BlockingIssue[];
-	confirmation: { required: boolean; deletions: number };
+	readonly fieldIssues: readonly FieldIssue[];
+	readonly moreIssues: number;
+	readonly blocking: readonly BlockingIssue[];
+	readonly confirmation: { readonly required: boolean; readonly deletions: number };
 }
 
 /** A stored member the file changes. */

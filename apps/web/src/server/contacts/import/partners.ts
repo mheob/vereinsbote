@@ -69,44 +69,44 @@ interface KeptValue {
 
 /** What a partner import does, in numbers. */
 interface PartnerImportCounts {
-	created: number;
+	readonly created: number;
 	/** Stored partners that change, except those taken over. */
-	updated: number;
+	readonly updated: number;
 	/** Stored partners a row matched that stay as they are. */
-	unchanged: number;
+	readonly unchanged: number;
 	/** Partners without customer number (made by hand) that get one. */
-	takenOver: number;
+	readonly takenOver: number;
 	/** Rows skipped, see `rowIssues`. */
-	skipped: number;
+	readonly skipped: number;
 }
 
 /** A stored partner whose customer number no row has; the user may tick it for deletion. */
 interface MissingPartner {
-	id: string;
-	customerNumber: string;
-	name: DisplayName;
+	readonly id: string;
+	readonly customerNumber: string;
+	readonly name: DisplayName;
 }
 
 /** What the preview of a partner import shows. */
 interface PartnerImportPreview {
 	/** The stock version the confirm must still find. */
-	stockVersion: number;
-	counts: PartnerImportCounts;
+	readonly stockVersion: number;
+	readonly counts: PartnerImportCounts;
 	/** Changed first, then created; at most `MAX_LISTED_CHANGES`. */
-	changes: ImportChange[];
-	moreChanges: number;
+	readonly changes: readonly ImportChange[];
+	readonly moreChanges: number;
 	/** By customer number. Never deleted unless ticked. */
-	notInExport: MissingPartner[];
+	readonly notInExport: readonly MissingPartner[];
 	/** Only fields the user may see; at most `MAX_LISTED_ISSUES`. */
-	keptValues: KeptValue[];
-	moreKeptValues: number;
+	readonly keptValues: readonly KeptValue[];
+	readonly moreKeptValues: number;
 	/** At most `MAX_LISTED_ISSUES`. */
-	rowIssues: PartnerRowIssue[];
-	moreRowIssues: number;
+	readonly rowIssues: readonly PartnerRowIssue[];
+	readonly moreRowIssues: number;
 	/** At most `MAX_LISTED_ISSUES`. */
-	fieldIssues: FieldIssue[];
-	moreIssues: number;
-	blocking: BlockingIssue[];
+	readonly fieldIssues: readonly FieldIssue[];
+	readonly moreIssues: number;
+	readonly blocking: readonly BlockingIssue[];
 }
 
 /** A partner rows matched or created. */

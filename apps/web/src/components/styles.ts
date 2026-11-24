@@ -28,3 +28,6 @@ export const checkboxClass = 'group flex items-center gap-2';
 
 export const checkboxBoxClass =
 	'flex size-5 items-center justify-center rounded border-2 border-gray-600 text-white group-data-focus-visible:outline-2 group-data-focus-visible:outline-offset-2 group-data-focus-visible:outline-blue-700 group-data-selected:border-blue-700 group-data-selected:bg-blue-700';
+
+export const primaryButtonClass =
+	'rounded-md bg-blue-700 px-4 py-2 font-semibold text-white data-focus-visible:outline-2 data-focus-visible:outline-offset-2 data-focus-visible:outline-blue-700 data-hovered:bg-blue-800 data-pending:opacity-70';

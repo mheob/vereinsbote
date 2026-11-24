@@ -42,22 +42,14 @@ export function MainNav({ nav }: Readonly<{ nav: FrameInfo['nav'] }>): ReactNode
 				) : null}
 				{nav.importMembers ? (
 					<li>
-						<Link
-							className={linkClass}
-							// @ts-expect-error -- the route comes with the import wizard; then this line goes
-							to="/contacts/import/members"
-						>
+						<Link className={linkClass} to="/contacts/import/members">
 							{t('nav.importMembers')}
 						</Link>
 					</li>
 				) : null}
 				{nav.importPartners ? (
 					<li>
-						<Link
-							className={linkClass}
-							// @ts-expect-error -- the route comes with the import wizard; then this line goes
-							to="/contacts/import/partners"
-						>
+						<Link className={linkClass} to="/contacts/import/partners">
 							{t('nav.importPartners')}
 						</Link>
 					</li>
