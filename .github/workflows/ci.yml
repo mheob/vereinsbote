@@ -58,13 +58,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # PostgreSQL for the tests that need real concurrency (TEST_POSTGRES_URL); each creates and
-    # drops a database of its own. Image pinned by digest, like in the compose files.
+    # drops a database of its own. Image pinned by digest, like in the compose files. The throwaway
+    # service trusts every connection, so the workflow holds no password.
     services:
       postgres:
         image: postgres:19@sha256:766ddae4967301b9802b341bb596905f11dd5c558149690a7a4d80c2f61bbcf9
         env:
           POSTGRES_DB: vereinsbote
-          POSTGRES_PASSWORD: vereinsbote
+          POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_USER: vereinsbote
         options: >-
           --health-cmd "pg_isready --username=vereinsbote --dbname=vereinsbote" --health-interval 2s --health-timeout 5s
@@ -85,7 +86,7 @@ jobs:
             - args: ['--frozen-lockfile']
       - name: Unit and integration tests
         env:
-          TEST_POSTGRES_URL: postgres://vereinsbote:vereinsbote@localhost:5432/vereinsbote
+          TEST_POSTGRES_URL: postgres://vereinsbote@localhost:5432/vereinsbote
         run: vp test --coverage
       # Pushes to main and pull requests of this repository only: other pushes would analyze the
       # same code twice, and pull requests from forks get no secrets. Needs the repository secret
@@ -147,13 +148,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     # The services of docker/compose.dev.yml, with the database the tests expect
-    # (apps/web/e2e/env.ts). Images pinned by digest, like in the compose files.
+    # (apps/web/e2e/env.ts). Images pinned by digest, like in the compose files. The throwaway
+    # database trusts every connection and ignores the password of the tests' URL.
     services:
       postgres:
         image: postgres:19@sha256:766ddae4967301b9802b341bb596905f11dd5c558149690a7a4d80c2f61bbcf9
         env:
           POSTGRES_DB: vereinsbote_e2e
-          POSTGRES_PASSWORD: vereinsbote
+          POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_USER: vereinsbote
         options: >-
           --health-cmd "pg_isready --username=vereinsbote --dbname=vereinsbote_e2e" --health-interval 2s --health-timeout 5s

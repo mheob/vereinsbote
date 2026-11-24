@@ -53,7 +53,7 @@ All variables are described in `apps/web/.env.example`. They are trimmed and val
 | `CRON_SECRET` | yes | At least 32 characters; protects the tick (`/api/tick`) |
 | `SETUP_TOKEN` | no | Enables `/setup` until the first admin exists |
 | `MS_LOGIN_CLIENT_ID`, `MS_LOGIN_CLIENT_SECRET`, `MS_LOGIN_TENANT_ID` | no | Sign-in with Microsoft, all three or none. The tenant must be the club's tenant ID (a GUID); `common`, `organizations` and `consumers` are refused |
-| `DEV_SMTP_URL` | no | Development only: system mails via SMTP, e.g. to Mailpit |
+| `DEV_SMTP_URL` | no | Development only: system mails via SMTP, e.g. to Mailpit. Unencrypted only to `localhost`, `127.0.0.1` or `[::1]`; any other server must offer STARTTLS |
 | `DEV_NEON_WS_PROXY` | no | Development only: a local Neon WebSocket proxy for the Neon driver (see [Cloudflare smoke test](#local-smoke-test-of-the-cloudflare-build)); needs an `http://localhost` `APP_URL` |
 | `HEARTBEAT_URL` | no | Called after every completed tick, also when a step failed (not when the tick could not run, e.g. without a database) |
 | `TICK_INTERVAL_MS` | no | Node/Docker only: interval between ticks, default 15 minutes |
@@ -170,7 +170,7 @@ Preview deployments sit behind Vercel's Deployment Protection by default, so a p
 `.github/workflows/ci.yml` runs on every push and every pull request:
 
 - `check`: `vp check`, `pnpm check:catalog`, `pnpm check:vite-plus`, `pnpm cve` (dependency advisories) and, on pull requests, commitlint over all commits of the pull request
-- `test`: `vp test --coverage`, with a PostgreSQL service container and `TEST_POSTGRES_URL`, so the concurrency tests run as well; then the SonarQube Cloud scan (see [Security scanning](#security-scanning))
+- `test`: `vp test --coverage`, with a PostgreSQL service container (trust authentication, so the workflow holds no password) and `TEST_POSTGRES_URL`, so the concurrency tests run as well; then the SonarQube Cloud scan (see [Security scanning](#security-scanning))
 - `build`: the three targets. The job also checks that `nodemailer` and `pg` (with `pg-pool` and `pg-protocol`) do not end up in the Cloudflare bundle: it fails on their module paths (`node_modules/pg-pool/…`), which the bundle keeps in comments and source maps, but not on the copy of pg's `package.json` that Neon's driver carries as text.
 - `docker`: builds `docker/Dockerfile` (without pushing)
 - `e2e`: the end-to-end tests, against PostgreSQL and Mailpit as service containers
@@ -188,6 +188,7 @@ Three scanners look at the code and the dependencies. None needs a secret except
   - Fix a finding by updating the dependency or, when the parent has no fix yet, with a scoped entry in `overrides` (like the esbuild one in `pnpm-workspace.yaml`).
 - **SonarQube Cloud** analyzes in CI, not through Automatic Analysis (that cannot import coverage).
   - `sonar-project.properties` holds the organization `mheob`, the project key `mheob_vereinsbote` and the paths. The `test` job runs `vp test --coverage` (provider v8, report `coverage/lcov.info`, configured in the root `vite.config.ts`) and then the scan action. The scan runs on pushes to `main` and on pull requests of this repository, not on forks (they get no secrets).
+  - The quality gate asks for 80 % coverage on new code. It counts the unit tests only, so `sonar.coverage.exclusions` leaves out the code that runs only inside the framework or a runtime and is tested end to end instead: routes, React components (`*.tsx`), server functions (thin wrappers around the tested `server/` modules), the router, the Node and Workers entry points and the migration CLIs. Plain modules next to them (hooks, helpers) still count. The test files themselves are excluded from the sources.
   - Setup by the owner: in SonarQube Cloud import `mheob/vereinsbote` into the organization `mheob` (it gets the key `mheob_vereinsbote`), switch Automatic Analysis off in the project's administration (Analysis Method), create a token (My Account, Security) and add it as the repository secret `SONAR_TOKEN`. Optionally add the SonarQube Cloud check to the `main` ruleset as a required status check.
   - `@vitest/coverage-v8` must have the version of Vitest that Vite+ bundles. It is part of the `vite-plus toolchain` Renovate group and of `pnpm check:vite-plus`.
 - **Snyk** checks the pull requests through its GitHub integration; there is no Snyk CLI or token in CI.
@@ -226,7 +227,7 @@ Versions, the changelog, git tags and GitHub Releases come from [Changesets](htt
 
 ### Keeping the pins current with Renovate
 
-The [Renovate GitHub App](https://github.com/apps/renovate) must be installed for the repository. It reads `.github/renovate.json`, which extends `github>mheob/renovate-config`.
+The [Renovate GitHub App](https://github.com/apps/renovate) must be installed for the repository. It reads `.github/renovate.json`, which extends `github>mheob/renovate-config`. Do not add a `renovate.json` at the root (the onboarding pull request creates one): Renovate reads it first and would ignore the rules in `.github/renovate.json`.
 
 - That preset includes `config:best-practices`, which sets and updates the SHA pins of the actions and the digests of the images.
 - Renovate also updates the versions in the pnpm catalog, `packageManager` and `.node-version`.
