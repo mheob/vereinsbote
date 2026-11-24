@@ -2,14 +2,29 @@ import type { setResponseHeaders } from '@tanstack/react-start/server';
 import { describe, expect, it, vi } from 'vite-plus/test';
 
 import { MAX_COMPRESSED_PAYLOAD_BYTES } from '@/server/contacts/import/payload';
+import { parseEnv } from '@/server/env';
 import { startInstance } from '@/start';
 
 import { checkBodySize, formBodyLimit, MAX_FORM_BODY_BYTES } from './body-limit';
+import type { getAppEnv } from './context';
 
 // Start's response helpers need its request context, which the stand-in executor has not.
 vi.mock(import('@tanstack/react-start/server'), async (importOriginal) => ({
 	...(await importOriginal()),
 	setResponseHeaders: vi.fn<typeof setResponseHeaders>(),
+}));
+
+// The security headers read the app's URL, and the stand-in has no environment.
+vi.mock(import('./context'), async (importOriginal) => ({
+	...(await importOriginal()),
+	getAppEnv: vi.fn<typeof getAppEnv>().mockResolvedValue(
+		parseEnv({
+			APP_SECRET: Buffer.alloc(32, 5).toString('base64'),
+			APP_URL: 'https://bote.example.org',
+			CRON_SECRET: 'c'.repeat(32),
+			DATABASE_URL: 'postgres://x@localhost/x',
+		}),
+	),
 }));
 
 const APP_ORIGIN = 'https://bote.example.org';

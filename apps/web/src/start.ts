@@ -1,9 +1,12 @@
+// oxlint-disable-next-line import/no-unassigned-import -- zod's settings must be in place before any schema parses
+import './zod-config';
 import { createMiddleware, createServerOnlyFn, createStart } from '@tanstack/react-start';
 
 import { formBodyLimit } from './platform/body-limit';
+import { cspNonceFor } from './platform/csp-nonce';
 import { createServerFnCsrfMiddleware } from './platform/csrf';
 import { releaseWhenBodyDone } from './platform/request-scope';
-import { SECURITY_HEADERS } from './platform/security-headers';
+import { headerRouteOf, securityHeadersFor } from './platform/security-headers';
 import { publicError } from './platform/server-fn-errors';
 
 /** Ends the request-scoped database (Cloudflare) once the response body is done. */
@@ -22,13 +25,22 @@ const releaseDb = createMiddleware({ type: 'request' }).server(async ({ next }) 
 });
 
 /**
- * Sets the security headers (`SECURITY_HEADERS`) on every response of the app. Through Start's
- * response helpers, which it applies to whatever response comes back: a new `Response` would lose
- * what Start keeps on its own (a redirect's target, the status of a not-found page).
+ * Sets the security headers (`securityHeadersFor`, with the request's Content Security Policy
+ * nonce) on every response of the app; only the preview frame and `/media` differ from the pages.
+ * Through Start's response helpers, which it applies to whatever response comes back: a new
+ * `Response` would lose what Start keeps on its own (a redirect's target, the status of a
+ * not-found page).
  */
-const securityHeaders = createMiddleware({ type: 'request' }).server(async ({ next }) => {
+const securityHeaders = createMiddleware({ type: 'request' }).server(async ({ next, request }) => {
 	const { setResponseHeaders } = await import('@tanstack/react-start/server');
-	setResponseHeaders(new Headers(SECURITY_HEADERS));
+	const { getAppEnv } = await import('./platform/context');
+	const { appUrl } = await getAppEnv();
+	const { pathname } = new URL(request.url);
+	const headers = securityHeadersFor(headerRouteOf(pathname), {
+		https: appUrl.protocol === 'https:',
+		nonce: cspNonceFor(request),
+	});
+	setResponseHeaders(new Headers(headers));
 	return next();
 });
 

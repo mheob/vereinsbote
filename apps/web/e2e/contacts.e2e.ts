@@ -1,4 +1,3 @@
-import { expect, test } from '@playwright/test';
 import type { Locator, Page, Request } from '@playwright/test';
 
 import { memberExportRows, memberExportXlsx, XLSX_MIME } from './fixtures/member-export';
@@ -6,6 +5,7 @@ import type { MemberExportRow } from './fixtures/member-export';
 import { partnerExportCsv } from './fixtures/partner-export';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { signIn } from './helpers/sign-in';
+import { expect, test } from './helpers/test';
 
 /*
  * The contacts, as the admin and a reader of another area see them. Runs after the project

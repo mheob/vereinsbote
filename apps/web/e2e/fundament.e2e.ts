@@ -1,9 +1,9 @@
-import { expect, test } from '@playwright/test';
 import type { Page, Request } from '@playwright/test';
 
 import { E2E_SETUP_TOKEN, E2E_URL } from './env';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { latestLink } from './helpers/mailpit';
+import { expect, test } from './helpers/test';
 
 const HTTP_NOT_FOUND = 404;
 const HTTP_OK = 200;
@@ -158,21 +158,43 @@ test('answers an unknown address with a German 404 page', async ({ page }) => {
 	await expect(page).toHaveURL(/\/login$/u);
 });
 
-test('sends the security headers with pages and API responses', async ({ page, request }) => {
-	const securityHeaders = {
-		'content-security-policy': "frame-ancestors 'none'",
-		'referrer-policy': 'strict-origin-when-cross-origin',
-		'x-content-type-options': 'nosniff',
-		'x-frame-options': 'DENY',
-	};
+const BASE_HEADERS = {
+	'content-security-policy': "frame-ancestors 'none'",
+	'referrer-policy': 'strict-origin-when-cross-origin',
+	'x-content-type-options': 'nosniff',
+	'x-frame-options': 'DENY',
+};
+
+test('sends a nonce-based Content Security Policy with pages', async ({ page }) => {
 	const response = await page.goto('/login');
-	expect(response?.headers()).toMatchObject(securityHeaders);
+	const policy = response?.headers()['content-security-policy'] ?? '';
+	const nonce = /script-src 'nonce-(?<nonce>[^']+)' 'strict-dynamic'/u.exec(policy)?.groups?.nonce;
+	expect(policy).toContain("style-src-elem 'self' 'nonce-");
+	expect(policy).not.toContain('unsafe-eval');
+	expect(response?.headers()).toMatchObject({ ...BASE_HEADERS, 'content-security-policy': policy });
+	// Start puts the request's nonce on its scripts, and the page names it for React Aria.
+	const scriptNonces = await page.$$eval('script', (scripts) =>
+		scripts.map((script) => script.nonce),
+	);
+	expect(new Set(scriptNonces)).toStrictEqual(new Set([nonce]));
+	await expect(page.locator('meta[property="csp-nonce"]')).toHaveAttribute('content', nonce ?? '');
+});
+
+test('sends the security headers with API responses and built assets', async ({
+	page,
+	request,
+}) => {
+	await page.goto('/login');
+	// API responses carry a page policy of their own, with a nonce of their own.
 	const health = await request.get('/api/health');
-	expect(health.headers()).toMatchObject(securityHeaders);
+	expect(health.headers()).toMatchObject({
+		...BASE_HEADERS,
+		'content-security-policy': expect.stringContaining("script-src 'nonce-"),
+	});
 	// The built assets bypass the app's middleware; the server's own route rule covers them.
 	const stylesheet = await page.locator('link[rel="stylesheet"]').first().getAttribute('href');
 	expect(stylesheet).toMatch(/^\/assets\//u);
 	const asset = await request.get(stylesheet ?? '/assets/missing.css');
 	expect(asset.status()).toBe(HTTP_OK);
-	expect(asset.headers()).toMatchObject(securityHeaders);
+	expect(asset.headers()).toMatchObject(BASE_HEADERS);
 });
