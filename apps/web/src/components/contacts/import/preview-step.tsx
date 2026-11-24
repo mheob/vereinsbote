@@ -36,9 +36,6 @@ import { LabelledCheckbox } from './labelled-checkbox';
 /** What a confirm sends besides the payload. */
 type ConfirmInput = Readonly<{ confirmedDeletions: number | null; deleteIds: readonly string[] }>;
 
-/** A refusal the preview shows at its field; null when the wizard took care of the outcome. */
-type ConfirmOutcome = 'confirmationRequired' | null;
-
 const sectionTitleClass = 'text-lg font-semibold';
 const headerCellClass = 'px-3 py-2 text-left font-semibold';
 const cellClass = 'px-3 py-2';
@@ -371,7 +368,7 @@ function ConfirmForm({
 }: Readonly<{
 	customFields: readonly Readonly<CustomFieldRecord>[];
 	onBack: () => void;
-	onConfirm: (input: ConfirmInput) => Promise<ConfirmOutcome>;
+	onConfirm: (input: ConfirmInput) => Promise<void>;
 	result: KindPreview;
 }>): ReactNode {
 	const t = useT();
@@ -402,7 +399,7 @@ function ConfirmForm({
 				deleteIds,
 			};
 			startPending(async () => {
-				if ((await onConfirm(input)) === 'confirmationRequired') refuse();
+				await onConfirm(input);
 			});
 		},
 		[confirmation, confirmed, deleteIds, onConfirm, refuse, required],
@@ -450,7 +447,7 @@ function ConfirmForm({
  * @param props.customFields The custom fields of the kind.
  * @param props.filteredOut How many rows the filters left out.
  * @param props.onBack Goes back to the mapping.
- * @param props.onConfirm Confirms the import; resolves to a refusal the step shows.
+ * @param props.onConfirm Confirms the import.
  * @param props.onOtherFile Goes back to the file.
  * @param props.result The preview and its kind.
  * @returns The step.
@@ -466,7 +463,7 @@ export function PreviewStep({
 	customFields: readonly Readonly<CustomFieldRecord>[];
 	filteredOut: number;
 	onBack: () => void;
-	onConfirm: (input: ConfirmInput) => Promise<ConfirmOutcome>;
+	onConfirm: (input: ConfirmInput) => Promise<void>;
 	onOtherFile: () => void;
 	result: KindPreview;
 }>): ReactNode {
@@ -505,4 +502,4 @@ export function PreviewStep({
 	);
 }
 
-export type { ConfirmInput, ConfirmOutcome };
+export type { ConfirmInput };

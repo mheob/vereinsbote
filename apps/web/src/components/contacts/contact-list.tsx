@@ -3,6 +3,7 @@ import { useCallback, useState, useTransition } from 'react';
 import type { ReactNode } from 'react';
 
 import type { Announce } from '@/components/announcements';
+import { settle } from '@/components/settle';
 import { searchContacts } from '@/functions/contacts';
 import { useT } from '@/i18n/use-t';
 import type { ContactListPage } from '@/server/contacts/contacts';
@@ -13,6 +14,7 @@ import { ContactSearch } from './contact-search';
 import type { ContactSearchCriteria } from './contact-search';
 import { ContactPager, ContactTable } from './contact-table';
 import type { PageDirection } from './contact-table';
+import { applySearchResult } from './search-result';
 
 const NO_CRITERIA: ContactSearchCriteria = { filters: {}, query: '' };
 
@@ -54,20 +56,14 @@ export function ContactList({
 	const load = useCallback(
 		(criteria: ContactSearchCriteria, page: number, pagedBy: PageDirection | null) => {
 			startPending(async () => {
-				try {
-					const result = await search({ data: { ...criteria, kind, page } });
-					setState({ criteria, pagedBy, result });
-					if (pagedBy !== null) {
-						const pages = pageCount(result.total);
-						announce(t('contacts.pageShown', { page: result.page, pages }), 'status');
-					} else if (result.total === 1) {
-						announce(t('contacts.foundOne'), 'status');
-					} else {
-						announce(t('contacts.found', { total: result.total }), 'status');
-					}
-				} catch {
-					announce(t('auth.requestFailed'), 'alert');
-				}
+				const result = await settle(search({ data: { ...criteria, kind, page } }));
+				applySearchResult(result, pagedBy, {
+					announce,
+					show: (shown) => {
+						setState({ criteria, pagedBy, result: shown });
+					},
+					t,
+				});
 			});
 		},
 		[announce, kind, search, t],

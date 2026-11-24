@@ -522,6 +522,99 @@ describe('the key of a partner', () => {
 		]);
 	});
 
+	it('moves suppression and opt-outs when the customer number changes', async () => {
+		const db = await createTestDb();
+		const { editor, partnersAreaId } = await partnerClub(db);
+		const numbered = { ...stadtwerke, customerNumber: '100009' };
+		const { contactId } = await createPartner(db, editor, numbered);
+		await db.insert(contactSuppressions).values({ contactKey: 'nr:100009', kind: 'partner' });
+		await db.insert(contactOptOuts).values({
+			areaId: partnersAreaId,
+			contactKey: 'nr:100009',
+			kind: 'partner',
+			scope: 'area',
+		});
+
+		await updatePartner(db, editor, contactId, { ...numbered, customerNumber: '100010' });
+		await expect(stored(db, contactId)).resolves.toMatchObject({ contactKey: 'nr:100010' });
+		await expect(suppressedKeys(db)).resolves.toStrictEqual(['nr:100010']);
+		await expect(optOutKeys(db)).resolves.toStrictEqual([`nr:100010 ${partnersAreaId}`]);
+	});
+
+	it('moves suppression and opt-outs to the address when the customer number goes', async () => {
+		const db = await createTestDb();
+		const { editor, partnersAreaId } = await partnerClub(db);
+		const { contactId } = await createPartner(db, editor, {
+			...stadtwerke,
+			customerNumber: '100009',
+		});
+		await db.insert(contactSuppressions).values({ contactKey: 'nr:100009', kind: 'partner' });
+		await db.insert(contactOptOuts).values({
+			areaId: partnersAreaId,
+			contactKey: 'nr:100009',
+			kind: 'partner',
+			scope: 'area',
+		});
+
+		await updatePartner(db, editor, contactId, stadtwerke);
+		await expect(stored(db, contactId)).resolves.toMatchObject({
+			contactKey: 'email:presse@stadtwerke.example',
+		});
+		await expect(suppressedKeys(db)).resolves.toStrictEqual(['email:presse@stadtwerke.example']);
+		await expect(optOutKeys(db)).resolves.toStrictEqual([
+			`email:presse@stadtwerke.example ${partnersAreaId}`,
+		]);
+	});
+
+	it('merges the entries with a number-less partner of the same address', async () => {
+		const db = await createTestDb();
+		const { admin, editor, partnersAreaId } = await partnerClub(db);
+		const { areaId: youthId } = await createArea(db, admin, 'Jugend');
+		const { contactId } = await createPartner(db, editor, {
+			...stadtwerke,
+			customerNumber: '100009',
+		});
+		const { contactId: otherId } = await createPartner(db, editor, {
+			...stadtwerke,
+			organization: 'Stadtwerke Nord',
+		});
+		await db.insert(contactSuppressions).values([
+			{ contactKey: 'nr:100009', kind: 'partner' },
+			{ contactKey: 'email:presse@stadtwerke.example', kind: 'partner' },
+		]);
+		await db.insert(contactOptOuts).values([
+			{ areaId: partnersAreaId, contactKey: 'nr:100009', kind: 'partner', scope: 'area' },
+			{
+				areaId: partnersAreaId,
+				contactKey: 'email:presse@stadtwerke.example',
+				kind: 'partner',
+				scope: 'area',
+			},
+			{
+				areaId: youthId,
+				contactKey: 'email:presse@stadtwerke.example',
+				kind: 'partner',
+				scope: 'area',
+			},
+		]);
+
+		// Both partners now share the address key and with it one suppression and the opt-outs.
+		await updatePartner(db, editor, contactId, stadtwerke);
+		await expect(stored(db, contactId)).resolves.toMatchObject({
+			contactKey: 'email:presse@stadtwerke.example',
+		});
+		await expect(stored(db, otherId)).resolves.toMatchObject({
+			contactKey: 'email:presse@stadtwerke.example',
+		});
+		await expect(suppressedKeys(db)).resolves.toStrictEqual(['email:presse@stadtwerke.example']);
+		await expect(optOutKeys(db)).resolves.toStrictEqual(
+			[
+				`email:presse@stadtwerke.example ${partnersAreaId}`,
+				`email:presse@stadtwerke.example ${youthId}`,
+			].toSorted(),
+		);
+	});
+
 	it('keeps the suppression of a deleted partner', async () => {
 		const db = await createTestDb();
 		const { editor, partnersAreaId } = await partnerClub(db);

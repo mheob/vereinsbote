@@ -1,4 +1,4 @@
-import { unzipSync } from 'fflate';
+import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import { describe, expect, it, vi } from 'vite-plus/test';
 import writeXlsxFile from 'write-excel-file/node';
 import type { SheetData } from 'write-excel-file/node';
@@ -87,6 +87,37 @@ function compressionMethods(zip: unknown): number[] {
 		},
 	});
 	return methods;
+}
+
+/**
+ * Puts a chart sheet in front of the sheets of a workbook, as Excel saves a chart moved to a sheet
+ * of its own: listed in the workbook, without cells.
+ *
+ * @param workbook The workbook.
+ * @returns The workbook with the chart sheet „Diagramm“ first.
+ */
+function withChartSheetFirst(workbook: Uint8Array): File {
+	// oxlint-disable-next-line node/no-sync -- fflate, not fs
+	const entries = unzipSync(workbook);
+	const text = (path: string): string => {
+		const entry = entries[path];
+		if (entry === undefined) throw new Error(`The workbook has no ${path}.`);
+		return strFromU8(entry);
+	};
+	const chart = '<sheet name="Diagramm" sheetId="99" r:id="rIdChart"/>';
+	entries['xl/workbook.xml'] = strToU8(
+		text('xl/workbook.xml').replace('<sheet ', `${chart}<sheet `),
+	);
+	const relation =
+		'<Relationship Id="rIdChart" Target="chartsheets/sheet1.xml" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chartsheet"/>';
+	entries['xl/_rels/workbook.xml.rels'] = strToU8(
+		text('xl/_rels/workbook.xml.rels').replace('</Relationships>', `${relation}</Relationships>`),
+	);
+	entries['xl/chartsheets/sheet1.xml'] = strToU8(
+		'<chartsheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"/>',
+	);
+	// oxlint-disable-next-line node/no-sync -- fflate, not fs
+	return new File([Uint8Array.from(zipSync(entries))], 'export.xlsx');
 }
 
 describe(decodeCsvBytes, () => {
@@ -347,6 +378,24 @@ describe(readSheetFile, () => {
 			sheetNames: ['Deckblatt', 'Mitglieder'],
 		});
 		await expect(readSheetFile(file, 'Deckblatt')).resolves.toStrictEqual({
+			failure: 'empty',
+			ok: false,
+		});
+	});
+
+	it('skips a chart sheet and refuses it as empty when it is chosen', async () => {
+		// read-excel-file lists a chart sheet without cells (`data` undefined).
+		const workbook = await writeXlsxFile([
+			{ data: [['Nr.'], [{ type: Number, value: 1001 }]], sheet: 'Mitglieder' },
+		]).toBuffer();
+		const file = withChartSheetFirst(Uint8Array.from(workbook));
+		await expect(readSheetFile(file)).resolves.toStrictEqual({
+			ok: true,
+			sheet: { headers: ['Nr.'], rows: [{ cells: ['1001'], line: 2 }] },
+			sheetName: 'Mitglieder',
+			sheetNames: ['Diagramm', 'Mitglieder'],
+		});
+		await expect(readSheetFile(file, 'Diagramm')).resolves.toStrictEqual({
 			failure: 'empty',
 			ok: false,
 		});

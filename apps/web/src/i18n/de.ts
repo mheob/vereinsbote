@@ -184,6 +184,8 @@ export const de = {
 	'import.countKindHeader': 'Was',
 	'import.countsCaption.member': 'Was der Import an den Mitgliedern ändert',
 	'import.countsCaption.partner': 'Was der Import an den Partnern ändert',
+	'import.deletionsChanged':
+		'Die Zahl der zu löschenden Mitglieder hat sich geändert. Die Vorschau wurde neu berechnet.',
 	'import.done': 'Import abgeschlossen: {created} neu, {changed} geändert, {removed} gelöscht.',
 	'import.dropZone': 'Datei hier ablegen',
 	'import.emptyMarkers': 'Werte, die als leer gelten',

@@ -20,13 +20,14 @@ import { buildPayload } from './build-payload';
 import type { MappingDraft } from './build-payload';
 import { FileStep } from './file-step';
 import type { ReadFile } from './file-step';
-import { problemMessage } from './import-messages';
+import { problemMessage, recomputedMessage } from './import-messages';
 import type { Translate } from './import-messages';
 import { initialDraft } from './mapping-draft';
 import { MappingStep } from './mapping-step';
 import { PreviewStep } from './preview-step';
-import type { ConfirmInput, ConfirmOutcome } from './preview-step';
+import type { ConfirmInput } from './preview-step';
 import { ResultStep } from './result-step';
+import { createStepGuard } from './step-guard';
 
 type ImportStep = 'file' | 'mapping' | 'preview' | 'result';
 
@@ -47,6 +48,8 @@ type WizardState =
 			payload: Blob;
 			filteredOut: number;
 			result: ShownPreview;
+			/** Counts the recomputed previews; a new one starts the confirmation afresh. */
+			revision: number;
 	  }>
 	| Readonly<{ step: 'result' }>;
 
@@ -106,12 +109,15 @@ function ImportWizard({
 	const headingId = useId();
 	const headingRef = useRef<HTMLHeadingElement>(null);
 	const [state, setState] = useState<WizardState>({ step: 'file' });
+	// Drops a late answer for a step the user left meanwhile, e.g. a preview of another file.
+	const guard = useRef(createStepGuard());
 	const [focusRequest, setFocusRequest] = useState(0);
 	useEffect(() => {
 		if (focusRequest > 0) headingRef.current?.focus();
 	}, [focusRequest]);
 	const show = useCallback(
 		(next: WizardState, message?: string) => {
+			guard.current.move();
 			setState(next);
 			setFocusRequest((count) => count + 1);
 			announce(message ?? stepHeading(t, next.step), 'status');
@@ -141,34 +147,38 @@ function ImportWizard({
 	const onPreview = useCallback(
 		async (draft: MappingDraft): Promise<MessageKey | null> => {
 			if (state.step !== 'mapping') return null;
+			const isCurrent = guard.current.start();
 			const { file } = state;
 			const built = buildPayload(kind, file.sheet, draft);
 			if (!built.ok) return problemMessage(kind, built.problem);
 			const payload = await encode(built.payload);
 			if (payload === null) return problemMessage(kind, 'payloadTooLarge');
 			const result = await requestPreview(payload);
+			if (result === undefined || !isCurrent()) return null;
 			if (result === FAILED) announce(t('auth.requestFailed'), 'alert');
-			else if (result !== undefined && !result.ok) return problemMessage(kind, result.failure);
-			else if (result !== undefined) {
-				show({ draft, file, filteredOut: built.filteredOut, payload, result, step: 'preview' });
-			}
+			else if (result.ok) {
+				const { filteredOut } = built;
+				show({ draft, file, filteredOut, payload, result, revision: 0, step: 'preview' });
+			} else return problemMessage(kind, result.failure);
 			return null;
 		},
 		[announce, kind, requestPreview, show, state, t],
 	);
 	const recompute = useCallback(
-		async (previous: PreviewState) => {
+		async (previous: PreviewState, isCurrent: () => boolean, message: MessageKey) => {
 			const fresh = await requestPreview(previous.payload);
-			if (fresh === undefined) return;
+			if (fresh === undefined || !isCurrent()) return;
 			if (fresh === FAILED) announce(t('auth.requestFailed'), 'alert');
-			else if (fresh.ok) show({ ...previous, result: fresh }, t('import.stockChanged'));
-			else announce(t(problemMessage(kind, fresh.failure)), 'alert');
+			else if (fresh.ok) {
+				show({ ...previous, result: fresh, revision: previous.revision + 1 }, t(message));
+			} else announce(t(problemMessage(kind, fresh.failure)), 'alert');
 		},
 		[announce, kind, requestPreview, show, t],
 	);
 	const onConfirm = useCallback(
-		async (input: ConfirmInput): Promise<ConfirmOutcome> => {
-			if (state.step !== 'preview') return null;
+		async (input: ConfirmInput): Promise<void> => {
+			if (state.step !== 'preview') return;
+			const isCurrent = guard.current.start();
 			const data = toImportFormData({
 				...input,
 				kind,
@@ -176,21 +186,20 @@ function ImportWizard({
 				stockVersion: state.result.preview.stockVersion,
 			});
 			const result = await settle(runConfirm({ data }));
-			if (result === undefined) return null;
+			if (result === undefined) return;
 			if (result === FAILED) {
 				announce(t('auth.requestFailed'), 'alert');
 			} else if (result.ok) {
 				show({ step: 'result' }, t('import.done', result.counts));
 				// Navigation and notices of the frame follow the new stock.
 				await router.invalidate();
-			} else if (result.failure === 'confirmationRequired') {
-				return 'confirmationRequired';
-			} else if (result.failure === 'stockChanged' || result.failure === 'blocked') {
-				await recompute(state);
-			} else {
+			} else if (result.failure === 'payloadInvalid' || result.failure === 'payloadTooLarge') {
 				announce(t(problemMessage(kind, result.failure)), 'alert');
+			} else {
+				// The preview is out of date (the stock or the Berlin day changed): a new one shows
+				// what holds now, and the confirmation starts afresh.
+				await recompute(state, isCurrent, recomputedMessage(result.failure));
 			}
-			return null;
 		},
 		[announce, kind, recompute, router, runConfirm, show, state, t],
 	);
@@ -222,7 +231,7 @@ function ImportWizard({
 					customFields={page.customFields}
 					filteredOut={state.filteredOut}
 					// A recomputed preview starts afresh: a tick was for the numbers before.
-					key={state.result.preview.stockVersion}
+					key={state.revision}
 					onBack={toMapping}
 					onConfirm={onConfirm}
 					onOtherFile={toFile}

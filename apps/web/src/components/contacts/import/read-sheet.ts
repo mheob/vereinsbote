@@ -42,10 +42,10 @@ interface Grid {
 	sheetName: string | null;
 }
 
-/** A sheet of a workbook as read-excel-file returns it. */
+/** A sheet of a workbook as read-excel-file returns it; a chart sheet has no `data`. */
 interface WorkbookSheet {
 	readonly sheet: string;
-	readonly data: readonly (readonly unknown[])[];
+	readonly data: readonly (readonly unknown[])[] | undefined;
 }
 
 /** Reads the bytes of a file; throws when they are not a file of its type. */
@@ -134,7 +134,7 @@ function hasText(grid: readonly (readonly unknown[])[]): boolean {
 
 /**
  * Picks the sheet to read: the chosen one, otherwise the first one with text, so an empty cover
- * sheet does not hide the others, otherwise the first one.
+ * sheet or a chart sheet does not hide the others, otherwise the first one.
  *
  * @param sheets The sheets of the workbook.
  * @param sheetName The chosen sheet, if any.
@@ -143,7 +143,7 @@ function hasText(grid: readonly (readonly unknown[])[]): boolean {
 function sheetIndex(sheets: readonly WorkbookSheet[], sheetName: string | undefined): number {
 	const named = sheets.findIndex(({ sheet }) => sheet === sheetName);
 	if (named !== NOT_FOUND) return named;
-	const withText = sheets.findIndex(({ data }) => hasText(data));
+	const withText = sheets.findIndex(({ data }) => hasText(data ?? []));
 	return withText === NOT_FOUND ? 0 : withText;
 }
 
@@ -235,10 +235,11 @@ async function loadWorkbookReader(): Promise<GridReader> {
 		// oxlint-disable-next-line node/no-sync -- see above; level 0 stores the entries
 		const sheets = await readXlsxFile(zipSync(entries, { level: 0 }));
 		const index = sheetIndex(sheets, sheetName);
-		const chosen = sheets[index];
+		// The library's type omits that a chart sheet has no `data`.
+		const chosen: WorkbookSheet | undefined = sheets[index];
 		return {
 			// read-excel-file drops the number format: `00000` must keep `01067`.
-			cells: chosen === undefined ? [] : keepLeadingZeros(entries, index, chosen.data),
+			cells: chosen === undefined ? [] : keepLeadingZeros(entries, index, chosen.data ?? []),
 			sheetName: chosen?.sheet ?? null,
 			sheetNames: sheets.map(({ sheet }) => sheet),
 		};

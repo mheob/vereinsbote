@@ -15,8 +15,9 @@ import type { CustomFieldRecord } from '@/server/contacts/settings';
  * The server functions of the import wizard. The browser reads the file and sends only the mapped
  * columns, compressed, as form data (`toImportFormData`); preview and confirm decode the same
  * payload, so nothing is stored between the steps. Server modules are imported inside the
- * handlers, so they stay out of the client bundle. Each handler checks the session, the import
- * functions check the right: server functions are reachable without their page.
+ * handlers, so they stay out of the client bundle. Each handler checks the session and the right
+ * to import the kind before it decodes the payload (the import functions check the right again):
+ * server functions are reachable without their page.
  */
 
 /** HTTP status of the import page for a user without the right to import the kind. */
@@ -135,18 +136,26 @@ const loadImportPage = createServerFn({ method: 'GET' })
 
 /**
  * Previews an import: what the payload would change in the stock of its kind. Nothing is stored.
- * A payload above a size limit or not of the request's kind is refused as a result.
+ * Without `edit` in the area of the kind it throws `ForbiddenError` before the payload is decoded;
+ * a payload above a size limit or not of the request's kind is refused as a result.
  */
 const previewImport = createServerFn({ method: 'POST' })
 	.validator(parseImportFormData)
 	.handler(async ({ data }): Promise<PreviewImportResult> => {
-		const [{ requireRequestPrincipal }, { previewMemberImport }, { previewPartnerImport }] =
-			await Promise.all([
-				import('@/platform/request-principal'),
-				import('@/server/contacts/import/members'),
-				import('@/server/contacts/import/partners'),
-			]);
+		const [
+			{ requireRequestPrincipal },
+			{ assertCanManage, loadContactAccess },
+			{ previewMemberImport },
+			{ previewPartnerImport },
+		] = await Promise.all([
+			import('@/platform/request-principal'),
+			import('@/server/contacts/access'),
+			import('@/server/contacts/import/members'),
+			import('@/server/contacts/import/partners'),
+		]);
 		const { context, principal } = await requireRequestPrincipal();
+		// The right first, outside any transaction: without it the payload is never decoded.
+		assertCanManage(await loadContactAccess(context.db, principal), data.kind);
 		const payload = await readPayload(data);
 		if (isPayloadFailure(payload)) return payload;
 		const now = new Date();
@@ -166,18 +175,26 @@ const previewImport = createServerFn({ method: 'POST' })
 /**
  * Confirms an import with the payload of its preview: members replace the stock (with the
  * confirmed number of deletions), partners are matched (with the ticked partners to delete).
- * Refusals (`stockChanged`, `blocked`, `confirmationRequired`, a refused payload) are results.
+ * Refusals (`stockChanged`, `blocked`, `confirmationRequired`, a refused payload) are results;
+ * without `edit` in the area of the kind it throws `ForbiddenError` before the payload is decoded.
  */
 const confirmImport = createServerFn({ method: 'POST' })
 	.validator(parseConfirmFormData)
 	.handler(async ({ data }): Promise<ConfirmImportResponse> => {
-		const [{ requireRequestPrincipal }, { confirmMemberImport }, { confirmPartnerImport }] =
-			await Promise.all([
-				import('@/platform/request-principal'),
-				import('@/server/contacts/import/members'),
-				import('@/server/contacts/import/partners'),
-			]);
+		const [
+			{ requireRequestPrincipal },
+			{ assertCanManage, loadContactAccess },
+			{ confirmMemberImport },
+			{ confirmPartnerImport },
+		] = await Promise.all([
+			import('@/platform/request-principal'),
+			import('@/server/contacts/access'),
+			import('@/server/contacts/import/members'),
+			import('@/server/contacts/import/partners'),
+		]);
 		const { context, principal } = await requireRequestPrincipal();
+		// The right first, outside any transaction: without it the payload is never decoded.
+		assertCanManage(await loadContactAccess(context.db, principal), data.kind);
 		const payload = await readPayload(data);
 		if (isPayloadFailure(payload)) return payload;
 		const now = new Date();

@@ -8,7 +8,7 @@ import type { ContactKind } from '@/server/contacts/fields';
 import { MAX_COLUMNS, MAX_HEADER_LENGTH } from '@/server/contacts/import/mapping';
 import type { MemberImportPreview } from '@/server/contacts/import/members';
 import type { PartnerImportPreview, PartnerRowIssue } from '@/server/contacts/import/partners';
-import type { ChangedField, ImportChange } from '@/server/contacts/import/plan';
+import type { ChangedField, ConfirmFailure, ImportChange } from '@/server/contacts/import/plan';
 import type { BlockingIssue, FieldIssueReason } from '@/server/contacts/import/rows';
 import type { CustomFieldRecord } from '@/server/contacts/settings';
 
@@ -74,6 +74,18 @@ function problemMessage(kind: ContactKind, problem: ImportProblem): MessageKey {
 	return problem === 'keyNotMapped'
 		? `import.problem.keyNotMapped.${kind}`
 		: PROBLEM_MESSAGES[problem];
+}
+
+/**
+ * The message that announces the new preview after a refused confirm: the preview was out of date.
+ * `confirmationRequired` with the same stock means the Berlin day changed since the preview, so
+ * the number of members to delete is a different one now.
+ *
+ * @param failure Why the confirm was refused.
+ * @returns The key of the message, which has no parameters.
+ */
+function recomputedMessage(failure: ConfirmFailure): MessageKey {
+	return failure === 'confirmationRequired' ? 'import.deletionsChanged' : 'import.stockChanged';
 }
 
 /**
@@ -245,6 +257,7 @@ export {
 	fieldIssueReason,
 	problemMessage,
 	readFailureMessage,
+	recomputedMessage,
 	rowIssueMessage,
 	withKeys,
 };

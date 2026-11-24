@@ -15,6 +15,7 @@ import {
 	fieldIssueReason,
 	problemMessage,
 	readFailureMessage,
+	recomputedMessage,
 	rowIssueMessage,
 	withKeys,
 } from './import-messages';
@@ -118,6 +119,21 @@ describe(problemMessage, () => {
 		],
 	] as const)('names the problem of a %s import: %s', (kind, problem, text) => {
 		expect(de(problemMessage(kind, problem))).toBe(text);
+	});
+});
+
+describe(recomputedMessage, () => {
+	it.each([
+		['stockChanged', 'Der Bestand hat sich geändert. Die Vorschau wurde neu berechnet.'],
+		['blocked', 'Der Bestand hat sich geändert. Die Vorschau wurde neu berechnet.'],
+		[
+			// The Berlin day changed since the preview: more members have left by now.
+			'confirmationRequired',
+			'Die Zahl der zu löschenden Mitglieder hat sich geändert. Die Vorschau wurde neu berechnet.',
+		],
+	] as const)('says why a refused confirm (%s) shows a new preview', (failure, text) => {
+		expect(de(recomputedMessage(failure))).toBe(text);
+		expect(en(recomputedMessage(failure))).not.toBe(text);
 	});
 });
 

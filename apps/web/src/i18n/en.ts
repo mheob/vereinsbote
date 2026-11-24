@@ -182,6 +182,8 @@ export const en: Record<keyof typeof de, string> = {
 	'import.countKindHeader': 'What',
 	'import.countsCaption.member': 'What the import changes in the members',
 	'import.countsCaption.partner': 'What the import changes in the partners',
+	'import.deletionsChanged':
+		'The number of members to delete has changed. The preview has been recalculated.',
 	'import.done': 'Import complete: {created} new, {changed} changed, {removed} deleted.',
 	'import.dropZone': 'Drop the file here',
 	'import.emptyMarkers': 'Values that count as empty',
