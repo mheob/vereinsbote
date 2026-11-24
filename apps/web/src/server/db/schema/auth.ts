@@ -30,6 +30,11 @@ export const user = pgTable(
 		/** Stored normalized (trimmed, lowercase), see `normalizeEmail`. */
 		email: text('email').notNull(),
 		emailVerified: boolean('email_verified').notNull().default(false),
+		/**
+		 * When the user first got a session (a sign-in or the setup's own session); null for a user
+		 * who never signed in. A re-enabled user becomes `active` with it, `invited` without.
+		 */
+		firstSignInAt: timestamp('first_sign_in_at', { withTimezone: true }),
 		/** Users are created by the app only, Better Auth never inserts one. */
 		id: text('id')
 			.primaryKey()

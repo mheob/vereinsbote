@@ -9,6 +9,7 @@ import type { Env } from '@/server/env';
 import { createSystemMailer } from '@/server/mail/system-mailer';
 import type { SystemMailer } from '@/server/mail/system-mailer';
 
+import { createBackgroundRunner } from './background';
 import { platformName } from './platform';
 import type { Platform } from './platform';
 import { createRequestScope } from './request-scope';
@@ -41,7 +42,8 @@ type EnvSource = Readonly<Record<string, string | undefined>>;
 
 interface CloudflareWorkers {
 	env: EnvSource;
-	waitUntil: (promise: Promise<unknown>) => void;
+	/** Missing in runtimes before `waitUntil` was exported (`createBackgroundRunner` warns then). */
+	waitUntil?: (promise: Promise<unknown>) => void;
 }
 
 /*
@@ -94,16 +96,20 @@ function hasWaitUntil(request: object): request is WaitUntilRequest {
 }
 
 /**
- * Node and Vercel: hands the promise to the runtime's `waitUntil`, which Nitro puts on the
- * request (Vercel's function context; srvx on Node). Without one the promise simply runs on,
- * which a Node process allows.
+ * Node and Vercel: the runtime's `waitUntil`, which Nitro puts on the request (Vercel's function
+ * context; srvx on Node). See `createBackgroundRunner` for what happens without one.
  *
- * @param promise The work to finish after the response.
+ * @returns The `waitUntil` of the current request, or null.
  */
-function runAfterResponse(promise: Promise<unknown>): void {
+function requestWaitUntil(): Platform['waitUntil'] | null {
 	const request = currentRequest();
-	if (request !== null && hasWaitUntil(request)) request.waitUntil(promise);
+	if (request === null || !hasWaitUntil(request)) return null;
+	return (promise) => {
+		request.waitUntil(promise);
+	};
 }
+
+const runAfterResponse = createBackgroundRunner(platformName(), requestWaitUntil);
 
 /**
  * Creates the auth instance for an opened database. Ends the database when that fails, so a
@@ -131,6 +137,17 @@ async function bindAuth(
 	}
 }
 
+/**
+ * Opens the app's database with the driver of the platform.
+ *
+ * @param env The environment: `DATABASE_URL` and, in development, `DEV_NEON_WS_PROXY`.
+ * @param driver `neon` (Vercel, Cloudflare) or `pg` (Node).
+ * @returns The database and the function that closes it.
+ */
+async function openAppDb(env: Env, driver: 'neon' | 'pg'): Promise<DbHandle> {
+	return openDb(env.databaseUrl, driver, { devNeonWsProxy: env.devNeonWsProxy });
+}
+
 /** One context per isolate: Node and Vercel can share their pool across requests. */
 const cache: { promise?: Promise<AppContext> } = {};
 
@@ -139,9 +156,8 @@ async function createSharedContext(): Promise<AppContext> {
 		const env = parseEnv({ ...readProcessEnv() });
 		const mailer = createSystemMailer(env);
 		const platform: Platform = { name: platformName(), waitUntil: runAfterResponse };
-		const isolate = { env, mailer, platform };
 		const driver = import.meta.env.VITE_VB_PLATFORM === 'vercel' ? 'neon' : 'pg';
-		const { auth, db } = await bindAuth(isolate, await openDb(env.databaseUrl, driver));
+		const { auth, db } = await bindAuth({ env, mailer, platform }, await openAppDb(env, driver));
 		return { auth, db, env, mailer, platform };
 	} catch (error) {
 		// Do not keep a failed attempt, the next call retries.
@@ -162,16 +178,8 @@ async function createIsolateServices(): Promise<IsolateServices> {
 	try {
 		const workers = await loadWorkers();
 		const env = parseEnv({ ...workers.env });
-		return {
-			env,
-			mailer: createSystemMailer(env),
-			platform: {
-				name: 'cloudflare',
-				waitUntil(promise) {
-					workers.waitUntil(promise);
-				},
-			},
-		};
+		const waitUntil = createBackgroundRunner('cloudflare', () => workers.waitUntil ?? null);
+		return { env, mailer: createSystemMailer(env), platform: { name: 'cloudflare', waitUntil } };
 	} catch (error) {
 		cloudflare.isolate = undefined;
 		throw error;
@@ -182,12 +190,13 @@ const requestServices = createRequestScope<DbServices>({
 	async create() {
 		cloudflare.isolate ??= createIsolateServices();
 		const isolate = await cloudflare.isolate;
-		const handle = await openDb(isolate.env.databaseUrl, 'neon');
+		const handle = await openAppDb(isolate.env, 'neon');
 		return { end: handle.end, value: await bindAuth(isolate, handle) };
 	},
 	async waitUntil(promise) {
-		const workers = await loadWorkers();
-		workers.waitUntil(promise);
+		cloudflare.isolate ??= createIsolateServices();
+		const { platform } = await cloudflare.isolate;
+		platform.waitUntil(promise);
 	},
 });
 

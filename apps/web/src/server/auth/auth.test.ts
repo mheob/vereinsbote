@@ -1,3 +1,5 @@
+import { format } from 'node:util';
+
 import { eq, sql } from 'drizzle-orm';
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 
@@ -16,6 +18,7 @@ import { findUserByEmail, insertUser, revokeSessions } from '@/server/users/repo
 import {
 	createAuth,
 	createSessionFor,
+	handleAuthRequest,
 	LoginLinkInvalidError,
 	requestLoginLink,
 	SESSION_NOT_CREATED,
@@ -74,7 +77,7 @@ async function requestLinkOverHttp(auth: Auth, email: string, ip = '203.0.113.7'
 		headers: { 'content-type': 'application/json', 'x-forwarded-for': ip },
 		method: 'POST',
 	});
-	const response = await auth.handler(request);
+	const response = await handleAuthRequest(auth, request);
 	return response.status;
 }
 
@@ -140,6 +143,25 @@ async function windowHash(env: Env, email: string): Promise<string> {
 
 const cookieHeaders = (setCookie: string): Headers =>
 	new Headers({ cookie: setCookie.split(';')[0] ?? '' });
+
+/**
+ * Captures what goes to the console, formatted the way the console prints it (an error with its
+ * message, stack and cause).
+ *
+ * @returns A function that returns everything logged so far.
+ */
+function captureConsole(): () => string {
+	const spies = [
+		vi.spyOn(console, 'error').mockReturnValue(),
+		vi.spyOn(console, 'warn').mockReturnValue(),
+		vi.spyOn(console, 'info').mockReturnValue(),
+		vi.spyOn(console, 'log').mockReturnValue(),
+	];
+	return () =>
+		spies
+			.flatMap((spy) => spy.mock.calls.map((args: readonly unknown[]) => format(...args)))
+			.join('\n');
+}
 
 /**
  * Invites a user, requests a link and verifies it.
@@ -532,6 +554,33 @@ describe('passwordless sign-in', () => {
 		});
 	});
 
+	describe('logging', () => {
+		it('logs a failed session lookup by code, without the token or the query', async () => {
+			const context = await setupCapturing();
+			const { headers } = await signIn(context, { email: 'anna@verein.de' });
+			const [stored] = await context.db.select({ token: session.token }).from(session);
+			await context.db.execute(sql`alter table "session" rename to "session_gone"`);
+			const logged = captureConsole();
+			await context.auth.api.getSession({ headers }).catch(() => null);
+			const output = logged();
+			expect(output).not.toBe('');
+			expect(output).not.toContain(stored?.token);
+			expect(output).not.toContain('params');
+			expect(output).not.toContain('session_gone');
+		});
+
+		it('logs a failed login link request without the address', async () => {
+			const { auth, db } = await setup();
+			await db.execute(sql`alter table "user" rename to "user_gone"`);
+			const logged = captureConsole();
+			await expect(requestLinkOverHttp(auth, 'anna@verein.de')).resolves.toBe(500);
+			const output = logged();
+			expect(output).not.toBe('');
+			expect(output).not.toContain('@');
+			expect(output).not.toContain('params');
+		});
+	});
+
 	describe(createAuth, () => {
 		it('does not serve /update-user, so a user cannot touch the admin flag or the status', async () => {
 			const context = await setupCapturing();
@@ -556,7 +605,6 @@ describe('passwordless sign-in', () => {
 			const used = new Set([
 				'/callback/:id',
 				'/error',
-				'/get-session',
 				'/magic-link/verify',
 				'/ok',
 				// `disabledPaths` matches exact paths only, so a route with a parameter cannot be
@@ -568,6 +616,18 @@ describe('passwordless sign-in', () => {
 			]);
 			expect(openUnusedPaths(auth, used)).toStrictEqual([]);
 			expect(auth.options.disabledPaths).toContain('/update-user');
+		});
+
+		it('does not serve /get-session, while the server still reads sessions', async () => {
+			const context = await setupCapturing();
+			const { headers, id } = await signIn(context, { email: 'anna@verein.de' });
+			const request = new Request(`${APP_URL}/api/auth/get-session`, { headers });
+			await expect(handleAuthRequest(context.auth, request)).resolves.toMatchObject({
+				status: 404,
+			});
+			await expect(context.auth.api.getSession({ headers })).resolves.toMatchObject({
+				user: { id },
+			});
 		});
 
 		it('offers no sign-up with email and password', async () => {
@@ -592,14 +652,14 @@ describe('passwordless sign-in', () => {
 				extraEnv: {
 					MS_LOGIN_CLIENT_ID: 'client-id',
 					MS_LOGIN_CLIENT_SECRET: 'client-secret',
-					MS_LOGIN_TENANT_ID: 'verein-tenant',
+					MS_LOGIN_TENANT_ID: '6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b',
 				},
 			});
 			const { url } = await auth.api.signInSocial({
 				body: { callbackURL: '/', provider: 'microsoft' },
 			});
 			expect(url).toMatch(
-				/^https:\/\/login\.microsoftonline\.com\/verein-tenant\/oauth2\/v2\.0\/authorize\?/u,
+				/^https:\/\/login\.microsoftonline\.com\/6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b\/oauth2\/v2\.0\/authorize\?/u,
 			);
 		});
 	});

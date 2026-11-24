@@ -46,7 +46,9 @@ function variablesOf(bindings: Bindings): Record<string, string> {
 async function handleCronEvent(bindings: Bindings): Promise<void> {
 	try {
 		const env = parseEnv(variablesOf(bindings));
-		const { db, end } = await openDb(env.databaseUrl, 'neon');
+		const { db, end } = await openDb(env.databaseUrl, 'neon', {
+			devNeonWsProxy: env.devNeonWsProxy,
+		});
 		try {
 			await runScheduledTicks(async () => runTick({ db, env, steps: tickSteps }));
 		} finally {

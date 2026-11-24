@@ -3,11 +3,13 @@ import { and, eq, sql } from 'drizzle-orm';
 
 import type { Locale } from '@/i18n/locale';
 import { translate } from '@/i18n/translate';
+import { LOGIN_PATH } from '@/paths';
 import { writeAudit } from '@/server/audit/audit';
 import { normalizeEmail } from '@/server/auth/email';
 import type { Db } from '@/server/db/client';
 import { isUniqueViolation } from '@/server/db/errors';
 import { areaMemberships, user } from '@/server/db/schema';
+import { errorLabel } from '@/server/error-label';
 import type { SystemMailer } from '@/server/mail/system-mailer';
 import type { AccessLevel } from '@/server/permissions/levels';
 import { assertAdmin } from '@/server/permissions/principal';
@@ -15,9 +17,6 @@ import type { Principal } from '@/server/permissions/principal';
 
 import { insertUser, revokeSessions } from './repo';
 import type { UserStatus } from './repo';
-
-/** Where the invitation leads: the sign-in page, where the user requests a login link. */
-const LOGIN_PATH = '/login';
 
 /** A user with this address exists already, in any spelling. The message names no address. */
 class UserExistsError extends Error {
@@ -69,12 +68,8 @@ interface InviteInput {
  * @param error The error of the mailer.
  */
 function logInviteFailure(error: unknown): void {
-	const label =
-		error instanceof Error
-			? (('code' in error ? String(error.code) : undefined) ?? error.name)
-			: 'unknown';
 	// oxlint-disable-next-line no-console -- the only trace of an invitation that never arrives
-	console.error('invitation not sent', label);
+	console.error('invitation not sent', errorLabel(error));
 }
 
 /**
@@ -279,6 +274,37 @@ async function disableUser(db: Db, actor: Principal, userId: string): Promise<vo
 }
 
 /**
+ * Enables a disabled user again: `active` when the user has signed in before, `invited`
+ * otherwise, so an admin who never signed in does not count as an active admin. The user signs in
+ * anew; the sessions ended with the block stay ended. A user who is not disabled stays as is.
+ *
+ * @param db The database.
+ * @param actor Who enables; must be an admin.
+ * @param userId The user.
+ * @throws {ForbiddenError} When the actor is no admin.
+ */
+async function enableUser(db: Db, actor: Principal, userId: string): Promise<void> {
+	assertAdmin(actor);
+	await db.transaction(async (tx) => {
+		const [target] = await tx
+			.select({ firstSignInAt: user.firstSignInAt, status: user.status })
+			.from(user)
+			.where(eq(user.id, userId))
+			.for('update');
+		if (target === undefined) throw new Error('The user does not exist.');
+		if (target.status !== 'disabled') return;
+		const status = target.firstSignInAt === null ? 'invited' : 'active';
+		await tx.update(user).set({ status }).where(eq(user.id, userId));
+		await writeAudit(tx, {
+			action: 'user.enabled',
+			actorUserId: actor.userId,
+			details: { to: status },
+			target: `user:${userId}`,
+		});
+	});
+}
+
+/**
  * Sets a user's level in an area; null removes the access.
  *
  * @param db The database.
@@ -367,6 +393,7 @@ export {
 	LastAdminError,
 	UserExistsError,
 	disableUser,
+	enableUser,
 	inviteUser,
 	listUsersWithLevels,
 	setAdmin,

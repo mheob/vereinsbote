@@ -27,6 +27,7 @@ const E2E_SERVER_ENV = {
 	APP_URL: E2E_URL,
 	CRON_SECRET: 'e2e-only-cron-secret-of-at-least-32-characters',
 	DATABASE_URL: E2E_DATABASE_URL,
+	DEV_NEON_WS_PROXY: '',
 	DEV_SMTP_URL: 'smtp://localhost:1025',
 	HEARTBEAT_URL: '',
 	MS_LOGIN_CLIENT_ID: '',

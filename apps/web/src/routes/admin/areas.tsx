@@ -5,6 +5,8 @@ import { AreasTable } from '@/components/admin/areas-table';
 import { CreateAreaForm } from '@/components/admin/create-area-form';
 import { Announcements, useAnnouncer } from '@/components/announcements';
 import { loadAreasPage } from '@/functions/areas';
+import { adminPageHead } from '@/i18n/page-title';
+import type { AdminTitleContext } from '@/i18n/page-title';
 import { useT } from '@/i18n/use-t';
 
 export const Route = createFileRoute('/admin/areas')({
@@ -27,6 +29,8 @@ export const Route = createFileRoute('/admin/areas')({
 			</div>
 		);
 	},
+	// Without the admin role the page is "no access", and so is its title.
+	head: (context: AdminTitleContext) => adminPageHead(context, 'areas.title'),
 	// The admin layout has decided already; for anybody else there is nothing to load.
 	loader: async ({ context }) => (context.isAdmin ? loadAreasPage() : null),
 });

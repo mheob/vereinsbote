@@ -1,8 +1,11 @@
-import type { accessLevels } from '@/server/db/schema/areas';
+/**
+ * The access levels, lowest first; each level includes the ones below it. The schema and the
+ * level selects use this list, so it is the only place a level is defined. No imports, so the
+ * client bundle can use it.
+ */
+const accessLevels = ['read', 'edit', 'send'] as const;
 
 type AccessLevel = (typeof accessLevels)[number];
-
-const rank: Readonly<Record<AccessLevel, number>> = { edit: 1, read: 0, send: 2 };
 
 /**
  * Tells whether a level includes another one. Levels are cumulative: `send` includes `edit`,
@@ -13,8 +16,8 @@ const rank: Readonly<Record<AccessLevel, number>> = { edit: 1, read: 0, send: 2 
  * @returns True when `have` is at least `need`.
  */
 function levelAtLeast(have: AccessLevel | null, need: AccessLevel): boolean {
-	return have !== null && rank[have] >= rank[need];
+	return have !== null && accessLevels.indexOf(have) >= accessLevels.indexOf(need);
 }
 
-export { levelAtLeast };
+export { accessLevels, levelAtLeast };
 export type { AccessLevel };

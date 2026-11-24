@@ -1,6 +1,7 @@
 import { redirect } from '@tanstack/react-router';
 import { getRequest } from '@tanstack/react-start/server';
 
+import { LOGIN_PATH } from '@/paths';
 import { getSessionUser } from '@/server/auth/session';
 import { loadPrincipal } from '@/server/permissions/principal';
 import type { Principal } from '@/server/permissions/principal';
@@ -24,7 +25,7 @@ async function requireRequestPrincipal(): Promise<{
 	const user = await getSessionUser(context.auth, context.db, getRequest().headers);
 	const principal = user === null ? null : await loadPrincipal(context.db, user.id);
 	// oxlint-disable-next-line typescript/only-throw-error -- TanStack Start sends a thrown redirect to the client
-	if (principal === null) throw redirect({ to: '/login' });
+	if (principal === null) throw redirect({ to: LOGIN_PATH });
 	return { context, principal };
 }
 

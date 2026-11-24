@@ -40,7 +40,7 @@ import {
 	secondaryButtonClass,
 	selectButtonClass,
 } from '@/components/styles';
-import { submitAdmin, submitDisable, submitLevel } from '@/functions/users';
+import { submitAdmin, submitDisable, submitEnable, submitLevel } from '@/functions/users';
 import { ACCESS_LEVELS, LEVEL_MESSAGES, NO_ACCESS } from '@/i18n/levels';
 import type { LevelChoice } from '@/i18n/levels';
 import { useT } from '@/i18n/use-t';
@@ -253,9 +253,59 @@ function DisableAction({
 }
 
 /**
- * One user: name (row header), address, status, role, a level select per area and „Sperren“.
- * Once the user is disabled the button is gone; the focus moves to the row header instead of
- * getting lost.
+ * The button „Entsperren“ of a disabled user. It needs no confirmation: the user is enabled as
+ * active or invited and signs in anew.
+ *
+ * @param props The props.
+ * @param props.announce Announces the result.
+ * @param props.describedBy The id of the row header, so the button names its user.
+ * @param props.onEnabled Called once the user is enabled, before the table reloads.
+ * @param props.user The user of the row.
+ * @returns The button.
+ */
+function EnableAction({
+	announce,
+	describedBy,
+	onEnabled,
+	user,
+}: Readonly<{
+	announce: Announce;
+	describedBy: string;
+	onEnabled: () => void;
+	user: UserRow;
+}>): ReactNode {
+	const t = useT();
+	const router = useRouter();
+	const save = useServerFn(submitEnable);
+	const [isPending, startPending] = useTransition();
+	const enable = useCallback(() => {
+		startPending(async () => {
+			try {
+				await save({ data: { userId: user.id } });
+				onEnabled();
+				await router.invalidate();
+				announce(t('users.enabled', { name: user.name }), 'status');
+			} catch {
+				announce(t('auth.requestFailed'), 'alert');
+			}
+		});
+	}, [announce, onEnabled, router, save, t, user]);
+	return (
+		<Button
+			aria-describedby={describedBy}
+			className={secondaryButtonClass}
+			isPending={isPending}
+			onPress={enable}
+		>
+			{t('users.enable')}
+		</Button>
+	);
+}
+
+/**
+ * One user: name (row header), address, status, role, a level select per area and „Sperren“ or,
+ * for a disabled user, „Entsperren“. The button swaps once the status changes; the focus moves to
+ * the row header instead of getting lost.
  *
  * @param props The props.
  * @param props.announce Announces results.
@@ -271,13 +321,14 @@ function UserTableRow({
 	const t = useT();
 	const headerId = useId();
 	const headerRef = useRef<HTMLTableCellElement>(null);
-	const focusAfterDisable = useRef(false);
-	const onDisabled = useCallback(() => {
-		focusAfterDisable.current = true;
-	}, []);
+	// The status when the user was blocked or enabled here; the focus moves once it has changed.
+	const statusBeforeChange = useRef<UserRow['status'] | null>(null);
+	const onStatusChanged = useCallback(() => {
+		statusBeforeChange.current = user.status;
+	}, [user.status]);
 	useEffect(() => {
-		if (!focusAfterDisable.current || user.status !== 'disabled') return;
-		focusAfterDisable.current = false;
+		if (statusBeforeChange.current === null || statusBeforeChange.current === user.status) return;
+		statusBeforeChange.current = null;
 		headerRef.current?.focus();
 	}, [user.status]);
 	return (
@@ -296,11 +347,18 @@ function UserTableRow({
 				</td>
 			))}
 			<td className={cellClass}>
-				{user.status === 'disabled' ? null : (
+				{user.status === 'disabled' ? (
+					<EnableAction
+						announce={announce}
+						describedBy={headerId}
+						onEnabled={onStatusChanged}
+						user={user}
+					/>
+				) : (
 					<DisableAction
 						announce={announce}
 						describedBy={headerId}
-						onDisabled={onDisabled}
+						onDisabled={onStatusChanged}
 						user={user}
 					/>
 				)}

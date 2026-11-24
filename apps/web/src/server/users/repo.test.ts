@@ -5,7 +5,7 @@ import { SUPPORTED_LOCALES } from '@/i18n/locale';
 import { user } from '@/server/db/schema';
 import { createTestDb } from '@/server/db/test-db';
 
-import { findUserByEmail, findUserById, insertUser, setUserLocale } from './repo';
+import { findUserByEmail, findUserById, insertUser, recordSignIn, setUserLocale } from './repo';
 
 describe('user locale', () => {
 	it('stores every supported locale', async () => {
@@ -38,5 +38,49 @@ describe('user locale', () => {
 			const [row] = await db.select({ locale: user.locale }).from(user).where(eq(user.id, anna.id));
 			expect(row).toStrictEqual({ locale: 'en' });
 		});
+	});
+});
+
+/**
+ * The status and the first sign-in of a user.
+ *
+ * @param db The database.
+ * @param id The user id.
+ * @returns The row.
+ */
+async function signInState(
+	db: Awaited<ReturnType<typeof createTestDb>>,
+	id: string,
+): Promise<{ firstSignInAt: Date | null; status: string } | undefined> {
+	const [row] = await db
+		.select({ firstSignInAt: user.firstSignInAt, status: user.status })
+		.from(user)
+		.where(eq(user.id, id));
+	return row;
+}
+
+describe(recordSignIn, () => {
+	it('activates an invited user and keeps the time of the first sign-in', async () => {
+		const db = await createTestDb();
+		const { id } = await insertUser(db, { email: 'anna@verein.de', name: 'Anna' });
+		await expect(signInState(db, id)).resolves.toStrictEqual({
+			firstSignInAt: null,
+			status: 'invited',
+		});
+		await recordSignIn(db, id);
+		const first = await signInState(db, id);
+		expect(first?.status).toBe('active');
+		expect(first?.firstSignInAt).toBeInstanceOf(Date);
+		await recordSignIn(db, id);
+		await expect(signInState(db, id)).resolves.toStrictEqual(first);
+	});
+
+	it('records the first sign-in of a user who is active already (the setup admin)', async () => {
+		const db = await createTestDb();
+		const { id } = await insertUser(db, { email: 'alex@verein.de', name: 'A', status: 'active' });
+		await recordSignIn(db, id);
+		const state = await signInState(db, id);
+		expect(state?.status).toBe('active');
+		expect(state?.firstSignInAt).toBeInstanceOf(Date);
 	});
 });

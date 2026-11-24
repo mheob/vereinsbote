@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vite-plus/test';
 
 import { EnvError, parseEnv } from './env';
 
+/** A tenant ID as Microsoft Entra shows it (a GUID). */
+const TENANT_ID = '6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b';
+
 const valid = {
 	APP_SECRET: Buffer.alloc(32, 7).toString('base64'),
 	APP_URL: 'https://bote.example.org',
@@ -69,13 +72,73 @@ describe(parseEnv, () => {
 			...valid,
 			MS_LOGIN_CLIENT_ID: 'id',
 			MS_LOGIN_CLIENT_SECRET: 'secret',
-			MS_LOGIN_TENANT_ID: 'tenant',
+			MS_LOGIN_TENANT_ID: TENANT_ID,
 		});
 		expect(env.microsoftLogin).toStrictEqual({
 			clientId: 'id',
 			clientSecret: 'secret',
-			tenantId: 'tenant',
+			tenantId: TENANT_ID,
 		});
+	});
+
+	it.each(['common', 'organizations', 'consumers', 'verein-tenant', `${TENANT_ID}x`])(
+		'rejects the tenant %s: only a tenant ID restricts the sign-in to the club',
+		(tenantId) => {
+			const error = envErrorFor({
+				...valid,
+				MS_LOGIN_CLIENT_ID: 'id',
+				MS_LOGIN_CLIENT_SECRET: 'secret',
+				MS_LOGIN_TENANT_ID: tenantId,
+			});
+			expect(error.variables).toStrictEqual(['MS_LOGIN_TENANT_ID']);
+			expect(error.message).not.toContain(tenantId);
+		},
+	);
+
+	it('accepts a tenant ID in upper case', () => {
+		const env = parseEnv({
+			...valid,
+			MS_LOGIN_CLIENT_ID: 'id',
+			MS_LOGIN_CLIENT_SECRET: 'secret',
+			MS_LOGIN_TENANT_ID: TENANT_ID.toUpperCase(),
+		});
+		expect(env.microsoftLogin?.tenantId).toBe(TENANT_ID.toUpperCase());
+	});
+
+	it('trims every value before checking it', () => {
+		const env = parseEnv({
+			APP_SECRET: ` ${valid.APP_SECRET}\n`,
+			APP_URL: ` ${valid.APP_URL} `,
+			CRON_SECRET: `${valid.CRON_SECRET}\t`,
+			DATABASE_URL: ` ${valid.DATABASE_URL}`,
+			MS_LOGIN_CLIENT_ID: ' id ',
+			MS_LOGIN_CLIENT_SECRET: ' secret ',
+			MS_LOGIN_TENANT_ID: ` ${TENANT_ID} `,
+			SETUP_TOKEN: '   ',
+		});
+		expect(env.appUrl.href).toBe('https://bote.example.org/');
+		expect(env.cronSecret).toBe(valid.CRON_SECRET);
+		expect(env.databaseUrl).toBe(valid.DATABASE_URL);
+		expect(env.microsoftLogin).toStrictEqual({
+			clientId: 'id',
+			clientSecret: 'secret',
+			tenantId: TENANT_ID,
+		});
+		expect(env.setupToken).toBeNull();
+	});
+
+	it.each([
+		'https://bote.example.org/app',
+		'https://bote.example.org/?x=1',
+		'https://bote.example.org/#top',
+	])('rejects an APP_URL with a path, query or fragment: %s', (appUrl) => {
+		expect(envErrorFor({ ...valid, APP_URL: appUrl }).variables).toStrictEqual(['APP_URL']);
+	});
+
+	it('accepts an APP_URL with a port and a trailing slash', () => {
+		expect(parseEnv({ ...valid, APP_URL: 'https://bote.example.org:8443/' }).appUrl.origin).toBe(
+			'https://bote.example.org:8443',
+		);
 	});
 
 	it('rejects a tick interval below one minute', () => {
@@ -96,7 +159,7 @@ describe(parseEnv, () => {
 			DATABASE_URL: 'mysql://x',
 			DEV_SMTP_URL: 'http://x',
 			HEARTBEAT_URL: 'http://x',
-			MS_LOGIN_TENANT_ID: 'tenant',
+			MS_LOGIN_TENANT_ID: TENANT_ID,
 			SETUP_TOKEN: 'kurz',
 		});
 		expect(error.variables).toStrictEqual([
@@ -109,6 +172,28 @@ describe(parseEnv, () => {
 			'HEARTBEAT_URL',
 		]);
 		expect(error.message).toContain('CRON_SECRET');
+	});
+
+	it('leaves the local Neon proxy unset by default', () => {
+		expect(parseEnv(valid).devNeonWsProxy).toBeNull();
+	});
+
+	it('accepts a local Neon proxy for a local APP_URL', () => {
+		const env = parseEnv({
+			...valid,
+			APP_URL: 'http://localhost:8787',
+			DEV_NEON_WS_PROXY: 'localhost:4444/v1',
+		});
+		expect(env.devNeonWsProxy).toBe('localhost:4444/v1');
+	});
+
+	it.each([
+		['https://bote.example.org', 'localhost:4444/v1'],
+		['http://localhost:8787', 'ws://localhost:4444/v1'],
+		['http://localhost:8787', 'localhost:4444/v1?address=x'],
+	])('rejects the local Neon proxy with APP_URL %s and %s', (appUrl, proxy) => {
+		const error = envErrorFor({ ...valid, APP_URL: appUrl, DEV_NEON_WS_PROXY: proxy });
+		expect(error.variables).toStrictEqual(['DEV_NEON_WS_PROXY']);
 	});
 
 	it('treats empty optional values as unset', () => {

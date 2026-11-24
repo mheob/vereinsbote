@@ -1,5 +1,6 @@
 import { createRouter } from '@tanstack/react-router';
 
+import { routerDefaults } from './router-defaults';
 import { routeTree } from './routeTree.gen';
 
 declare module '@tanstack/react-router' {
@@ -9,5 +10,5 @@ declare module '@tanstack/react-router' {
 }
 
 export function getRouter() {
-	return createRouter({ routeTree, scrollRestoration: true });
+	return createRouter({ ...routerDefaults, routeTree });
 }

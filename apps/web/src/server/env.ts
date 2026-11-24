@@ -18,6 +18,7 @@ const VARIABLE_ORDER = [
 	'MS_LOGIN_CLIENT_SECRET',
 	'MS_LOGIN_TENANT_ID',
 	'DEV_SMTP_URL',
+	'DEV_NEON_WS_PROXY',
 	'HEARTBEAT_URL',
 	'TICK_INTERVAL_MS',
 ] as const;
@@ -46,14 +47,16 @@ const toSecretBytes = (value: string, ctx: z.RefinementCtx): Uint8Array => {
 	return z.NEVER;
 };
 
+// The origin only: links are built from it, so a path, query, fragment or credentials would end
+// up in every link of the app.
+const isOriginOnly = (url: URL): boolean => url.href === `${url.origin}/`;
+
+const isAllowedScheme = (url: URL): boolean =>
+	url.protocol === 'https:' || (url.protocol === 'http:' && LOCAL_HOSTS.has(url.hostname));
+
 const toAppUrl = (value: string, ctx: z.RefinementCtx): URL => {
 	const url = parseUrl(value);
-	if (
-		url &&
-		(url.protocol === 'https:' || (url.protocol === 'http:' && LOCAL_HOSTS.has(url.hostname)))
-	) {
-		return url;
-	}
+	if (url !== null && isOriginOnly(url) && isAllowedScheme(url)) return url;
 	ctx.addIssue({ code: 'custom', message: 'invalid' });
 	return z.NEVER;
 };
@@ -63,13 +66,15 @@ const isHttpsUrl = (value: string): boolean => parseUrl(value)?.protocol === 'ht
 const isValidTickInterval = (value: string): boolean =>
 	Number.isSafeInteger(Number(value)) && Number(value) >= MIN_TICK_INTERVAL_MS;
 
-// Empty strings count as unset, as `.env` files commonly contain `KEY=`.
-const withoutEmptyValues = (
+// Values are trimmed, since a copied secret often brings a space or line break along. Empty
+// values count as unset, as `.env` files commonly contain `KEY=`.
+const trimmedValues = (
 	source: Readonly<Record<string, string | undefined>>,
 ): Record<string, string> => {
 	const result: Record<string, string> = {};
 	for (const [name, value] of Object.entries(source)) {
-		if (value !== undefined && value !== '') result[name] = value;
+		const trimmed = value?.trim();
+		if (trimmed !== undefined && trimmed !== '') result[name] = trimmed;
 	}
 	return result;
 };
@@ -80,11 +85,18 @@ const schema = z.object({
 	APP_URL: z.string().transform(toAppUrl),
 	CRON_SECRET: z.string().min(MIN_CRON_SECRET_LENGTH),
 	DATABASE_URL: z.string().regex(/^postgres(?:ql)?:\/\//u),
+	// A local Neon WebSocket proxy as host[:port][/path], without scheme or query.
+	DEV_NEON_WS_PROXY: z
+		.string()
+		.regex(/^[\w.-]+(?::\d+)?(?:\/[\w./-]*)?$/u)
+		.optional(),
 	DEV_SMTP_URL: z.string().startsWith('smtp://').optional(),
 	HEARTBEAT_URL: z.string().refine(isHttpsUrl).optional(),
 	MS_LOGIN_CLIENT_ID: z.string().optional(),
 	MS_LOGIN_CLIENT_SECRET: z.string().optional(),
-	MS_LOGIN_TENANT_ID: z.string().optional(),
+	// The tenant ID (a GUID) of the club's Microsoft Entra tenant. The aliases `common`,
+	// `organizations` and `consumers` would let any Microsoft account sign in, so they are refused.
+	MS_LOGIN_TENANT_ID: z.guid().optional(),
 	SETUP_TOKEN: z.string().min(MIN_SETUP_TOKEN_LENGTH).optional(),
 	TICK_INTERVAL_MS: z.string().regex(/^\d+$/u).refine(isValidTickInterval).optional(),
 });
@@ -97,11 +109,29 @@ const missingMsLogin = (
 	return missing.length === MS_LOGIN_VARIABLES.length ? [] : missing;
 };
 
+/**
+ * DEV_NEON_WS_PROXY: development only, so it needs a local `http://` APP_URL. The database traffic
+ * then goes unencrypted to the proxy, which a deployment must never do.
+ *
+ * @param source The trimmed values.
+ * @returns The variable when it is set without a local APP_URL.
+ */
+const misplacedNeonProxy = (
+	source: Readonly<Record<string, string | undefined>>,
+): readonly string[] => {
+	if (source.DEV_NEON_WS_PROXY === undefined) return [];
+	const appUrl = parseUrl(source.APP_URL ?? '');
+	const local = appUrl?.protocol === 'http:' && LOCAL_HOSTS.has(appUrl.hostname);
+	return local ? [] : ['DEV_NEON_WS_PROXY'];
+};
+
 export interface Env {
 	appSecret: Uint8Array; // exactly 32 bytes
 	appUrl: URL;
 	cronSecret: string;
 	databaseUrl: string;
+	/** A local Neon WebSocket proxy (`host:port/path`) for the `neon` driver, development only. */
+	devNeonWsProxy: string | null;
 	devSmtpUrl: string | null;
 	heartbeatUrl: string | null;
 	microsoftLogin: { clientId: string; clientSecret: string; tenantId: string } | null;
@@ -121,9 +151,9 @@ export class EnvError extends Error {
 }
 
 export function parseEnv(source: Readonly<Record<string, string | undefined>>): Env {
-	const values = withoutEmptyValues(source);
+	const values = trimmedValues(source);
 	const result = schema.safeParse(values);
-	const offending = new Set<string>(missingMsLogin(values));
+	const offending = new Set<string>([...missingMsLogin(values), ...misplacedNeonProxy(values)]);
 	if (!result.success) {
 		for (const name of Object.keys(z.flattenError(result.error).fieldErrors)) offending.add(name);
 	}
@@ -138,6 +168,7 @@ export function parseEnv(source: Readonly<Record<string, string | undefined>>): 
 		appUrl: data.APP_URL,
 		cronSecret: data.CRON_SECRET,
 		databaseUrl: data.DATABASE_URL,
+		devNeonWsProxy: data.DEV_NEON_WS_PROXY ?? null,
 		devSmtpUrl: data.DEV_SMTP_URL ?? null,
 		heartbeatUrl: data.HEARTBEAT_URL ?? null,
 		microsoftLogin:

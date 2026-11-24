@@ -1,15 +1,14 @@
 import { betterAuth } from 'better-auth';
-import type { BetterAuthPlugin, SocialProviders } from 'better-auth';
+import type { BetterAuthOptions, SocialProviders } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { APIError, createAuthEndpoint, isAPIError } from 'better-auth/api';
-import { setSessionCookie } from 'better-auth/cookies';
+import { isAPIError } from 'better-auth/api';
 import { magicLink } from 'better-auth/plugins/magic-link';
 import { tanstackStartCookies } from 'better-auth/tanstack-start';
 import { sql } from 'drizzle-orm';
-import { z } from 'zod';
 
 import type { Locale } from '@/i18n/locale';
 import { translate } from '@/i18n/translate';
+import { AFTER_SIGN_IN_PATH, LOGIN_PATH } from '@/paths';
 import {
 	deriveAuthSecret,
 	deriveLoginWindowKey,
@@ -25,12 +24,18 @@ import {
 	verification,
 } from '@/server/db/schema';
 import type { Env } from '@/server/env';
+import { errorLabel, errorLabelWithCause } from '@/server/error-label';
 import type { SystemMailer } from '@/server/mail/system-mailer';
 import { closeSetupRecoveryFor } from '@/server/setup/setup';
-import { activateInvitedUser, findUserByEmail, findUserById } from '@/server/users/repo';
+import { findUserByEmail, findUserById, recordSignIn } from '@/server/users/repo';
 
 import { normalizeEmail } from './email';
-import { LOGIN_LINK_WINDOW_SECONDS } from './login-window';
+import { isServerOpenedSession, sessionForUser } from './session-for-user';
+import {
+	LINK_REQUEST_WINDOW_SECONDS,
+	LINK_REQUESTS_PER_WINDOW,
+	LOGIN_LINK_WINDOW_SECONDS,
+} from './sign-in-limits';
 
 /** 15 minutes. */
 const LOGIN_LINK_TTL_SECONDS = 900;
@@ -38,12 +43,7 @@ const LOGIN_LINK_TTL_SECONDS = 900;
 const SESSION_TTL_SECONDS = 604_800;
 /** 1 day: a session used after this age gets a fresh `SESSION_TTL_SECONDS` (sliding expiry). */
 const SESSION_REFRESH_AGE_SECONDS = 86_400;
-/** Where a login link leads after a successful check, and where it leads after a failed one. */
-const AFTER_SIGN_IN_PATH = '/';
-const LOGIN_PATH = '/login';
-/** Login link requests per client address and window, enforced by Better Auth's rate limiter. */
-const LINK_REQUESTS_PER_WINDOW = 5;
-const LINK_REQUEST_WINDOW_SECONDS = 60;
+const HTTP_INTERNAL_SERVER_ERROR = 500;
 
 /**
  * Where the rate limiter reads the client address, per platform (build constant). Cloudflare
@@ -56,8 +56,10 @@ const IP_ADDRESS_HEADERS =
 
 /**
  * Every routed Better Auth endpoint except the ones the app uses: `/sign-in/magic-link`,
- * `/magic-link/verify`, `/sign-in/social`, `/callback/:id` (Microsoft), `/get-session`,
- * `/sign-out`, `/ok` and `/error`. A test keeps this list complete for new Better Auth versions.
+ * `/magic-link/verify`, `/sign-in/social`, `/callback/:id` (Microsoft), `/sign-out`, `/ok` and
+ * `/error`. `/get-session` is off as well: the app reads sessions on the server
+ * (`auth.api.getSession`), so the browser needs no endpoint that returns the session and user.
+ * A test keeps this list complete for new Better Auth versions.
  */
 const DISABLED_PATHS = [
 	'/account-info',
@@ -66,6 +68,7 @@ const DISABLED_PATHS = [
 	'/delete-user',
 	'/delete-user/callback',
 	'/get-access-token',
+	'/get-session',
 	'/link-social',
 	'/list-accounts',
 	'/list-sessions',
@@ -114,12 +117,29 @@ class LoginLinkInvalidError extends Error {
  * @param error The error of the mailer.
  */
 function logSendFailure(error: unknown): void {
-	const label =
-		error instanceof Error
-			? (('code' in error ? String(error.code) : undefined) ?? error.name)
-			: 'unknown';
 	// oxlint-disable-next-line no-console -- the only trace of a login link that never arrives
-	console.error('login link not sent', label);
+	console.error('login link not sent', errorLabel(error));
+}
+
+type AuthLogLevel = Parameters<NonNullable<NonNullable<BetterAuthOptions['logger']>['log']>>[0];
+
+/**
+ * Better Auth's log output, at its own level (`warn` and above). Its messages may carry request
+ * values (origins, redirect URLs), and its arguments are often database errors whose message
+ * lists the query and its parameters (session tokens, user ids, addresses). So neither goes out:
+ * only the level and the code or name of each argument (`errorLabelWithCause`).
+ *
+ * @param level The level of the entry.
+ * @param _message Better Auth's message, never logged.
+ * @param args The values Better Auth logs with it, logged by code or name only.
+ */
+function logAuthEvent(level: AuthLogLevel, _message: string, ...args: readonly unknown[]): void {
+	const labels = args.map((arg) => errorLabelWithCause(arg));
+	/* oxlint-disable no-console -- Better Auth's events, reduced to their codes */
+	if (level === 'error') console.error('better auth', level, ...labels);
+	else if (level === 'warn') console.warn('better auth', level, ...labels);
+	else console.info('better auth', level, ...labels);
+	/* oxlint-enable no-console */
 }
 
 /**
@@ -232,37 +252,6 @@ function socialProviders(microsoftLogin: Readonly<Env['microsoftLogin']>): Socia
 	};
 }
 
-/**
- * The endpoint contexts of `createSessionForUser` calls. The session hooks run inside the
- * endpoint that creates the session and get its context, so they can tell the setup's own
- * session from a sign-in (`closeSetupRecoveryFor`).
- */
-const serverOpenedSessions = new WeakSet<object>();
-
-/**
- * A server-only endpoint that opens a session for a user the app has identified itself (the
- * first admin, right after the setup). Better Auth never routes it over HTTP. It sets the
- * session cookie the way a sign-in does; the session hooks apply, so a disabled user gets none.
- */
-const sessionForUser = {
-	endpoints: {
-		createSessionForUser: createAuthEndpoint.serverOnly(
-			{ body: z.object({ userId: z.string() }), method: 'POST' },
-			async (ctx) => {
-				serverOpenedSessions.add(ctx);
-				const { internalAdapter } = ctx.context;
-				const found = await internalAdapter.findUserById(ctx.body.userId);
-				// `createSession` returns null when the session hook refuses the user.
-				const created = found === null ? null : await internalAdapter.createSession(found.id);
-				if (found === null || created === null) throw new APIError('FORBIDDEN');
-				await setSessionCookie(ctx, { session: created, user: found });
-				return ctx.json({ userId: found.id });
-			},
-		),
-	},
-	id: 'session-for-user',
-} satisfies BetterAuthPlugin;
-
 // The instance type is inferred from these options; `Auth` is derived from this function.
 // oxlint-disable-next-line typescript/explicit-function-return-type -- see above; Drizzle clients are mutable
 function buildAuth(deps: AuthDeps, secret: string, windowKey: CryptoKey) {
@@ -285,12 +274,12 @@ function buildAuth(deps: AuthDeps, secret: string, windowKey: CryptoKey) {
 		databaseHooks: {
 			session: {
 				create: {
-					// The first session of an invited user activates the user. A sign-in of the setup
-					// admin closes the setup's recovery; the setup's own session does not, its route does
-					// so once the cookie is on the response.
+					// The first session of a user activates an invited one and is kept as the first
+					// sign-in. A sign-in of the setup admin closes the setup's recovery; the setup's own
+					// session does not, its route does so once the cookie is on the response.
 					async after(created, context) {
-						await activateInvitedUser(db, created.userId);
-						if (context === null || !serverOpenedSessions.has(context)) {
+						await recordSignIn(db, created.userId);
+						if (!isServerOpenedSession(context)) {
 							await closeSetupRecoveryFor(db, created.userId);
 						}
 					},
@@ -307,6 +296,10 @@ function buildAuth(deps: AuthDeps, secret: string, windowKey: CryptoKey) {
 		},
 		disabledPaths: DISABLED_PATHS,
 		emailAndPassword: { enabled: false },
+		logger: { level: 'warn', log: logAuthEvent },
+		// Unexpected errors leave the HTTP handler instead of being printed whole by Better Auth's
+		// router; `handleAuthRequest` logs them by code. API errors (4xx) stay responses.
+		onAPIError: { throw: true },
 		plugins: [
 			magicLink({
 				disableSignUp: true,
@@ -358,6 +351,25 @@ async function createAuth(deps: AuthDeps): Promise<Auth> {
 		deriveLoginWindowKey(deps.env.appSecret),
 	]);
 	return buildAuth(deps, secret, windowKey);
+}
+
+/**
+ * Hands an HTTP request under `/api/auth/` to Better Auth. An unexpected failure is logged by
+ * code only and answered with a bare 500: the error of a failed query lists the query and its
+ * parameters (session tokens, addresses), which Better Auth's router would print whole.
+ *
+ * @param auth The auth instance.
+ * @param request The request.
+ * @returns Better Auth's response, or 500.
+ */
+async function handleAuthRequest(auth: Auth, request: Request): Promise<Response> {
+	try {
+		return await auth.handler(request);
+	} catch (error) {
+		// oxlint-disable-next-line no-console -- code or name only, see above
+		console.error('auth request failed', errorLabelWithCause(error));
+		return new Response(null, { status: HTTP_INTERNAL_SERVER_ERROR });
+	}
 }
 
 /**
@@ -436,6 +448,7 @@ export {
 	SESSION_NOT_CREATED,
 	createAuth,
 	createSessionFor,
+	handleAuthRequest,
 	requestLoginLink,
 	verifyLoginLink,
 };

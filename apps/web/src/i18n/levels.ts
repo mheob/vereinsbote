@@ -1,9 +1,10 @@
+import { accessLevels } from '@/server/permissions/levels';
 import type { AccessLevel } from '@/server/permissions/levels';
 
 import type { MessageKey } from './translate';
 
-/** The access levels, lowest first, in the order the level selects offer them. */
-const ACCESS_LEVELS = ['read', 'edit', 'send'] as const satisfies readonly AccessLevel[];
+/** The access levels, lowest first, in the order the level selects offer them (the schema's). */
+const ACCESS_LEVELS = accessLevels;
 
 /** No access: the option of a level select that removes the user's level. */
 const NO_ACCESS = 'none';

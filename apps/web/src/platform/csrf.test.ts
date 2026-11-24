@@ -1,8 +1,16 @@
-import { describe, expect, it } from 'vite-plus/test';
+import { setResponseHeaders } from '@tanstack/react-start/server';
+import { describe, expect, it, vi } from 'vite-plus/test';
 
 import { startInstance } from '@/start';
 
 import { createServerFnCsrfMiddleware } from './csrf';
+import { SECURITY_HEADERS } from './security-headers';
+
+// Start's response helpers need its request context, which the stand-in executor has not.
+vi.mock(import('@tanstack/react-start/server'), async (importOriginal) => ({
+	...(await importOriginal()),
+	setResponseHeaders: vi.fn<typeof setResponseHeaders>(),
+}));
 
 const APP_ORIGIN = 'https://bote.example.org';
 const SERVER_FN_URL = `${APP_ORIGIN}/_serverFn/save-locale`;
@@ -135,6 +143,19 @@ describe('csrf protection of server functions', () => {
 				handled: false,
 				status: FORBIDDEN,
 			});
+		});
+
+		it('sets the security headers on every request, refused ones included', async () => {
+			vi.mocked(setResponseHeaders).mockClear();
+			const request = post(SERVER_FN_URL, {
+				origin: 'https://evil.example',
+				'sec-fetch-site': 'cross-site',
+			});
+			await expect(runApp(request, 'serverFn')).resolves.toMatchObject({ status: FORBIDDEN });
+			// Headers compare by their entries.
+			expect(vi.mocked(setResponseHeaders).mock.calls).toStrictEqual([
+				[new Headers(SECURITY_HEADERS)],
+			]);
 		});
 
 		it('leaves routes such as Better Auth to their own origin check', async () => {

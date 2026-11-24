@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, or, sql } from 'drizzle-orm';
 
 import { DEFAULT_LOCALE } from '@/i18n/locale';
 import type { Locale } from '@/i18n/locale';
@@ -92,16 +92,21 @@ async function findUserById(db: Db, id: string): Promise<UserRecord | null> {
 }
 
 /**
- * Marks an invited user as active. Users with another status stay as they are.
+ * Records a sign-in: an invited user becomes active, and the time of the user's first sign-in is
+ * kept (`firstSignInAt`). Later sign-ins and other statuses change nothing.
  *
  * @param db The database.
  * @param id The user id.
  */
-async function activateInvitedUser(db: Db, id: string): Promise<void> {
+async function recordSignIn(db: Db, id: string): Promise<void> {
+	const firstOrInvited = or(eq(user.status, 'invited'), isNull(user.firstSignInAt));
 	await db
 		.update(user)
-		.set({ status: 'active' })
-		.where(and(eq(user.id, id), eq(user.status, 'invited')));
+		.set({
+			firstSignInAt: sql`coalesce(${user.firstSignInAt}, now())`,
+			status: sql`case when ${user.status} = 'invited' then 'active' else ${user.status} end`,
+		})
+		.where(and(eq(user.id, id), firstOrInvited));
 }
 
 /**
@@ -125,12 +130,5 @@ async function revokeSessions(db: Db, userId: string): Promise<void> {
 	await db.delete(session).where(eq(session.userId, userId));
 }
 
-export {
-	activateInvitedUser,
-	findUserByEmail,
-	findUserById,
-	insertUser,
-	revokeSessions,
-	setUserLocale,
-};
+export { findUserByEmail, findUserById, insertUser, recordSignIn, revokeSessions, setUserLocale };
 export type { UserRecord, UserStatus };

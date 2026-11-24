@@ -43,6 +43,13 @@
       "when": 1795441500488,
       "tag": "0005_magenta_captain_midlands",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795462772220,
+      "tag": "0006_daily_deathstrike",
+      "breakpoints": true
     }
   ]
 }

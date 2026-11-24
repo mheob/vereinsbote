@@ -16,6 +16,7 @@ import type { Principal } from '@/server/permissions/principal';
 import { findUserByEmail, findUserById, insertUser } from './repo';
 import {
 	disableUser,
+	enableUser,
 	inviteUser,
 	LastAdminError,
 	listUsersWithLevels,
@@ -386,6 +387,74 @@ describe(disableUser, () => {
 		const p = await principalOf(db, id);
 		await expect(disableUser(db, p, a.userId)).rejects.toBeInstanceOf(ForbiddenError);
 		await expect(findUserById(db, a.userId)).resolves.toMatchObject({ status: 'active' });
+	});
+});
+
+/**
+ * Opens a session for a user, the way a sign-in does (the session hooks apply).
+ *
+ * @param db The database.
+ * @param id The user id.
+ */
+async function signInOnce(db: Db, id: string): Promise<void> {
+	const env = parseEnv({
+		APP_SECRET: Buffer.alloc(32, 3).toString('base64'),
+		APP_URL: APP_URL.href,
+		CRON_SECRET: 'c'.repeat(32),
+		DATABASE_URL: 'postgres://x@localhost/x',
+	});
+	const auth = await createAuth({ db, env, mailer: new CapturingMailer() });
+	await createSessionFor(auth, id);
+}
+
+describe(enableUser, () => {
+	it('enables a user who has signed in before as active and writes an audit entry', async () => {
+		const db = await createTestDb();
+		const a = await admin(db);
+		const { id } = await insertUser(db, { email: 'kim@v.de', name: 'Kim' });
+		await signInOnce(db, id);
+		await disableUser(db, a, id);
+		await enableUser(db, a, id);
+		await expect(findUserById(db, id)).resolves.toMatchObject({ status: 'active' });
+		await expect(lastAudit(db)).resolves.toMatchObject({
+			action: 'user.enabled',
+			actorUserId: a.userId,
+			details: { to: 'active' },
+			target: `user:${id}`,
+		});
+	});
+
+	it('enables a user who never signed in as invited', async () => {
+		const db = await createTestDb();
+		const a = await admin(db);
+		const { id } = await insertUser(db, { email: 'kim@v.de', name: 'Kim' });
+		await disableUser(db, a, id);
+		await enableUser(db, a, id);
+		await expect(findUserById(db, id)).resolves.toMatchObject({ status: 'invited' });
+		await expect(lastAudit(db)).resolves.toMatchObject({
+			action: 'user.enabled',
+			details: { to: 'invited' },
+		});
+	});
+
+	it('changes nothing for a user who is not disabled', async () => {
+		const db = await createTestDb();
+		const a = await admin(db);
+		const id = await kim(db);
+		await enableUser(db, a, id);
+		await expect(findUserById(db, id)).resolves.toMatchObject({ status: 'active' });
+		await expect(db.select().from(auditLog)).resolves.toHaveLength(0);
+	});
+
+	it('only admins can enable users', async () => {
+		const db = await createTestDb();
+		const a = await admin(db);
+		const id = await kim(db);
+		await disableUser(db, a, id);
+		const { id: otherId } = await insertUser(db, { email: 'o@v.de', name: 'O', status: 'active' });
+		const other = await principalOf(db, otherId);
+		await expect(enableUser(db, other, id)).rejects.toBeInstanceOf(ForbiddenError);
+		await expect(findUserById(db, id)).resolves.toMatchObject({ status: 'disabled' });
 	});
 });
 

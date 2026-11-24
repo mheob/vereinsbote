@@ -2,13 +2,20 @@ import { and, inArray, lt, lte, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 
 import type { Db } from '@/server/db/client';
-import { loginLinkWindow, verification } from '@/server/db/schema';
+import { loginLinkWindow, rateLimit, session, verification } from '@/server/db/schema';
 import type { TickContext, TickStep } from '@/server/tick/tick';
 
-import { LOGIN_LINK_WINDOW_SECONDS } from './login-window';
+import { LOGIN_LINK_WINDOW_SECONDS, LONGEST_RATE_LIMIT_WINDOW_SECONDS } from './sign-in-limits';
 
 /** Rows per delete statement, so one statement never locks or scans too much at once. */
 const PRUNE_BATCH_SIZE = 500;
+/**
+ * A rate limiter row idle for this long counts for nothing: twice the longest window, so a skew
+ * between the clocks of app and database (Better Auth stores the app's time) never ends a window
+ * that is still running.
+ */
+const MS_PER_SECOND = 1000;
+const STALE_RATE_LIMIT_MS = 2 * LONGEST_RATE_LIMIT_WINDOW_SECONDS * MS_PER_SECOND;
 
 /** Deletes up to one batch and returns how many rows it deleted. */
 type BatchDelete = (db: Db, batchSize: number) => Promise<number>;
@@ -21,6 +28,17 @@ type BatchDelete = (db: Db, batchSize: number) => Promise<number>;
 
 function isExpiredVerification(): SQL {
 	return lt(verification.expiresAt, sql`now()`);
+}
+
+function isExpiredSession(): SQL {
+	return lt(session.expiresAt, sql`now()`);
+}
+
+function isStaleRateLimit(): SQL {
+	return lt(
+		rateLimit.lastRequest,
+		sql`(extract(epoch from now()) * 1000)::bigint - ${STALE_RATE_LIMIT_MS}`,
+	);
 }
 
 function isClosedLoginWindow(): SQL {
@@ -72,6 +90,48 @@ const deleteClosedLoginWindows: BatchDelete = async (db, batchSize) => {
 };
 
 /**
+ * Deletes expired sessions. Better Auth refuses them already, so deleting them changes no
+ * behavior; it keeps the table, and the client addresses stored with each session, small.
+ *
+ * @param db The database.
+ * @param batchSize The most rows to delete.
+ * @returns How many rows it deleted.
+ */
+const deleteExpiredSessions: BatchDelete = async (db, batchSize) => {
+	const expired = db
+		.select({ id: session.id })
+		.from(session)
+		.where(isExpiredSession())
+		.limit(batchSize);
+	const deleted = await db
+		.delete(session)
+		.where(and(inArray(session.id, expired), isExpiredSession()))
+		.returning({ id: session.id });
+	return deleted.length;
+};
+
+/**
+ * Deletes Better Auth's rate limiter rows that are idle for longer than any window. Each row
+ * holds a client address, and the limiter starts such a counter over anyway.
+ *
+ * @param db The database.
+ * @param batchSize The most rows to delete.
+ * @returns How many rows it deleted.
+ */
+const deleteStaleRateLimits: BatchDelete = async (db, batchSize) => {
+	const stale = db
+		.select({ id: rateLimit.id })
+		.from(rateLimit)
+		.where(isStaleRateLimit())
+		.limit(batchSize);
+	const deleted = await db
+		.delete(rateLimit)
+		.where(and(inArray(rateLimit.id, stale), isStaleRateLimit()))
+		.returning({ id: rateLimit.id });
+	return deleted.length;
+};
+
+/**
  * Deletes batch after batch until a batch comes back short (nothing left) or the deadline passes.
  *
  * @param ctx The tick context.
@@ -92,9 +152,18 @@ async function deleteUntilDone(
 	}
 }
 
+/** The deletes of the step, in the order it runs them. */
+const BATCH_DELETES: readonly BatchDelete[] = [
+	deleteExpiredVerifications,
+	deleteClosedLoginWindows,
+	deleteExpiredSessions,
+	deleteStaleRateLimits,
+];
+
 /**
- * Builds the step that deletes expired verification rows and closed login link windows, both
- * judged by the database clock.
+ * Builds the step that deletes expired verification rows, closed login link windows, expired
+ * sessions and stale rate limiter rows, all judged by the database clock, within the step's time
+ * budget.
  *
  * @param batchSize Rows per delete statement; tests make it small.
  * @returns The `prune-auth-records` tick step.
@@ -103,7 +172,7 @@ function createPruneAuthRecordsStep(batchSize: number = PRUNE_BATCH_SIZE): TickS
 	return {
 		name: 'prune-auth-records',
 		async run(ctx) {
-			for (const deleteBatch of [deleteExpiredVerifications, deleteClosedLoginWindows]) {
+			for (const deleteBatch of BATCH_DELETES) {
 				// oxlint-disable-next-line no-await-in-loop -- the tables are pruned one after another
 				if (await deleteUntilDone(ctx, deleteBatch, batchSize)) return { moreWork: true };
 			}

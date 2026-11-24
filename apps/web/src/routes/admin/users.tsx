@@ -5,6 +5,8 @@ import { InviteForm } from '@/components/admin/invite-form';
 import { UsersTable } from '@/components/admin/users-table';
 import { Announcements, useAnnouncer } from '@/components/announcements';
 import { loadUsersPage } from '@/functions/users';
+import { adminPageHead } from '@/i18n/page-title';
+import type { AdminTitleContext } from '@/i18n/page-title';
 import { useT } from '@/i18n/use-t';
 
 export const Route = createFileRoute('/admin/users')({
@@ -27,6 +29,8 @@ export const Route = createFileRoute('/admin/users')({
 			</div>
 		);
 	},
+	// Without the admin role the page is "no access", and so is its title.
+	head: (context: AdminTitleContext) => adminPageHead(context, 'users.title'),
 	// The admin layout has decided already; for anybody else there is nothing to load.
 	loader: async ({ context }) => (context.isAdmin ? loadUsersPage() : null),
 });

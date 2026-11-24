@@ -1,21 +1,15 @@
 import { createFileRoute, Link, redirect, useLoaderData } from '@tanstack/react-router';
 import { createServerFn, useServerFn } from '@tanstack/react-start';
-import {
-	startTransition,
-	useActionState,
-	useCallback,
-	useEffect,
-	useId,
-	useMemo,
-	useRef,
-} from 'react';
+import { useActionState, useCallback, useEffect, useId, useMemo, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { FieldError, Input, Label, TextField } from 'react-aria-components';
-import type { FormProps } from 'react-aria-components';
 import { z } from 'zod';
 
 import { PostForm } from '@/components/post-form';
+import { inputClass, linkClass } from '@/components/styles';
 import { SubmitButton } from '@/components/submit-button';
+import { useFormSubmit } from '@/components/use-form-submit';
+import { pageHead } from '@/i18n/page-title';
 import type { MessageKey } from '@/i18n/translate';
 import { useT } from '@/i18n/use-t';
 import {
@@ -27,9 +21,6 @@ import {
 	isValidAdminName,
 } from '@/server/setup/form';
 import type { SetupField } from '@/server/setup/form';
-
-const inputClass =
-	'rounded-md border border-gray-600 px-3 py-2 data-focused:outline-2 data-focused:outline-offset-2 data-focused:outline-blue-700 data-invalid:border-red-700';
 
 /**
  * Why the server refused a submission: `fields` names the refused fields (a wrong token is one),
@@ -194,16 +185,7 @@ export const Route = createFileRoute('/setup')({
 		);
 		// Submitted through `onSubmit`, not a form action: React resets a form after its action,
 		// which would clear name and address after a wrong token.
-		const onSubmit = useCallback<NonNullable<FormProps['onSubmit']>>(
-			(event) => {
-				event.preventDefault();
-				const formData = new FormData(event.currentTarget);
-				startTransition(() => {
-					submitForm(formData);
-				});
-			},
-			[submitForm],
-		);
+		const onSubmit = useFormSubmit(submitForm);
 		// The browser checks the server's rules before sending; empty fields are left to `isRequired`.
 		const validateName = useCallback(
 			(value: string) => (value === '' || isValidAdminName(value) ? null : t('setup.nameInvalid')),
@@ -245,10 +227,7 @@ export const Route = createFileRoute('/setup')({
 					{showDone ? t('setup.done') : null}
 				</output>
 				{showDone ? (
-					<Link
-						className="self-start font-semibold text-blue-700 underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
-						to="/login"
-					>
+					<Link className={`self-start ${linkClass}`} to="/login">
 						{t('setup.toLogin')}
 					</Link>
 				) : (
@@ -313,5 +292,6 @@ export const Route = createFileRoute('/setup')({
 			</div>
 		);
 	},
+	head: (context) => pageHead(context, 'setup.title'),
 	loader: async () => loadSetupState(),
 });

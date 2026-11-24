@@ -8,6 +8,7 @@ type AuditAction =
 	| 'user.admin_changed'
 	| 'user.area_level_changed'
 	| 'user.disabled'
+	| 'user.enabled'
 	| 'user.invited';
 
 interface AuditEntry {

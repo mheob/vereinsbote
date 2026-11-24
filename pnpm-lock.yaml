@@ -338,9 +338,6 @@ importers:
 
   apps/web:
     dependencies:
-      '@electric-sql/pglite':
-        specifier: 'catalog:'
-        version: 0.6.0
       '@neondatabase/serverless':
         specifier: 'catalog:'
         version: 1.2.1
@@ -381,6 +378,9 @@ importers:
       '@cloudflare/vite-plugin':
         specifier: 'catalog:'
         version: 1.70.1(@types/node@26.6.6)(@voidzero-dev/vite-plus-core@8.3.8000(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@7.0.2))(workerd@1.20261119.1)(wrangler@4.166.0(@types/node@26.6.6)(vitest@5.1.0))
+      '@electric-sql/pglite':
+        specifier: 'catalog:'
+        version: 0.6.0
       '@playwright/test':
         specifier: 'catalog:'
         version: 1.65.1

@@ -39,7 +39,7 @@ const levelRequest = z.object({
 
 const adminRequest = z.object({ isAdmin: z.boolean(), userId: z.string() });
 
-const disableRequest = z.object({ userId: z.string() });
+const userRequest = z.object({ userId: z.string() });
 
 /** The users with their levels, the areas as columns and the language the invitation proposes. */
 const loadUsersPage = createServerFn({ method: 'GET' }).handler(async () => {
@@ -122,7 +122,7 @@ const submitAdmin = createServerFn({ method: 'POST' })
 
 /** Disables a user and ends the user's sessions; the last admin cannot be disabled. */
 const submitDisable = createServerFn({ method: 'POST' })
-	.validator(disableRequest)
+	.validator(userRequest)
 	.handler(async ({ data }): Promise<AdminChangeResult> => {
 		const [{ requireRequestPrincipal }, users] = await Promise.all([
 			import('@/platform/request-principal'),
@@ -138,5 +138,17 @@ const submitDisable = createServerFn({ method: 'POST' })
 		}
 	});
 
-export { loadUsersPage, submitAdmin, submitDisable, submitInvite, submitLevel };
+/** Enables a disabled user again, as active or invited (see `enableUser`). */
+const submitEnable = createServerFn({ method: 'POST' })
+	.validator(userRequest)
+	.handler(async ({ data }) => {
+		const [{ requireRequestPrincipal }, { enableUser }] = await Promise.all([
+			import('@/platform/request-principal'),
+			import('@/server/users/users'),
+		]);
+		const { context, principal } = await requireRequestPrincipal();
+		await enableUser(context.db, principal, data.userId);
+	});
+
+export { loadUsersPage, submitAdmin, submitDisable, submitEnable, submitInvite, submitLevel };
 export type { InviteFieldError, InviteFieldErrors };

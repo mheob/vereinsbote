@@ -12,11 +12,27 @@ interface DbHandle {
 	end: () => Promise<void>;
 }
 
-async function openNeonDb(databaseUrl: string): Promise<DbHandle> {
-	const [{ drizzle }, { Pool }] = await Promise.all([
+interface OpenDbOptions {
+	/**
+	 * `DEV_NEON_WS_PROXY`: a local Neon WebSocket proxy (`host:port/path`) in front of a local
+	 * PostgreSQL, for the `neon` driver in local development. Spoken to over plain WebSocket.
+	 */
+	readonly devNeonWsProxy?: string | null;
+}
+
+async function openNeonDb(databaseUrl: string, devNeonWsProxy: string | null): Promise<DbHandle> {
+	const [{ drizzle }, { Pool, neonConfig }] = await Promise.all([
 		import('drizzle-orm/neon-serverless'),
 		import('@neondatabase/serverless'),
 	]);
+	if (devNeonWsProxy !== null) {
+		// Neon's settings for its own WebSocket proxy run locally (`wsproxy`): no TLS, and no
+		// pipelined connect, which only works with Neon's cleartext password flow.
+		neonConfig.wsProxy = devNeonWsProxy;
+		neonConfig.useSecureWebSocket = false;
+		neonConfig.pipelineTLS = false;
+		neonConfig.pipelineConnect = false;
+	}
 	const pool = new Pool({ connectionString: databaseUrl });
 	pool.on('error', logPoolError);
 	return { db: drizzle(pool, { schema }), end: async () => pool.end() };
@@ -30,9 +46,14 @@ async function openNeonDb(databaseUrl: string): Promise<DbHandle> {
  *
  * @param databaseUrl The PostgreSQL connection string.
  * @param driver `neon` (WebSocket pool, Vercel and Cloudflare) or `pg` (Node/Docker).
+ * @param options Development settings of the `neon` driver.
  * @returns The Drizzle client and a function that closes its pool.
  */
-async function openDb(databaseUrl: string, driver: 'neon' | 'pg'): Promise<DbHandle> {
+async function openDb(
+	databaseUrl: string,
+	driver: 'neon' | 'pg',
+	options: OpenDbOptions = {},
+): Promise<DbHandle> {
 	if (driver === 'pg') {
 		if (import.meta.env.VITE_VB_PLATFORM === 'cloudflare') {
 			throw new Error('The pg driver is not available on Cloudflare.');
@@ -40,7 +61,7 @@ async function openDb(databaseUrl: string, driver: 'neon' | 'pg'): Promise<DbHan
 		const { openPgDb } = await import('./pg-client');
 		return openPgDb(databaseUrl);
 	}
-	return openNeonDb(databaseUrl);
+	return openNeonDb(databaseUrl, options.devNeonWsProxy ?? null);
 }
 
 /**
@@ -56,4 +77,4 @@ async function createDb(databaseUrl: string, driver: 'neon' | 'pg'): Promise<Db>
 }
 
 export { createDb, openDb };
-export type { Db, DbHandle };
+export type { Db, DbHandle, OpenDbOptions };

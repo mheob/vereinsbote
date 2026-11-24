@@ -5,14 +5,15 @@ import type { ReactNode } from 'react';
 import { FieldError, Form, Input, Label, TextField } from 'react-aria-components';
 import { z } from 'zod';
 
+import { signInErrorMessage } from '@/components/sign-in-error';
+import { inputClass } from '@/components/styles';
 import { SubmitButton } from '@/components/submit-button';
+import { pageHead } from '@/i18n/page-title';
 import type { MessageKey, MessageParams } from '@/i18n/translate';
 import { useT } from '@/i18n/use-t';
+import { AFTER_SIGN_IN_PATH, LOGIN_PATH } from '@/paths';
 import { normalizeEmail } from '@/server/auth/email';
 
-/** Where Better Auth sends the user after signing in, and back to after a failure. */
-const AFTER_SIGN_IN_PATH = '/';
-const LOGIN_PATH = '/login';
 const HTTP_TOO_MANY_REQUESTS = 429;
 
 const socialSignInResponse = z.object({ url: z.url() });
@@ -126,7 +127,7 @@ export const Route = createFileRoute('/login')({
 				<h1 className="text-2xl font-bold">{t('auth.title')}</h1>
 				{error === undefined ? null : (
 					<p className="text-red-700" role="alert">
-						{t('auth.signInFailed')}
+						{t(signInErrorMessage(error))}
 					</p>
 				)}
 				<Form action={submit} className="flex flex-col gap-4">
@@ -138,7 +139,7 @@ export const Route = createFileRoute('/login')({
 						type="email"
 					>
 						<Label className="font-semibold">{t('auth.emailLabel')}</Label>
-						<Input className="rounded-md border border-gray-600 px-3 py-2 data-focused:outline-2 data-focused:outline-offset-2 data-focused:outline-blue-700" />
+						<Input className={inputClass} />
 						<FieldError className="text-sm text-red-700" />
 					</TextField>
 					<SubmitButton>{t('auth.requestLink')}</SubmitButton>
@@ -153,6 +154,7 @@ export const Route = createFileRoute('/login')({
 			</div>
 		);
 	},
+	head: (context) => pageHead(context, 'auth.title'),
 	loader: async () => loadLoginOptions(),
 	validateSearch: z.object({ error: z.string().optional() }),
 });

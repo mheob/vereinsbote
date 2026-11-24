@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteRouteImport } from './routes/admin/route'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as SetupRouteImport } from './routes/setup'
+import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AdminAreasRouteImport } from './routes/admin/areas'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
@@ -38,6 +39,11 @@ const SetupRoute = SetupRouteImport.update({
   id: '/setup',
   path: '/setup',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AdminIndexRoute = AdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AdminRouteRoute,
 } as any)
 const AdminAreasRoute = AdminAreasRouteImport.update({
   id: '/areas',
@@ -74,17 +80,18 @@ export interface FileRoutesByFullPath {
   '/admin/users': typeof AdminUsersRoute
   '/api/health': typeof ApiHealthRoute
   '/api/tick': typeof ApiTickRoute
+  '/admin/': typeof AdminIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/admin': typeof AdminRouteRouteWithChildren
   '/login': typeof LoginRoute
   '/setup': typeof SetupRoute
   '/admin/areas': typeof AdminAreasRoute
   '/admin/users': typeof AdminUsersRoute
   '/api/health': typeof ApiHealthRoute
   '/api/tick': typeof ApiTickRoute
+  '/admin': typeof AdminIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesById {
@@ -97,6 +104,7 @@ export interface FileRoutesById {
   '/admin/users': typeof AdminUsersRoute
   '/api/health': typeof ApiHealthRoute
   '/api/tick': typeof ApiTickRoute
+  '/admin/': typeof AdminIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRouteTypes {
@@ -110,17 +118,18 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/api/health'
     | '/api/tick'
+    | '/admin/'
     | '/api/auth/$'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/admin'
     | '/login'
     | '/setup'
     | '/admin/areas'
     | '/admin/users'
     | '/api/health'
     | '/api/tick'
+    | '/admin'
     | '/api/auth/$'
   id:
     | '__root__'
@@ -132,6 +141,7 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/api/health'
     | '/api/tick'
+    | '/admin/'
     | '/api/auth/$'
   fileRoutesById: FileRoutesById
 }
@@ -175,6 +185,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SetupRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/': {
+      id: '/admin/'
+      path: '/'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof AdminIndexRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
     '/admin/areas': {
       id: '/admin/areas'
       path: '/areas'
@@ -216,11 +233,13 @@ declare module '@tanstack/react-router' {
 interface AdminRouteRouteChildren {
   AdminAreasRoute: typeof AdminAreasRoute
   AdminUsersRoute: typeof AdminUsersRoute
+  AdminIndexRoute: typeof AdminIndexRoute
 }
 
 const AdminRouteRouteChildren: AdminRouteRouteChildren = {
   AdminAreasRoute: AdminAreasRoute,
   AdminUsersRoute: AdminUsersRoute,
+  AdminIndexRoute: AdminIndexRoute,
 }
 
 const AdminRouteRouteWithChildren = AdminRouteRoute._addFileChildren(

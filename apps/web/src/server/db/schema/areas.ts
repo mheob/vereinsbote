@@ -9,10 +9,9 @@ import {
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm/sql';
 
-import { user } from './auth';
+import { accessLevels } from '@/server/permissions/levels';
 
-/** The access levels, lowest first; each level includes the ones below it. */
-export const accessLevels = ['read', 'edit', 'send'] as const;
+import { user } from './auth';
 
 /** A mailing area, e.g. "Finanzen". The name is unique ignoring case and stored trimmed. */
 export const areas = pgTable(

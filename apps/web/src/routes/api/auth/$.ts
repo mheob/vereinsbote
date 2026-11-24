@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router';
 
 import { getAppContext } from '@/platform/context';
+import { handleAuthRequest } from '@/server/auth/auth';
 
 /**
  * Hands every request under `/api/auth/` to Better Auth (login link, Microsoft, session).
@@ -11,7 +12,7 @@ import { getAppContext } from '@/platform/context';
  */
 async function handleAuth({ request }: Readonly<{ request: Request }>): Promise<Response> {
 	const { auth } = await getAppContext();
-	return auth.handler(request);
+	return handleAuthRequest(auth, request);
 }
 
 export const Route = createFileRoute('/api/auth/$')({

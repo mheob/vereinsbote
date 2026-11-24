@@ -3,6 +3,7 @@ import { createServerFn } from '@tanstack/react-start';
 import type { ReactNode } from 'react';
 
 import { AdminNav } from '@/components/admin-nav';
+import { pageHead } from '@/i18n/page-title';
 import { useT } from '@/i18n/use-t';
 
 /** HTTP status of the admin pages for a signed-in user without the admin role. */
@@ -47,4 +48,6 @@ export const Route = createFileRoute('/admin')({
 			</div>
 		);
 	},
+	// An admin page names itself; this title is the one of "no access".
+	head: (context) => pageHead(context, 'admin.forbidden'),
 });

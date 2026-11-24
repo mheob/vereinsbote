@@ -1,5 +1,7 @@
 # Services for local development and the end-to-end tests:
 #   docker compose -f docker/compose.dev.yml up -d
+# plus, for the local Cloudflare smoke test, Neon's WebSocket proxy:
+#   docker compose -f docker/compose.dev.yml --profile cloudflare up -d
 # PostgreSQL matches DATABASE_URL in apps/web/.env.example; the end-to-end tests use a database
 # of their own, `vereinsbote_e2e`, since they wipe it on every run. Mailpit catches every mail the
 # app sends through DEV_SMTP_URL=smtp://localhost:1025; its inbox is at http://localhost:8025.
@@ -38,6 +40,18 @@ services:
     ports:
       - "127.0.0.1:1025:1025"
       - "127.0.0.1:8025:8025"
+
+  # Neon's WebSocket proxy, only for the local Cloudflare smoke test (README): the Worker's Neon
+  # driver speaks WebSocket, the proxy passes it on to PostgreSQL. Starts with `--profile cloudflare`.
+  wsproxy:
+    image: ghcr.io/neondatabase/wsproxy:latest@sha256:7f2e2149aa6a57ba382a140102fba44f5053f3e44389ccc18adcecf896054efb
+    profiles: [cloudflare]
+    depends_on: [postgres]
+    environment:
+      # The only address the proxy connects to: the PostgreSQL of this file.
+      ALLOW_ADDR_REGEX: "^postgres:5432$"
+    ports:
+      - "127.0.0.1:4444:80"
 
 volumes:
   postgres-data:

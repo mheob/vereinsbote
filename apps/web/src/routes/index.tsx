@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 
 import { AdminNav } from '@/components/admin-nav';
 import { LEVEL_MESSAGES } from '@/i18n/levels';
+import { pageHead } from '@/i18n/page-title';
 import { useT } from '@/i18n/use-t';
 
 /**
@@ -49,5 +50,6 @@ export const Route = createFileRoute('/')({
 			</div>
 		);
 	},
+	head: (context) => pageHead(context, 'home.title'),
 	loader: async () => loadHome(),
 });

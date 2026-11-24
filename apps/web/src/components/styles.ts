@@ -1,7 +1,10 @@
 /*
- * Class lists of the form controls the admin pages share. Focus rings use `data-focus-visible`
+ * Class lists of the links and form controls the pages share. Focus rings use `data-focus-visible`
  * (React Aria) or `data-focused` for text inputs; borders are dark enough for 3:1 contrast.
  */
+
+export const linkClass =
+	'font-semibold text-blue-700 underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700';
 
 export const inputClass =
 	'rounded-md border border-gray-600 px-3 py-2 data-focused:outline-2 data-focused:outline-offset-2 data-focused:outline-blue-700 data-invalid:border-red-700';

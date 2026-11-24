@@ -8,12 +8,12 @@
 		"build:vercel": "VITE_VB_PLATFORM=vercel vp build",
 		"db:generate": "drizzle-kit generate",
 		"db:migrate": "tsx src/server/db/migrate-cli.ts",
+		"db:migrate:vercel": "tsx src/server/db/migrate-vercel-cli.ts",
 		"deploy:cloudflare": "vp run build:cloudflare && vp run db:migrate && wrangler deploy",
 		"dev": "vp dev",
 		"e2e": "playwright test"
 	},
 	"dependencies": {
-		"@electric-sql/pglite": "catalog:",
 		"@neondatabase/serverless": "catalog:",
 		"@tanstack/react-router": "catalog:",
 		"@tanstack/react-start": "catalog:",
@@ -29,6 +29,7 @@
 	"devDependencies": {
 		"@axe-core/playwright": "catalog:",
 		"@cloudflare/vite-plugin": "catalog:",
+		"@electric-sql/pglite": "catalog:",
 		"@playwright/test": "catalog:",
 		"@tailwindcss/vite": "catalog:",
 		"@types/node": "catalog:",
