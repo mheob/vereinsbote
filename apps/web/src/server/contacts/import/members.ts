@@ -22,6 +22,7 @@ import {
 	insertContacts,
 	MAX_LISTED_CHANGES,
 	MAX_LISTED_ISSUES,
+	NUMBER_ORDER,
 	readImportRows,
 	replacedValues,
 	storedValues,
@@ -116,9 +117,6 @@ const NO_PLAN: MemberPlan = {
 	unchanged: 0,
 	withoutEmail: 0,
 };
-
-/** Member numbers sort as numbers where they are numbers: 2 before 10. */
-const NUMBER_ORDER = new Intl.Collator('de', { numeric: true });
 
 /**
  * Tells whether a confirm must name its deletions: more than 20 % of the stock would go. Never

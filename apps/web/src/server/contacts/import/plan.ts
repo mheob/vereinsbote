@@ -36,6 +36,8 @@ const MAX_LISTED_CHANGES = 1000;
 const MAX_LISTED_ISSUES = 1000;
 /** Rows per insert, update or delete statement. */
 const WRITE_BATCH_SIZE = 500;
+/** Member and customer numbers sort as numbers where they are numbers: 2 before 10. */
+const NUMBER_ORDER = new Intl.Collator('de', { numeric: true });
 
 /**
  * A field whose value an import changes: a contact field, the groups, or a custom field
@@ -215,23 +217,23 @@ function replacedValues(kind: ContactKind, row: ImportedRow): ContactValues {
 }
 
 /**
- * The values of a stored contact after a row is merged in: only values the row carries are
- * written; a NULL (organization rule) clears the field.
+ * The values of a contact after a row is merged in: only values the row carries are written; a
+ * NULL (organization rule) clears the field. Empty cells and field issues keep the value.
  *
- * @param stored The contact.
+ * @param base The values before: a stored contact, or the values earlier rows gave it.
  * @param row The row.
  * @returns The values.
  */
-function mergedValues(stored: StoredContact, row: ImportedRow): ContactValues {
+function mergedValues(base: ContactValues, row: ImportedRow): ContactValues {
 	const { values } = row;
 	return {
 		...textColumns((field) =>
-			values[field] === undefined ? stored[field] : storedText(values[field]),
+			values[field] === undefined ? base[field] : storedText(values[field]),
 		),
-		customValues: { ...stored.customValues, ...row.custom },
-		gender: values.gender === undefined ? stored.gender : toGender(values.gender),
-		groups: [...(row.groups ?? stored.groups)],
-		kind: stored.kind,
+		customValues: { ...base.customValues, ...row.custom },
+		gender: values.gender === undefined ? base.gender : toGender(values.gender),
+		groups: [...(row.groups ?? base.groups)],
+		kind: base.kind,
 	};
 }
 
@@ -677,11 +679,16 @@ export {
 	changedFields,
 	confirmImport,
 	deleteContacts,
+	diffValues,
 	firstOf,
 	insertContacts,
+	isCustomChange,
+	isVisibleChange,
 	MAX_LISTED_CHANGES,
 	MAX_LISTED_ISSUES,
 	mergedValues,
+	newFieldKey,
+	NUMBER_ORDER,
 	readImportRows,
 	replacedValues,
 	storedValues,

@@ -10,6 +10,7 @@ type AuditAction =
 	| 'contact.unsuppressed'
 	| 'contacts.settings_changed'
 	| 'import.members'
+	| 'import.partners'
 	| 'partner.created'
 	| 'partner.deleted'
 	| 'partner.updated'
