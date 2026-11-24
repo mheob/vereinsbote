@@ -46,7 +46,7 @@ Access levels are cumulative (`read` < `edit` < `send`). The admin role gives no
   - Run `pnpm check:catalog` and `pnpm check:vite-plus` after touching dependencies. The Vite+ versions (`vite-plus`, `vite`, `vitest`, `@vitest/coverage-v8`) move together.
 - **Always the newest stable version** of Node (26, see `.node-version`), pnpm, TypeScript, every dependency and every image. An older version needs a proven reason, written as a comment at the catalog entry.
 - App: TanStack Start, React, React Aria Components (dates through `@internationalized/date`), Tailwind CSS v4, Drizzle ORM, Better Auth, zod. Import files: `read-excel-file` (XLSX), `papaparse` (CSV) and `fflate`, which unzips XLSX synchronously because its asynchronous unzip starts a `blob:` Worker that a CSP without `worker-src blob:` blocks. Tests: Vite+ (Vitest), PGlite, Playwright with axe, `write-excel-file` for XLSX test files.
-- A library must not need Node modules that the browser or Workers lack (`nodemailer` and `pg` are the Node-only exceptions, see Cloudflare below), nor `eval` or `new Function`: sub-plan 3 brings a CSP without `unsafe-eval` (zod's JIT probe is an open point in the roadmap).
+- A library must not need Node modules that the browser or Workers lack (`nodemailer` and `pg` are the Node-only exceptions, see Cloudflare below), nor `eval` or `new Function`: sub-plan 3 plans a CSP without `unsafe-eval` (zod's JIT probe is an open point in the roadmap).
 - Layout: `apps/web` (the app), `docker/`, `scripts/` (the two check scripts), `docs/superpowers/`.
 
 ## Commands
@@ -112,7 +112,7 @@ Run them from the repository root.
 - **Work after the response** goes through `platform.waitUntil` (`createBackgroundRunner`): it never rejects into the runtime and warns once on Vercel or Cloudflare when the runtime offers no `waitUntil`.
 - E-mail addresses are stored and compared through `normalizeEmail` (trim and lowercase).
 - **Contacts** (`apps/web/src/server/contacts/`):
-  - Contact data leaves the server only through `loadContactAccess` (`access.ts`): protected fields the user may not see are not delivered, not just hidden, and search and filters cover them only for users who see them. The admin role alone gives no access.
+  - Contact data leaves the server only through functions that filter by `loadContactAccess` (`access.ts`): protected fields the user may not see are not delivered, not just hidden, and search and filters cover them only for users who see them. The admin role alone gives no access.
   - Never call `loadContactAccess` inside a transaction: it runs queries in parallel, which pg warns about on one client. Load the access first, then open the transaction.
   - A write that changes contacts, suppressions or opt-outs takes the import-state lock of the kind (`lockImportState`, `import-state.ts`) before it changes anything, so it waits for a running import of that kind and cannot deadlock with it. It bumps the stock version, so a preview made before it cannot be confirmed.
   - Search terms and filter values go by POST, never into a URL; the URL of the contact list carries only `kind`. The list route sets `gcTime: 0`: the list keeps its first page as its own state, so every visit loads it anew instead of showing a cached page.
