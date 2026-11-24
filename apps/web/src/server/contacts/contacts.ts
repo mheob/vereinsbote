@@ -13,6 +13,7 @@ import { displayName } from './display-name';
 import type { DisplayName } from './display-name';
 import { customFieldKey, protectedFieldOf } from './fields';
 import type { ContactKind, CustomFieldType, FieldKey, Gender } from './fields';
+import { listTags } from './partners';
 import { listCustomFields } from './settings';
 
 const CONTACTS_PAGE_SIZE = 50;
@@ -58,7 +59,7 @@ interface ContactListPage {
 	page: number;
 	/** All groups of the kind, for the filter. */
 	groups: string[];
-	/** All tags of the kind, one per tag ignoring case, for the filter. */
+	/** The tags of the partners, one per tag ignoring case, for the filter; members have none. */
 	tags: string[];
 	/** Whether the user may filter by exit, i.e. sees the members' exit date. */
 	canFilterExit: boolean;
@@ -195,29 +196,6 @@ async function listGroups(db: Db, kind: ContactKind): Promise<string[]> {
 }
 
 /**
- * All tags of a kind, one per tag ignoring case, spelled as the oldest contact spells it.
- *
- * @param db The database.
- * @param kind The kind.
- * @returns The tags, by name.
- */
-async function listFilterTags(db: Db, kind: ContactKind): Promise<string[]> {
-	const all = db
-		.select({
-			createdAt: contacts.createdAt,
-			value: sql<string>`unnest(${contacts.tags})`.as('value'),
-		})
-		.from(contacts)
-		.where(eq(contacts.kind, kind))
-		.as('all_tags');
-	const rows = await db
-		.selectDistinctOn([sql`lower(${all.value})`], { value: all.value })
-		.from(all)
-		.orderBy(sql`lower(${all.value})`, all.createdAt, sql`${all.value} collate "C"`);
-	return rows.map((row) => row.value);
-}
-
-/**
  * Lists one page of contacts of a kind with search and filters. Only base fields are listed;
  * the exit filter needs the right to see the exit date.
  *
@@ -286,7 +264,7 @@ async function listContacts(
 			tags: row.tags,
 		})),
 		page: query.page,
-		tags: await listFilterTags(db, query.kind),
+		tags: query.kind === 'partner' ? await listTags(db) : [],
 		total: counted?.total ?? 0,
 	};
 }

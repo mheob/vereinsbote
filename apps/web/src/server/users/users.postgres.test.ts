@@ -1,11 +1,10 @@
-import { setTimeout as sleep } from 'node:timers/promises';
-
 import { and, eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
 
 import type { Db, DbHandle } from '@/server/db/client';
 import { runMigrations } from '@/server/db/migrate';
 import { openPgDb } from '@/server/db/pg-client';
+import { waitForLockWaiters } from '@/server/db/postgres-testing';
 import { user } from '@/server/db/schema';
 import { loadPrincipal } from '@/server/permissions/principal';
 import type { Principal } from '@/server/permissions/principal';
@@ -23,8 +22,6 @@ import { disableUser, LastAdminError, setAdmin } from './users';
 
 // oxlint-disable-next-line node/no-process-env -- the test runs only where a PostgreSQL server is offered
 const serverUrl = process.env.TEST_POSTGRES_URL ?? '';
-const WAIT_TIMEOUT_MS = 10_000;
-const POLL_INTERVAL_MS = 20;
 const SETUP_TIMEOUT_MS = 60_000;
 
 /**
@@ -39,27 +36,6 @@ async function activeAdmin(db: Db, email: string): Promise<Principal> {
 	const principal = await loadPrincipal(db, id);
 	if (principal === null) throw new Error('no principal');
 	return principal;
-}
-
-/**
- * Waits until the given number of connections of this database wait for a lock.
- *
- * @param db The database.
- * @param count How many must wait.
- */
-async function waitForLockWaiters(db: Db, count: number): Promise<void> {
-	const deadline = Date.now() + WAIT_TIMEOUT_MS;
-	for (;;) {
-		// oxlint-disable-next-line no-await-in-loop -- polling: each check waits for the previous one
-		const [row] = await db
-			.select({ waiting: sql<number>`count(*)::int` })
-			.from(sql`pg_stat_activity`)
-			.where(sql`datname = current_database() and wait_event_type = 'Lock'`);
-		if ((row?.waiting ?? 0) >= count) return;
-		if (Date.now() > deadline) throw new Error(`Fewer than ${count} connections wait for a lock.`);
-		// oxlint-disable-next-line no-await-in-loop -- see above
-		await sleep(POLL_INTERVAL_MS);
-	}
 }
 
 describe.skipIf(serverUrl === '')('the last admin on PostgreSQL (needs TEST_POSTGRES_URL)', () => {

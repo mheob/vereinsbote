@@ -12,6 +12,7 @@ import { getImportState } from './import-state';
 import {
 	auditTarget,
 	contactKey,
+	copyContactKey,
 	rekeyContactKey,
 	setOptOut,
 	setSuppression,
@@ -289,6 +290,43 @@ describe(rekeyContactKey, () => {
 				`nr:100009 area ${partnersAreaId}`,
 				`nr:100009 area ${youthId}`,
 				'nr:100009 occasion null',
+			].toSorted(),
+		);
+	});
+});
+
+describe(copyContactKey, () => {
+	it('copies suppression and opt-outs and keeps them under the old key', async () => {
+		const db = await createTestDb();
+		const { admin, partnersAreaId } = await setUpClub(db);
+		const { areaId: youthId } = await createArea(db, admin, 'Jugend');
+		await db
+			.insert(contactSuppressions)
+			.values({ contactKey: 'email:x@example.org', kind: 'partner' });
+		await db
+			.insert(contactOptOuts)
+			.values([
+				areaOptOut('email:x@example.org', partnersAreaId),
+				areaOptOut('email:x@example.org', youthId),
+				areaOptOut('email:y@example.org', youthId),
+			]);
+
+		await db.transaction(async (tx) =>
+			copyContactKey(tx, 'partner', 'email:x@example.org', 'email:y@example.org'),
+		);
+
+		const suppressions = await db.select().from(contactSuppressions);
+		expect(suppressions.map((row) => row.contactKey).toSorted()).toStrictEqual([
+			'email:x@example.org',
+			'email:y@example.org',
+		]);
+		const optOuts = await db.select().from(contactOptOuts);
+		expect(optOuts.map((row) => `${row.contactKey} ${row.areaId}`).toSorted()).toStrictEqual(
+			[
+				`email:x@example.org ${partnersAreaId}`,
+				`email:x@example.org ${youthId}`,
+				`email:y@example.org ${partnersAreaId}`,
+				`email:y@example.org ${youthId}`,
 			].toSorted(),
 		);
 	});

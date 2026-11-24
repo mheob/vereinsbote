@@ -3,12 +3,12 @@ import { and, eq, sql } from 'drizzle-orm';
 import { writeAudit } from '@/server/audit/audit';
 import type { Db } from '@/server/db/client';
 import { areas, contactOptOuts, contacts, contactSuppressions } from '@/server/db/schema';
-import { ForbiddenError } from '@/server/permissions/principal';
 import type { Principal } from '@/server/permissions/principal';
 
-import { assertCanManage, loadContactAccess } from './access';
+import { assertCanList, assertCanManage, loadContactAccess } from './access';
+import type { ContactAccess } from './access';
 import type { ContactKind } from './fields';
-import { bumpStockVersion } from './import-state';
+import { bumpStockVersion, lockImportState } from './import-state';
 
 /** The area of an opt-out does not exist. The message names no contact data. */
 class UnknownAreaError extends Error {
@@ -60,10 +60,12 @@ function auditTarget(
 }
 
 /**
- * Loads the contact and checks that the user may manage its kind.
+ * Loads the contact, checks that the user may manage its kind and locks the import state of the
+ * kind. The key is read after the lock: an import or a partner edit that changes keys holds the
+ * lock until it ends, so the key is the current one and nothing waits in the other order.
  *
  * @param tx The transaction.
- * @param principal Who acts.
+ * @param access The user's access, loaded before the transaction.
  * @param contactId The contact.
  * @returns The contact and its key.
  * @throws {ForbiddenError} Without `edit` in the area of the kind.
@@ -71,11 +73,16 @@ function auditTarget(
  */
 async function loadManagedContact(
 	tx: Db,
-	principal: Principal,
+	access: ContactAccess,
 	contactId: string,
 ): Promise<{ contact: ContactIdentity & { id: string }; key: string }> {
-	const access = await loadContactAccess(tx, principal);
-	if (!access.canList) throw new ForbiddenError('Forbidden');
+	const [found] = await tx
+		.select({ kind: contacts.kind })
+		.from(contacts)
+		.where(eq(contacts.id, contactId));
+	if (found === undefined) throw new Error('Unknown contact.');
+	assertCanManage(access, found.kind);
+	await lockImportState(tx, found.kind);
 	const [row] = await tx
 		.select({
 			customerNumber: contacts.customerNumber,
@@ -86,16 +93,33 @@ async function loadManagedContact(
 		})
 		.from(contacts)
 		.where(eq(contacts.id, contactId));
+	// Deleted while this waited for the lock.
 	if (row === undefined) throw new Error('Unknown contact.');
-	assertCanManage(access, row.kind);
 	const key = contactKey(row);
 	if (key === null) throw new Error('The contact has no key.');
 	return { contact: row, key };
 }
 
 /**
+ * Loads what a user may do with contacts and requires the contact list. Runs before the
+ * transaction: the access check runs queries in parallel, which the single connection of a
+ * transaction would have to queue (node-postgres deprecates that).
+ *
+ * @param db The database.
+ * @param principal Who acts.
+ * @returns The access.
+ * @throws {ForbiddenError} Without `read` in any area.
+ */
+async function listingAccess(db: Db, principal: Principal): Promise<ContactAccess> {
+	const access = await loadContactAccess(db, principal);
+	assertCanList(access);
+	return access;
+}
+
+/**
  * Suppresses a contact ("no more mail") or lifts the suppression. A repeated call changes
- * nothing: no log entry, no new stock version.
+ * nothing: no log entry, no new stock version. Waits for a running import or partner edit of the
+ * contact's kind.
  *
  * @param db The database.
  * @param principal Who acts; needs `edit` in the area of the contact's kind.
@@ -111,8 +135,9 @@ async function setSuppression(
 	contactId: string,
 	suppressed: boolean,
 ): Promise<void> {
+	const access = await listingAccess(db, principal);
 	await db.transaction(async (tx) => {
-		const { contact, key } = await loadManagedContact(tx, principal, contactId);
+		const { contact, key } = await loadManagedContact(tx, access, contactId);
 		const changed = suppressed
 			? await tx
 					.insert(contactSuppressions)
@@ -140,7 +165,8 @@ async function setSuppression(
 
 /**
  * Records or removes a contact's objection to the mail of one area. A repeated call changes
- * nothing: no log entry, no new stock version.
+ * nothing: no log entry, no new stock version. Waits for a running import or partner edit of the
+ * contact's kind.
  *
  * @param db The database.
  * @param principal Who acts; needs `edit` in the area of the contact's kind.
@@ -154,8 +180,9 @@ async function setOptOut(
 	principal: Principal,
 	input: Readonly<{ contactId: string; areaId: string; optedOut: boolean }>,
 ): Promise<void> {
+	const access = await listingAccess(db, principal);
 	await db.transaction(async (tx) => {
-		const { contact, key } = await loadManagedContact(tx, principal, input.contactId);
+		const { contact, key } = await loadManagedContact(tx, access, input.contactId);
 		const [area] = await tx.select({ id: areas.id }).from(areas).where(eq(areas.id, input.areaId));
 		if (area === undefined) throw new UnknownAreaError();
 		const changed = input.optedOut
@@ -193,8 +220,43 @@ async function setOptOut(
 }
 
 /**
+ * Copies the suppression and the opt-outs of a key to another key, e.g. when one of two partners
+ * with the same address gets a new one: the other partner keeps them under the old key. Entries
+ * the target key already has stay; nothing is duplicated.
+ *
+ * @param tx The transaction.
+ * @param kind The kind.
+ * @param from The old key.
+ * @param to The new key.
+ */
+// oxlint-disable-next-line max-params -- the same parameters as rekeyContactKey
+async function copyContactKey(tx: Db, kind: ContactKind, from: string, to: string): Promise<void> {
+	if (from === to) return;
+	await tx.execute(sql`
+		insert into contact_suppressions (kind, contact_key, created_at, created_by_user_id)
+		select kind, ${to}, created_at, created_by_user_id from contact_suppressions
+		where kind = ${kind} and contact_key = ${from}
+		on conflict do nothing`);
+	// Skip what the target has already: same scope, area and occasion.
+	await tx.execute(sql`
+		insert into contact_opt_outs
+			(kind, contact_key, scope, area_id, occasion_id, created_at, created_by_user_id)
+		select old.kind, ${to}, old.scope, old.area_id, old.occasion_id, old.created_at,
+			old.created_by_user_id
+		from contact_opt_outs old
+		where old.kind = ${kind} and old.contact_key = ${from}
+		and not exists (
+			select 1 from contact_opt_outs kept
+			where kept.kind = old.kind and kept.contact_key = ${to} and kept.scope = old.scope
+			and kept.area_id is not distinct from old.area_id
+			and kept.occasion_id is not distinct from old.occasion_id)
+		on conflict do nothing`);
+}
+
+/**
  * Moves the suppression and the opt-outs of a contact to a new key, e.g. when a partner gets a
- * customer number. Entries the target key already has stay; nothing is duplicated.
+ * customer number. Entries the target key already has stay; nothing is duplicated. The caller
+ * bumps the stock version and writes the audit entry.
  *
  * @param tx The transaction.
  * @param kind The kind.
@@ -204,27 +266,21 @@ async function setOptOut(
 // oxlint-disable-next-line max-params -- the plan's interface fixes these parameters
 async function rekeyContactKey(tx: Db, kind: ContactKind, from: string, to: string): Promise<void> {
 	if (from === to) return;
-	await tx.execute(sql`
-		insert into contact_suppressions (kind, contact_key, created_at, created_by_user_id)
-		select kind, ${to}, created_at, created_by_user_id from contact_suppressions
-		where kind = ${kind} and contact_key = ${from}
-		on conflict do nothing`);
+	await copyContactKey(tx, kind, from, to);
 	await tx
 		.delete(contactSuppressions)
 		.where(and(eq(contactSuppressions.kind, kind), eq(contactSuppressions.contactKey, from)));
-	// Drop what the target has already (same scope, area and occasion), then move the rest.
-	await tx.execute(sql`
-		delete from contact_opt_outs old
-		where old.kind = ${kind} and old.contact_key = ${from}
-		and exists (
-			select 1 from contact_opt_outs kept
-			where kept.kind = old.kind and kept.contact_key = ${to} and kept.scope = old.scope
-			and kept.area_id is not distinct from old.area_id
-			and kept.occasion_id is not distinct from old.occasion_id)`);
 	await tx
-		.update(contactOptOuts)
-		.set({ contactKey: to })
+		.delete(contactOptOuts)
 		.where(and(eq(contactOptOuts.kind, kind), eq(contactOptOuts.contactKey, from)));
 }
 
-export { auditTarget, contactKey, rekeyContactKey, setOptOut, setSuppression, UnknownAreaError };
+export {
+	auditTarget,
+	contactKey,
+	copyContactKey,
+	rekeyContactKey,
+	setOptOut,
+	setSuppression,
+	UnknownAreaError,
+};
