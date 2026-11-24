@@ -19,6 +19,12 @@ type PartnerFormFields = Readonly<{
 	customFields: readonly Readonly<{ id: string }>[];
 }>;
 
+/** A date field of the form and, per segment (day, month, year), whether it is typed. */
+type DateFieldSegments = Readonly<{
+	name: 'birthDate' | `custom:${string}`;
+	segmentsFilled: readonly boolean[];
+}>;
+
 /** The base text fields, in form order. */
 const BASE_FIELDS = ['customerNumber', 'organization', 'firstName', 'lastName', 'email'] as const;
 
@@ -159,6 +165,22 @@ function firstInvalidField(
 }
 
 /**
+ * The date fields typed only in part, e.g. „17.05.“ without the year or a stored date with one
+ * segment cleared. React Aria submits such a date as empty (or keeps the old one), so the form
+ * refuses it at the field instead of saving something else.
+ *
+ * @param fields The date fields of the form with the state of their segments.
+ * @returns The refused fields; empty when every date is complete or empty.
+ */
+function partlyTypedDates(fields: readonly DateFieldSegments[]): PartnerFieldErrors {
+	const errors: PartnerFieldErrors = {};
+	for (const { name, segmentsFilled } of fields) {
+		if (segmentsFilled.includes(true) && segmentsFilled.includes(false)) errors[name] = 'invalid';
+	}
+	return errors;
+}
+
+/**
  * Adds a tag as typed: cleaned, once regardless of case, in the spelling of an existing tag.
  *
  * @param tags The tags of the form.
@@ -198,8 +220,9 @@ export {
 	partnerErrorMessages,
 	partnerFieldMessage,
 	partnerFieldOrder,
+	partlyTypedDates,
 	readPartnerInput,
 	tagSuggestionsFor,
 	withTag,
 };
-export type { PartnerFormFields };
+export type { DateFieldSegments, PartnerFormFields };

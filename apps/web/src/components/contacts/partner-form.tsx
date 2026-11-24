@@ -46,9 +46,11 @@ import {
 	firstInvalidField,
 	partnerErrorMessages,
 	partnerFieldOrder,
+	partlyTypedDates,
 	readPartnerInput,
 	withTag,
 } from './partner-input';
+import type { DateFieldSegments } from './partner-input';
 import { TagField } from './tag-field';
 
 /** The base text fields with their label and longest value, in form order. */
@@ -80,37 +82,50 @@ const ADDRESS_FIELDS = ['street', 'postalCode', 'city'] as const;
 /** What gets the focus in a field: a text input, the first segment of a date, the tag input. */
 const FOCUSABLE = 'input:not([type="hidden"]):not([hidden]), [role="spinbutton"]';
 
+/** The typed parts of a date field; React Aria marks an empty one `data-placeholder`. */
+const DATE_SEGMENTS = '[role="spinbutton"]';
+
 type SubmitHandler = NonNullable<FormProps['onSubmit']>;
 
 /** The refused fields of the last check, a new object per refusal; null before the first. */
 type ShownErrors = Readonly<{ fields: PartnerFieldErrors }> | null;
 
 /**
- * A date of the form, typed in segments; the form gets it as `YYYY-MM-DD`.
+ * A date of the form, typed in segments; the form gets it as `YYYY-MM-DD`. Its message stays
+ * until the next check: React Aria would remove it when the field loses the focus, and the form
+ * below would move under a pointer that is just pressing „Speichern“.
  *
  * @param props The props.
  * @param props.defaultValue The stored date as `YYYY-MM-DD`, or empty.
+ * @param props.errorMessage The message of the last check, if the date was refused.
  * @param props.label The label.
  * @param props.name The name of the input.
  * @returns The field.
  */
 function PartnerDateField({
 	defaultValue,
+	errorMessage,
 	label,
 	name,
-}: Readonly<{ defaultValue: string; label: string; name: string }>): ReactNode {
+}: Readonly<{
+	defaultValue: string;
+	errorMessage: string | undefined;
+	label: string;
+	name: string;
+}>): ReactNode {
 	return (
 		<DateField
 			className={fieldClass}
 			data-field={name}
 			defaultValue={defaultValue === '' ? null : parseDate(defaultValue)}
+			isInvalid={errorMessage !== undefined}
 			name={name}
 		>
 			<Label className="font-semibold">{label}</Label>
 			<DateInput className={dateInputClass}>
 				{(segment) => <DateSegment className={segmentClass} segment={segment} />}
 			</DateInput>
-			<FieldError className={errorClass} />
+			<FieldError className={errorClass}>{errorMessage}</FieldError>
 		</DateField>
 	);
 }
@@ -187,15 +202,32 @@ export function PartnerForm({
 	const [isPending, startPending] = useTransition();
 	const values = form.values;
 	const order = useMemo(() => partnerFieldOrder(form), [form]);
+	const dateFields = useMemo(
+		(): DateFieldSegments['name'][] => [
+			...(form.protectedFields.includes('birthDate') ? (['birthDate'] as const) : []),
+			...form.customFields
+				.filter((field) => field.type === 'date')
+				.map((field) => customFieldName(field.id)),
+		],
+		[form],
+	);
 	const messages = useMemo(
 		() => Object.entries(partnerErrorMessages(errors?.fields ?? {})),
 		[errors],
 	);
-	// A new object per refusal, so a refused field shows its error again after it was edited.
-	const validationErrors = useMemo(
+	// The message per refused input; the dates and the tags show theirs themselves.
+	const fieldMessages = useMemo(
 		(): Readonly<Record<string, string>> =>
 			Object.fromEntries(messages.map(([name, key]) => [name, t(key)])),
 		[messages, t],
+	);
+	// A new object per refusal, so a refused field shows its error again after it was edited.
+	const validationErrors = useMemo(
+		(): Readonly<Record<string, string>> =>
+			Object.fromEntries(
+				Object.entries(fieldMessages).filter(([name]) => !dateFields.some((date) => date === name)),
+			),
+		[dateFields, fieldMessages],
 	);
 	useEffect(() => {
 		// The first refused field gets the focus, so a screen reader reads it with its message.
@@ -214,12 +246,27 @@ export function PartnerForm({
 			const allTags = tagInput.trim() === '' ? tags : withTag(tags, tagInput, form.tagSuggestions);
 			setTags(allTags);
 			setTagInput('');
-			const input = readPartnerInput(new FormData(event.currentTarget), form, allTags);
-			const refused = invalidPartnerFields(input, form.customFields);
+			const formElement = event.currentTarget;
+			const input = readPartnerInput(new FormData(formElement), form, allTags);
+			// A partly typed date reaches the form as empty; it is refused, not saved as nothing.
+			const dates = dateFields.map((name) => ({
+				name,
+				segmentsFilled: [
+					...(formElement
+						.querySelector(`[data-field="${CSS.escape(name)}"]`)
+						?.querySelectorAll<HTMLElement>(DATE_SEGMENTS) ?? []),
+				].map((segment) => segment.dataset.placeholder === undefined),
+			}));
+			const refused = {
+				...invalidPartnerFields(input, form.customFields),
+				...partlyTypedDates(dates),
+			};
 			if (Object.keys(refused).length > 0) {
 				setErrors({ fields: refused });
 				return;
 			}
+			// The messages of the last check are answered; the server may refuse anew.
+			setErrors(null);
 			// Copies: the request takes plain arrays and records.
 			const data = { ...input, custom: { ...input.custom }, tags: [...input.tags] };
 			startPending(async () => {
@@ -233,7 +280,7 @@ export function PartnerForm({
 				else announce(t('contact.gone'), 'alert');
 			});
 		},
-		[announce, contactId, form, isPending, onSaved, save, t, tagInput, tags],
+		[announce, contactId, dateFields, form, isPending, onSaved, save, t, tagInput, tags],
 	);
 	return (
 		// Dates and React Aria's own texts follow the page's language, in the server render as well.
@@ -280,6 +327,7 @@ export function PartnerForm({
 					{form.protectedFields.includes('birthDate') ? (
 						<PartnerDateField
 							defaultValue={values?.birthDate ?? ''}
+							errorMessage={fieldMessages.birthDate}
 							label={t('import.field.birthDate')}
 							name="birthDate"
 						/>
@@ -297,6 +345,7 @@ export function PartnerForm({
 						field.type === 'date' ? (
 							<PartnerDateField
 								defaultValue={values?.custom?.[field.id] ?? ''}
+								errorMessage={fieldMessages[customFieldName(field.id)]}
 								key={field.id}
 								label={field.name}
 								name={customFieldName(field.id)}
@@ -314,7 +363,7 @@ export function PartnerForm({
 				</div>
 				<TagField
 					announce={announce}
-					errorMessage={validationErrors.tags}
+					errorMessage={fieldMessages.tags}
 					input={tagInput}
 					onChange={setTags}
 					onInputChange={setTagInput}

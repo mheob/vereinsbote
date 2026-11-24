@@ -6,6 +6,7 @@ import {
 	partnerErrorMessages,
 	partnerFieldMessage,
 	partnerFieldOrder,
+	partlyTypedDates,
 	readPartnerInput,
 	tagSuggestionsFor,
 	withTag,
@@ -160,6 +161,29 @@ describe(firstInvalidField, () => {
 	it('finds nothing without errors or for an input the form does not have', () => {
 		expect(firstInvalidField({}, order)).toBeNull();
 		expect(firstInvalidField({ city: 'invalid' }, order)).toBeNull();
+	});
+});
+
+describe(partlyTypedDates, () => {
+	it('refuses a date with some segments typed and others empty', () => {
+		expect(
+			partlyTypedDates([
+				// „17.05.“ without the year.
+				{ name: 'birthDate', segmentsFilled: [true, true, false] },
+				// A stored date with the month cleared.
+				{ name: `custom:${CONTRACT_ID}`, segmentsFilled: [true, false, true] },
+			]),
+		).toStrictEqual({ birthDate: 'invalid', [`custom:${CONTRACT_ID}`]: 'invalid' });
+	});
+
+	it('takes a complete or an empty date', () => {
+		expect(
+			partlyTypedDates([
+				{ name: 'birthDate', segmentsFilled: [true, true, true] },
+				{ name: `custom:${CONTRACT_ID}`, segmentsFilled: [false, false, false] },
+				{ name: `custom:${CONTACT_PERSON_ID}`, segmentsFilled: [] },
+			]),
+		).toStrictEqual({});
 	});
 });
 

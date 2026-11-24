@@ -354,8 +354,21 @@ test('creates, edits and deletes a partner with tags', async () => {
 	await admin.keyboard.press('Enter');
 	await expect(admin.getByRole('row', { name: 'Presse' })).toBeVisible();
 	await expect(admin.getByLabel('Schlagwort hinzufügen')).toHaveValue('');
+	// A date without the year is refused at the field, not saved as empty.
+	const birthDate = admin.getByRole('group', { name: 'Geburtsdatum' }).getByRole('spinbutton');
+	await birthDate.first().click();
+	await admin.keyboard.type('1705');
+	await admin.getByRole('button', { name: 'Speichern' }).click();
+	await expect(admin.getByText('Bitte prüfe die Eingabe.')).toBeVisible();
+	await expect(birthDate.first()).toBeFocused();
+	await expect(admin.getByRole('heading', { name: 'Partner anlegen' })).toBeVisible();
+	await expect(admin.getByRole('status')).not.toHaveText('Gespeichert.');
+	await expectNoA11yViolations(admin);
+	await birthDate.last().click();
+	await admin.keyboard.type('1980');
 	await admin.getByRole('button', { name: 'Speichern' }).click();
 	await expect(admin.getByRole('heading', { name: 'Sportpresse Nord' })).toBeVisible();
+	await expect(admin.getByText('17.05.1980')).toBeVisible();
 	await expect(admin.getByRole('status')).toHaveText('Gespeichert.');
 	await expect(admin.getByText('redaktion@sportpresse.example')).toBeVisible();
 	await expectNoA11yViolations(admin);
