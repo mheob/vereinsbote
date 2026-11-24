@@ -113,6 +113,7 @@ Run them from the repository root.
 - Renovate (`.github/renovate.json`) maintains the SHA, digest and catalog pins. Do not edit pins by hand without a reason.
 - CI runs with least privilege: `permissions: contents: read`, `persist-credentials: false`, no `pull_request_target`.
 - `pnpm-workspace.yaml` sets `minimumReleaseAge`, `trustPolicy: no-downgrade`, `strictDepBuilds` with `allowBuilds`, and `blockExoticSubdeps`. Do not weaken them. A new install script needs an entry in `allowBuilds` and a reason.
+- A vulnerable transitive version is lifted with a scoped override in `pnpm-workspace.yaml` (range in the key, `"catalog:"` as the value, a comment with the advisory), e.g. `esbuild@<0.25.0`. Remove it once the dependency ships a fixed version.
 - Containers run as a non-root user without dev dependencies.
 
 ## Commits

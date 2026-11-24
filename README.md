@@ -186,6 +186,7 @@ The deployment itself is the owner's step. Before the first production deploymen
   - It runs install scripts only for packages listed in `allowBuilds` (`strictDepBuilds`).
   - Transitive dependencies come from the registry only (`blockExoticSubdeps`).
   - Exceptions are listed in the file with their reasons.
+  - `overrides` lift vulnerable transitive versions: drizzle-kit's loader (`@esbuild-kit/core-utils`) pins esbuild 0.18, which has a dev server advisory (fixed in 0.25), so every esbuild below 0.25 resolves to the catalog version. `vite` and `vitest` follow the catalog as well (Vite+).
 
 ### Keeping the pins current with Renovate
 

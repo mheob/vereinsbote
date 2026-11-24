@@ -26,6 +26,8 @@ catalog:
   # drizzle-orm and drizzle-kit 1.0 are release candidates on npm; `latest` is the newest stable 0.x.
   drizzle-kit: ^0.31.11
   drizzle-orm: ^0.45.4
+  # Only for the override below, no package depends on it directly.
+  esbuild: ^0.28.2
   eslint-plugin-better-tailwindcss: ^4.11.0
   eslint-plugin-regexp: ^3.3.3
   # Nitro 3 has no stable release yet; `latest` on npm is this release candidate, and TanStack Start's hosting docs require Nitro 3.
@@ -50,6 +52,9 @@ catalog:
 overrides:
   vite@*: "catalog:"
   vitest@*: "catalog:"
+  # drizzle-kit's loader (@esbuild-kit/core-utils) pins esbuild 0.18, whose dev server lets any
+  # website read its responses (GHSA-67mh-4wv8-2f99, fixed in 0.25.0). Lifts only that range.
+  esbuild@<0.25.0: "catalog:"
 
 # Supply-chain protection, all supported by pnpm 12:
 # A dependency's install script runs only when `allowBuilds` lists it; any other fails the install.
