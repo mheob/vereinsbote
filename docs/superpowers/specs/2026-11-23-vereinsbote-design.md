@@ -117,8 +117,8 @@ Die ersten Zielvereine hosten ihre Websites bereits auf **Vercel oder Cloudflare
 ## 5. Fachliches Modell (Begriffe)
 
 - **Kontakt:** ein Mitglied oder ein Partner.
-  - Felder: Typ, Mitgliedsnummer (bei Mitgliedern der Schlüssel für den Import), Kundennummer (bei Partnern, optional), Anrede, Vorname, Nachname, E-Mail, Geburtsdatum, Eintrittsdatum, Austrittsdatum, Adresse, Gruppen/Abteilungen, Schlagworte, frei definierbare Zusatzfelder aus der Import-Zuordnung.
-  - Jedes Feld hat eine Schutzstufe: **Basis** (Name, E-Mail, Typ, Gruppen) oder **geschützt** (z. B. Geburtsdatum, Eintrittsdatum, Austrittsdatum, Adresse). Geschützte Felder sind einem oder mehreren Bereichen zugeordnet.
+  - Felder: Typ, Mitgliedsnummer (bei Mitgliedern der Schlüssel für den Import), Kundennummer (bei Partnern, optional), Firma, Geschlecht, Vorname, Nachname, E-Mail, Geburtsdatum, Eintrittsdatum, Austrittsdatum, Adresse, Gruppen/Abteilungen (Mitglieder, aus dem Import), Schlagworte (nur Partner, in der App vergeben), frei definierbare Zusatzfelder aus der Import-Zuordnung. *(Teilplan 2: „Geschlecht“ ersetzt „Anrede“; Kontakte haben keine Sprache, Mails an Kontakte sind deutsch. Details: `2026-11-24-vereinsbote-02-kontakte-design.md`.)*
+  - Jedes Feld hat eine Schutzstufe: **Basis** (Name, Firma, E-Mail, Typ, Geschlecht, Gruppen, Schlagworte) oder **geschützt** (z. B. Geburtsdatum, Eintrittsdatum, Austrittsdatum, Adresse). Geschützte Felder sind pro Kontaktart (Mitglied, Partner) einem oder mehreren Bereichen zugeordnet.
 - **Bereich:** vom Verein selbst angelegt, z. B. „Mitglieder“, „Finanzen“, „Veranstaltungen“. Ein Bereich bündelt Anlässe und ist die Grundlage für Rechte.
 - **Anlass:** gehört zu genau einem Bereich. Ein Anlass besteht aus Vorlage, Auslöser, Empfängern, Anhängen und Absender.
 - **Auslöser:**
@@ -165,8 +165,9 @@ Ein Assistent führt durch die Einrichtung:
 **Mitglieder**
 
 - **Hochladen und Zuordnen:**
-  - CSV oder XLSX hochladen.
+  - CSV oder XLSX auswählen. *(Teilplan 2: Die Datei wird im Browser gelesen; an den Server gehen nur die zugeordneten Felder.)*
   - Die Spalten einmal den Feldern zuordnen, die App merkt sich die Zuordnung.
+  - Mitglieder sind in der App schreibgeschützt; Korrekturen passieren in der Mitgliederverwaltung. In der App setzbar sind nur Sperre und Widerspruch.
   - CSV-Dateien aus deutscher Software haben oft Semikolon als Trennzeichen und den Zeichensatz Windows-1252. Beides wird erkannt.
 - **Vorschau und Prüfung:**
   - Die App prüft E-Mail-Format, Datumsangaben und doppelte Mitgliedsnummern und zeigt eine Fehlerliste.
@@ -187,8 +188,8 @@ Ein Assistent führt durch die Einrichtung:
 
 **Partner**
 
-- Eigener Import ohne Komplett-Ersetzen. Abgleich über die Kundennummer, falls vorhanden, sonst über die E-Mail.
-- Alternativ manuelle Pflege in der App.
+- Eigener Import ohne Komplett-Ersetzen. Abgleich über die Kundennummer, falls vorhanden, sonst über die E-Mail. Partner, die im Export fehlen, zeigt die Vorschau als „nicht mehr im Export“; gelöscht werden sie nur, wenn der Benutzer sie ankreuzt.
+- Alternativ manuelle Pflege in der App, mit Schlagworten (z. B. „Sponsor“, „Presse“).
 
 ### 6.3 Automatische Anlässe
 
@@ -250,7 +251,7 @@ Ein Assistent führt durch die Einrichtung:
   - Anlassdaten (Alter, Jahre der Mitgliedschaft)
   - Rechnungsdaten
   - CD-Variablen
-- **[Claude] Briefanrede:** Der berechnete Platzhalter `{{briefanrede}}` ergibt sich aus dem Feld Anrede, z. B. „Liebe Anna“, „Lieber Max“ oder „Hallo Kim“. Die Zuordnung (auch für die Sie-Form) stellt der Verein pro Anlass ein.
+- **[Claude] Briefanrede:** Der berechnete Platzhalter `{{briefanrede}}` ergibt sich aus dem Feld Geschlecht (und bei Organisationen aus dem leeren Vornamen), z. B. „Liebe Anna“, „Lieber Max“, „Hallo Kim“ oder „Sehr geehrte Damen und Herren“. Die Zuordnung (auch für die Sie-Form) stellt der Verein pro Anlass ein.
 - **[Claude] Keine Bedingungen in Vorlagen:** Bedingte Textblöcke gibt es in der ersten Version nicht. Unterschiedliche Texte (z. B. 50. vs. 90. Geburtstag, Mitglieder vs. Partner) entstehen über getrennte Anlässe mit eigener Regel bzw. eigenem Filter. So bleibt es dabei, dass pro Versandwelle nur einmal gerendert wird (siehe 7).
 - Jeder Platzhalter kann einen Ersatztext für fehlende Werte haben.
 - **[Claude]** Fehlt ein Pflichtwert ohne Ersatztext, wird die Mail an diesen Empfänger nicht verschickt, sondern als Fehler markiert.
@@ -498,7 +499,7 @@ Ein Assistent führt durch die Einrichtung:
 17. **Geschützte Felder streng pro Bereich**, auch in Vorlagen, Filtern, Vorschau und Testmails. Dazu die Import-Rechte und das Mitglieder-Recht für den ersten Admin.
 18. **Dateien auf Vercel** über Vercel Blob statt R2.
 19. **Import:** Import-Filter (z. B. nur aktive Mitglieder), Sperre „keine Mails mehr“, eine Mail pro Adresse bei Gruppenversand.
-20. **Platzhalter:** `{{briefanrede}}` aus dem Feld Anrede. Keine bedingten Textblöcke, Varianten über getrennte Anlässe.
+20. **Platzhalter:** `{{briefanrede}}` aus dem Feld Geschlecht. Keine bedingten Textblöcke, Varianten über getrennte Anlässe.
 21. **Zuständige** eines Bereichs sind alle mit dem Recht Versenden, optional mit abweichender Hinweis-Adresse.
 22. **Installation und Updates:** Installation durch eine technisch versierte Person. Updates per Fork-Synchronisierung mit automatischen Migrationen.
 23. **Selbsttest der Postfach-Beschränkung** bei Microsoft 365.

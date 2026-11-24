@@ -6,7 +6,7 @@ Instructions for coding agents (Claude Code, Codex and others). Humans: see [CON
 
 Vereinsbote is an open-source web app a club uses to send e-mails to its members and partners. The interface is German (default) and English. One instance serves one club, and it runs on Vercel, Cloudflare Workers or Node/Docker.
 
-- **Spec:** `docs/superpowers/specs/2026-11-23-vereinsbote-design.md`
+- **Spec:** `docs/superpowers/specs/2026-11-23-vereinsbote-design.md`; each sub-plan may add a design next to it (`…-02-kontakte-design.md`), which wins where it differs.
 - **Roadmap** (eight sub-plans, written one after the other): `docs/superpowers/plans/2026-11-23-vereinsbote-00-fahrplan.md`
 - **Plans:** `docs/superpowers/plans/` (currently `…-01-fundament.md`). The spec and the plans are in German; their "Global Constraints" are summarized below.
 
@@ -27,6 +27,11 @@ Domain terms are German in the spec and English in the code:
 | Aktivitätsprotokoll, Versandprotokoll | `auditLog`, `sendLog` |
 | Ersteinrichtung | `setup` |
 | Zuständige | `responsibles` |
+| Firma, Geschlecht | `organization`, `gender` (`female` / `male` / `diverse` / `unspecified`) |
+| Gruppe, Schlagwort, Zusatzfeld | `group`, `tag`, `customField` |
+| Schutzstufe Basis / geschützt | `protection`: `base` / `protected` |
+| Mitglieder-Bereich, Partner-Bereich | `membersArea`, `partnersArea` |
+| Zuordnung (Import), Leerwert | `mapping`, `emptyMarker` |
 
 Access levels are cumulative (`read` < `edit` < `send`). The admin role gives no area access. There are no passwords and no self-registration: admins invite users.
 
