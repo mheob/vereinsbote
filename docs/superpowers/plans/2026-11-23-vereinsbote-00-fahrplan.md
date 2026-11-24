@@ -51,6 +51,40 @@ Die Details stehen in Teilplan 1 unter „Global Constraints“ und „Task 1“
   - Teilplan 8 (Anleitung für Cloudflare), spätestens vor der Veröffentlichung: Die CPU-Zeit der Server-Hälfte eines Imports (gunzip, `JSON.parse`, zod, Umwandlung der Zeilen) ist gegen das Limit von Workers Free (10 ms CPU pro Aufruf) nicht gemessen. Einmal mit `wrangler` messen (Vorschau und Bestätigung eines Imports mit 10 000 Zeilen) oder für Importe „Workers Paid“ dokumentieren.
   - Teilplan 7 (Doku-Vorlagen), bekannte Grenze: Die Import-Vorschau kann verraten, ob ein geschützter Wert, den der Importierende nicht sehen darf, einem geratenen Wert in der Datei gleicht (der Kontakt zählt als geändert oder nicht). Das folgt aus wahrheitsgemäßen Zahlen; der Importierende darf diese Werte ohnehin überschreiben.
 
+- **Nacharbeit aus Teilplan 2** (zurückgestellte Funde der Task-Reviews und des Abschluss-Reviews, nicht blockierend; aufgreifen, wenn ein Teilplan die Stelle ohnehin berührt, spätestens vor der Veröffentlichung):
+  - **Leistung:**
+    - `loadContactAccess` braucht 9 Abfragen in 5 Runden und läuft pro Seite mehrfach (Rahmen, `beforeLoad`, Loader, Partnerformular). Einstellungen, Zusatzfelder und Feldzuordnungen in einer Abfrage bündeln.
+    - Gruppen- und Schlagwortlisten nur für die passende Kontaktart abfragen; die Seitenzahl vor den Zugriffsabfragen prüfen.
+    - Kontakt-Einstellungen werden pro Dokument doppelt gelesen (Rahmen und Warnschritt).
+    - Das Partnerformular erst bei „Bearbeiten“ laden statt bei jedem Aufruf der Detailseite.
+    - `keepLeadingZeros` legt für jede Zelle eine Attribut-Map an (10 000 × 200 Zellen ≈ 2,5 s); zuerst das `s`-Attribut prüfen.
+    - Die Lesebibliotheken (`papaparse`, `read-excel-file`, `fflate`) landen als nie ausgeführter Code in den Server-Bundles (≈ 250 KB). Eine Client-only-Grenze um das Einlesen ziehen, falls das wächst.
+  - **Robustheit und Bedienung:**
+    - Gruppen auf eigenen Zeilen einer Zelle verschmelzen, weil die Bereinigung Zeilenumbrüche vor dem Aufteilen zu Leerzeichen macht.
+    - Unsichtbare Formatzeichen (`\p{Cf}`, z. B. U+200B, U+FEFF) bei der Bereinigung entfernen, damit Nummern als Schlüssel nicht unsichtbar abweichen.
+    - Die Schlüssel von `genderValues` auch auf dem Server bereinigen.
+    - Dezimalzahlen und Wahrheitswerte aus XLSX erscheinen in englischer Form („12.5“, „true“); Datums-Randfälle von `read-excel-file` (`t="d"`, `date1904="true"`, Serien vor 1900-03-01); eine fehlerhafte Zelle in einem anderen Blatt macht die ganze Datei unlesbar.
+    - Die Liste der blockierenden Fehler ist nicht begrenzt (die Oberfläche zeigt 1 000). Übersprungene Partnerzeilen fehlen im Ergebnis und im Protokoll. Eine übersprungene namenlose Zeile reserviert ihre Adresse (eine spätere Zeile wird `emailRepeated`). Zeilen einer Datei können in einen Partner falten, den dieselbe Datei erst angelegt hat. Eine leere `Nr.` wird als „behaltener Wert“ gezeigt.
+    - Der Gruppenfilter unterscheidet Groß- und Kleinschreibung, Schlagworte nicht.
+    - Löschdialog: Escape schließt ihn während des Löschens; ein fehlgeschlagenes Löschen (Kontakt schon weg) lässt den Partner stehen.
+    - Widerspruch-Kontrollkästchen und Feldschutz-Zeilen verhindern keine parallelen Klicks (Ansagen können in falscher Reihenfolge kommen).
+    - Die Enter-Logik im Schlagwortfeld hängt an der Ereignisreihenfolge von React Aria.
+    - Ein fehlendes Recht bei Änderungen kommt als Fehler statt als Ergebnis (wie in Teilplan 1); `renameArea` wirft für einen inzwischen entfernten Bereich einen einfachen Fehler.
+    - Auf Admin-Seiten tragen zwei Links `aria-current="page"` („Verwaltung“ sollte `location` nutzen). Beim Entfernen der 50. Filterregel geht der Fokus verloren.
+    - Die Kontaktliste übernimmt ihren Zustand nur einmal aus den Loader-Daten; `gcTime: 0` behebt nur das Symptom (die Liste über die Loader-Daten neu aufbauen).
+    - Warn-Mail bei alten Daten: Schlägt das Protokoll nach dem Versand fehl, bleibt die Woche beansprucht; ein Zeitstempel in der Zukunft blockiert Warnungen, bis er erreicht ist.
+  - **Tests:**
+    - Identitätsprüfungen von `contacts` auf Constraint-Namen statt `toThrow(Error)`; Unit-Test für `protectedFieldOf`; ein Admin mit Leserecht in einem fremden Bereich sieht keine geschützten Felder; die Listen-Antwort enthält keine geschützten Werte (JSON-Prüfung); ein unterscheidender Backslash-Fall für das Escaping.
+    - Ein abgelehnter Aufruf schreibt nichts (Sperre und Widerspruch; Partner-Import mit unzulässiger Löschauswahl prüft auch den Import-Status).
+    - Der Zip-Bomb-Test soll Streaming-Abbruch von Entpacken-dann-Prüfen unterscheiden; CSV mit Semikolon und Dezimalkomma; Arbeitsmappe im 1904-Datumssystem.
+    - PostgreSQL: Test-Sperre in `finally` freigeben; Warnungsfilter auch über `warning.name`; gleichzeitige Claims der Warn-Mail; Teilfehler beim Versand (eine von zwei Mails).
+    - E2E: Ansicht ohne Kontaktzugriff, Warnbanner, Seitenwechsel der Liste, unbekannter Kontakt, Widerspruch aufheben, Bereichswechsel mit echter Änderung; axe auch für blockierte Vorschau, Blattwahl, Import ohne Recht, Zusatzfeld- und Filterfelder und die Liste „Nicht mehr im Export“; Zählungen exakt statt mit `toContainText`.
+  - **Code-Pflege:**
+    - Drei parallele Listen geschützter Spalten (`PROTECTED_VALUE_FIELDS`, `PROTECTED_INPUT_FIELDS`, `PROTECTED_FIELD_OF`) und den Typ `ProtectedValueField` aus einer Quelle ableiten; `isKeyMapped` steht doppelt (`rows.ts`, `build-payload.ts`).
+    - Den Partner-Import für Schlüsselwechsel über `followKey` führen (eine Regel statt einer Invariante über Module).
+    - `functions/contact-settings.ts` importiert `protectedFieldRows` aus `components/`, `list-query.ts` ganz `partner-form.ts` für eine Konstante; `search-result.ts` leiht den Typ `Translate` aus dem Import-Assistenten (gemeinsamen Typ in `@/i18n` anlegen); die Kontaktliste nutzt den Fehlertext `auth.requestFailed`.
+    - `testing.ts` nutzt `node:crypto` statt `crypto.randomUUID()`; `setCustomFieldProtection` protokolliert auch unveränderte Werte; der Kommentar zu `MAX_DELETE_IDS` stimmt nicht; die Statuszeile des Import-Assistenten wiederholt die Überschrift; Tippfehler „without a area“ in `contacts-table.test.ts`.
+
 - **Betriebsüberwachung (Wunsch des Projekts, nach Einarbeitung aller offenen Punkte):** Ein System, das sicherstellt, dass jede Instanz läuft, eingebaut und in der Doku beschrieben. Kandidaten: Better Stack (Uptime-Checks, Heartbeat für die Zeitsteuerung, Logs) und Sentry (Fehler-Tracking für Server und Browser). Rahmen: optional pro Instanz über Umgebungsvariablen, EU-Region, keine personenbezogenen Daten und keine Secrets in Events (Scrubbing wie bei `errorLabel`), Auftragsverarbeiter in der Datenschutz-Doku ergänzen, auf allen drei Plattformen (Node, Vercel, Cloudflare). Passt zu Teilplan 5 (Dashboard, `HEARTBEAT_URL`) bzw. als eigener Teilplan vor der Veröffentlichung; wird beim Schreiben dieses Teilplans im Brainstorming geklärt.
 
 ## Glossar: Fachbegriff und Name im Code
