@@ -6,6 +6,13 @@ import type { CustomFieldRecord } from '@/server/contacts/settings';
 import {
 	DEFAULT_IMPORT_OPTIONS,
 	mappingChanges,
+	MAX_COLUMNS,
+	MAX_EMPTY_MARKERS,
+	MAX_FILTER_RULES,
+	MAX_GENDER_VALUES,
+	MAX_GROUP_SEPARATORS,
+	MAX_HEADER_LENGTH,
+	MAX_MARKER_LENGTH,
 	rowPassesFilters,
 	savedMappingSchema,
 	suggestMapping,
@@ -45,6 +52,31 @@ const EXPORT = [
 function savedWith(columns: Readonly<Record<string, ColumnTarget>>): SavedMapping {
 	return { columns, filters: [], options: DEFAULT_IMPORT_OPTIONS };
 }
+
+/**
+ * Distinct short labels.
+ *
+ * @param count The number of labels.
+ * @returns `c0`, `c1`, …
+ */
+function labels(count: number): string[] {
+	return Array.from({ length: count }, (_label, index) => `c${index}`);
+}
+
+/** A saved mapping with every list at its limit. */
+const AT_LIMITS: SavedMapping = {
+	columns: Object.fromEntries(labels(MAX_COLUMNS).map((header) => [header, DISCARD])),
+	filters: labels(MAX_FILTER_RULES).map((column) => ({ column, operator: 'is', value: '' })),
+	options: {
+		emptyMarkers: labels(MAX_EMPTY_MARKERS),
+		genderValues: Object.fromEntries(labels(MAX_GENDER_VALUES).map((value) => [value, 'female'])),
+		groupSeparators: labels(MAX_GROUP_SEPARATORS),
+		organizationFromLastName: false,
+	},
+};
+
+const LONG_MARKER = 'x'.repeat(MAX_MARKER_LENGTH + 1);
+const LONG_HEADER = 'x'.repeat(MAX_HEADER_LENGTH + 1);
 
 describe(suggestTarget, () => {
 	it('suggests the customer number for Nr. in a partner export', () => {
@@ -259,7 +291,76 @@ describe('the saved mapping schema', () => {
 			{ ...valid, filters: [{ column: 'Typ', operator: 'like', value: 'x' }] },
 		],
 		['a missing option', { ...valid, options: { emptyMarkers: ['-'] } }],
+		['too many columns', { ...AT_LIMITS, columns: { ...AT_LIMITS.columns, extra: DISCARD } }],
+		['a header over the limit', { ...valid, columns: { [LONG_HEADER]: DISCARD } }],
+		[
+			'too many filter rules',
+			{ ...AT_LIMITS, filters: [...AT_LIMITS.filters, { column: 'x', operator: 'is', value: '' }] },
+		],
+		[
+			'a filter column over the limit',
+			{ ...valid, filters: [{ column: LONG_HEADER, operator: 'is', value: '' }] },
+		],
+		[
+			'too many empty markers',
+			{
+				...AT_LIMITS,
+				options: { ...AT_LIMITS.options, emptyMarkers: [...AT_LIMITS.options.emptyMarkers, '-'] },
+			},
+		],
+		[
+			'an empty marker over the limit',
+			{ ...valid, options: { ...valid.options, emptyMarkers: [LONG_MARKER] } },
+		],
+		[
+			'too many group separators',
+			{
+				...AT_LIMITS,
+				options: {
+					...AT_LIMITS.options,
+					groupSeparators: [...AT_LIMITS.options.groupSeparators, '/'],
+				},
+			},
+		],
+		[
+			'a group separator over the limit',
+			{ ...valid, options: { ...valid.options, groupSeparators: [LONG_MARKER] } },
+		],
+		[
+			'too many gender values',
+			{
+				...AT_LIMITS,
+				options: {
+					...AT_LIMITS.options,
+					genderValues: { ...AT_LIMITS.options.genderValues, extra: 'male' },
+				},
+			},
+		],
 	])('refuses %s', (_name, input) => {
 		expect(savedMappingSchema.safeParse(input).success).toBe(false);
+	});
+
+	it('reads a mapping with every list at its limit', () => {
+		expect(savedMappingSchema.safeParse(AT_LIMITS).success).toBe(true);
+	});
+
+	it('uses limits no real export reaches', () => {
+		expect({
+			MAX_COLUMNS,
+			MAX_EMPTY_MARKERS,
+			MAX_FILTER_RULES,
+			MAX_GENDER_VALUES,
+			MAX_GROUP_SEPARATORS,
+			MAX_HEADER_LENGTH,
+			MAX_MARKER_LENGTH,
+		}).toStrictEqual({
+			MAX_COLUMNS: 200,
+			MAX_EMPTY_MARKERS: 20,
+			MAX_FILTER_RULES: 50,
+			MAX_GENDER_VALUES: 200,
+			MAX_GROUP_SEPARATORS: 10,
+			MAX_HEADER_LENGTH: 200,
+			MAX_MARKER_LENGTH: 10,
+		});
 	});
 });

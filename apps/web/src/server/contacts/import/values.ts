@@ -53,14 +53,36 @@ function cleanText(raw: string | null): string {
 }
 
 /**
+ * Cleans the empty markers once, for checking many values against them.
+ *
+ * @param markers The values that count as empty; spaces around them do not matter.
+ * @returns The cleaned markers.
+ */
+function toMarkerSet(markers: readonly string[]): ReadonlySet<string> {
+	return new Set(markers.map((marker) => cleanText(marker)));
+}
+
+/**
  * Tells whether a cleaned value counts as empty: an empty text or one of the markers.
+ *
+ * @param cleaned The value after `cleanText`.
+ * @param markers The markers from `toMarkerSet`.
+ * @returns True when the value is empty.
+ */
+function isEmptyWith(cleaned: string, markers: ReadonlySet<string>): boolean {
+	return cleaned === '' || markers.has(cleaned);
+}
+
+/**
+ * Tells whether a cleaned value counts as empty. For many values, clean the markers once with
+ * `toMarkerSet` and use `isEmptyWith`.
  *
  * @param cleaned The value after `cleanText`.
  * @param markers The values that count as empty; spaces around them do not matter.
  * @returns True when the value is empty.
  */
 function isEmptyValue(cleaned: string, markers: readonly string[]): boolean {
-	return cleaned === '' || markers.some((marker) => cleanText(marker) === cleaned);
+	return isEmptyWith(cleaned, toMarkerSet(markers));
 }
 
 /**
@@ -86,6 +108,28 @@ function uniqueIgnoringCase(values: readonly string[]): string[] {
  *
  * @param cleaned The value after `cleanText`.
  * @param separators The separators; an empty list keeps the value whole.
+ * @param markers The markers from `toMarkerSet`.
+ * @returns The groups in their order.
+ */
+function splitGroupsWith(
+	cleaned: string,
+	separators: readonly string[],
+	markers: ReadonlySet<string>,
+): string[] {
+	let parts = [cleaned];
+	for (const separator of separators) {
+		if (separator !== '') parts = parts.flatMap((part) => part.split(separator));
+	}
+	return uniqueIgnoringCase(
+		parts.map((part) => cleanText(part)).filter((part) => !isEmptyWith(part, markers)),
+	);
+}
+
+/**
+ * Splits a group cell into groups, see `splitGroupsWith`.
+ *
+ * @param cleaned The value after `cleanText`.
+ * @param separators The separators; an empty list keeps the value whole.
  * @param markers The values that count as empty.
  * @returns The groups in their order.
  */
@@ -94,13 +138,7 @@ function splitGroups(
 	separators: readonly string[],
 	markers: readonly string[],
 ): string[] {
-	let parts = [cleaned];
-	for (const separator of separators) {
-		if (separator !== '') parts = parts.flatMap((part) => part.split(separator));
-	}
-	return uniqueIgnoringCase(
-		parts.map((part) => cleanText(part)).filter((part) => !isEmptyValue(part, markers)),
-	);
+	return splitGroupsWith(cleaned, separators, toMarkerSet(markers));
 }
 
 /**
@@ -130,9 +168,12 @@ export {
 	DEFAULT_EMPTY_MARKERS,
 	DEFAULT_GROUP_SEPARATORS,
 	isEmptyValue,
+	isEmptyWith,
 	isValidContactEmail,
 	MAX_LENGTH,
 	splitGroups,
+	splitGroupsWith,
 	suggestGender,
+	toMarkerSet,
 	uniqueIgnoringCase,
 };

@@ -14,10 +14,11 @@ import { MAX_IMPORT_ROWS } from './payload';
 import type { ImportPayload } from './payload';
 import {
 	cleanText,
-	isEmptyValue,
+	isEmptyWith,
 	isValidContactEmail,
 	MAX_LENGTH,
-	splitGroups,
+	splitGroupsWith,
+	toMarkerSet,
 	uniqueIgnoringCase,
 } from './values';
 
@@ -117,6 +118,8 @@ interface ReadRow {
 interface RowContext {
 	readonly plans: readonly ColumnPlan[];
 	readonly options: ImportOptions;
+	/** The empty markers, cleaned once per import. */
+	readonly emptyMarkers: ReadonlySet<string>;
 	readonly hasGroups: boolean;
 	readonly organizationRule: boolean;
 }
@@ -312,7 +315,13 @@ function planColumns(
  * @returns Each repeated value once, in order.
  */
 function repeated<T>(values: readonly T[]): T[] {
-	return [...new Set(values.filter((value, index) => values.indexOf(value) !== index))];
+	const seen = new Set<T>();
+	const twice = new Set<T>();
+	for (const value of values) {
+		if (seen.has(value)) twice.add(value);
+		else seen.add(value);
+	}
+	return [...twice];
 }
 
 /**
@@ -343,11 +352,12 @@ function mappingIssues(payload: ImportPayload, plans: readonly ColumnPlan[]): Bl
  *
  * @param header The column header.
  * @param cleaned The cleaned, non-empty value.
- * @param options The options of the mapping.
+ * @param context The options and the cleaned empty markers.
  * @returns The groups; a group over the limit is dropped with a field issue.
  */
-function readGroups(header: string, cleaned: string, options: ImportOptions): CellResult {
-	const groups = splitGroups(cleaned, options.groupSeparators, options.emptyMarkers);
+function readGroups(header: string, cleaned: string, context: RowContext): CellResult {
+	const separators = context.options.groupSeparators;
+	const groups = splitGroupsWith(cleaned, separators, context.emptyMarkers);
 	const fitting = groups.filter((group) => group.length <= MAX_LENGTH.group);
 	if (fitting.length === groups.length) return { groups };
 	return { groups: fitting, issue: { column: header, reason: 'tooLong' } };
@@ -399,19 +409,19 @@ function readField(
  *
  * @param plan The plan of the cell's column.
  * @param raw The cell.
- * @param options The options of the mapping.
+ * @param context The options and the cleaned empty markers.
  * @returns What the cell adds to its row.
  */
-function readCell(plan: ColumnPlan, raw: string | null, options: ImportOptions): CellResult {
+function readCell(plan: ColumnPlan, raw: string | null, context: RowContext): CellResult {
 	if (plan.type === 'skip') return NOTHING;
 	const cleaned = cleanText(raw);
-	if (isEmptyValue(cleaned, options.emptyMarkers)) {
+	if (isEmptyWith(cleaned, context.emptyMarkers)) {
 		if (plan.type === 'groups') return NOTHING;
 		return { blank: plan.type === 'field' ? plan.field : `custom:${plan.key}` };
 	}
-	if (plan.type === 'groups') return readGroups(plan.header, cleaned, options);
+	if (plan.type === 'groups') return readGroups(plan.header, cleaned, context);
 	if (plan.type === 'custom') return readCustom(plan, cleaned);
-	return readField(plan, cleaned, options);
+	return readField(plan, cleaned, context.options);
 }
 
 /**
@@ -473,9 +483,7 @@ function assembleRow(
  * @returns The row, its field issues and what the key check needs.
  */
 function readRow(line: number, cells: readonly (string | null)[], context: RowContext): ReadRow {
-	const results = context.plans.map((plan, index) =>
-		readCell(plan, cells[index] ?? null, context.options),
-	);
+	const results = context.plans.map((plan, index) => readCell(plan, cells[index] ?? null, context));
 	const { row, failed, numberTooLong } = assembleRow(line, results, context.hasGroups);
 	return {
 		failed,
@@ -548,6 +556,7 @@ function transformRows(
 	const plans = planColumns(payload, customFields);
 	const mappingBlocking = mappingIssues(payload, plans);
 	const context: RowContext = {
+		emptyMarkers: toMarkerSet(payload.options.emptyMarkers),
 		hasGroups: plans.some((plan) => plan.type === 'groups'),
 		options: payload.options,
 		organizationRule: payload.kind === 'partner' && payload.options.organizationFromLastName,

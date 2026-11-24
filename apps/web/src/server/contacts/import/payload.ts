@@ -9,9 +9,11 @@ import type { ContactKind } from '@/server/contacts/fields';
 
 import {
 	filterRuleSchema,
+	headerSchema,
 	importOptionsSchema,
 	isTargetOfKind,
 	mappedTargetSchema,
+	MAX_COLUMNS,
 } from './mapping';
 import type {
 	ColumnTarget,
@@ -92,7 +94,11 @@ function payloadProblems(payload: ImportPayload): PayloadProblem[] {
 	const repeatedHeaders: PayloadProblem[] = hasUniqueHeaders(payload)
 		? []
 		: [{ message: 'A header appears twice.', path: ['columns'] }];
-	return [...otherKind, ...repeatedHeaders, ...unevenRows];
+	const tooWide: PayloadProblem[] =
+		payload.columns.length + payload.discardedHeaders.length > MAX_COLUMNS
+			? [{ message: 'The file has too many columns.', path: ['discardedHeaders'] }]
+			: [];
+	return [...otherKind, ...repeatedHeaders, ...tooWide, ...unevenRows];
 }
 
 /**
@@ -107,14 +113,14 @@ function refinePayload(payload: ImportPayload, context: z.RefinementCtx): void {
 	}
 }
 
-const columnSchema = z.object({ header: z.string(), target: mappedTargetSchema });
+const columnSchema = z.object({ header: headerSchema, target: mappedTargetSchema });
 const cellSchema = z.string().nullable();
 const rowSchema = z.object({ cells: z.array(cellSchema), line: z.int().min(1) });
 
 const importPayloadSchema: z.ZodType<ImportPayload> = z
 	.object({
-		columns: z.array(columnSchema),
-		discardedHeaders: z.array(z.string()),
+		columns: z.array(columnSchema).max(MAX_COLUMNS),
+		discardedHeaders: z.array(headerSchema).max(MAX_COLUMNS),
 		filters: z.array(filterRuleSchema),
 		kind: z.enum(CONTACT_KINDS),
 		options: importOptionsSchema,

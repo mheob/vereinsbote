@@ -7,8 +7,11 @@ import {
 	isEmptyValue,
 	isValidContactEmail,
 	MAX_LENGTH,
+	isEmptyWith,
 	splitGroups,
+	splitGroupsWith,
 	suggestGender,
+	toMarkerSet,
 	uniqueIgnoringCase,
 } from './values';
 
@@ -48,6 +51,17 @@ describe(isEmptyValue, () => {
 
 	it('ignores spaces around a marker', () => {
 		expect(isEmptyValue('n/a', [' n/a '])).toBe(true);
+	});
+});
+
+describe(toMarkerSet, () => {
+	it('cleans the markers once for many checks', () => {
+		const markers = toMarkerSet([' n/a ', '-']);
+		expect(markers).toStrictEqual(new Set(['n/a', '-']));
+		expect(isEmptyWith('n/a', markers)).toBe(true);
+		expect(isEmptyWith('', markers)).toBe(true);
+		expect(isEmptyWith('Anna', markers)).toBe(false);
+		expect(splitGroupsWith('Fußball, n/a; -', [',', ';'], markers)).toStrictEqual(['Fußball']);
 	});
 });
 

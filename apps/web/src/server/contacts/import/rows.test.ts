@@ -345,6 +345,19 @@ describe(transformRows, () => {
 		expect(blocking).toStrictEqual([{ field: 'email', reason: 'fieldMappedTwice' }]);
 	});
 
+	it('names each field mapped twice once, in the order of the repeats', () => {
+		const columns: ImportPayload['columns'] = [
+			{ header: 'Mail', target: { field: 'email', type: 'field' } },
+			{ header: 'Rufname', target: { field: 'firstName', type: 'field' } },
+			{ header: 'Mail 2', target: { field: 'email', type: 'field' } },
+		];
+		const payload = withColumns(memberPayload([['1']]), columns, [['', '', '']]);
+		expect(transformRows(payload, []).blocking).toStrictEqual([
+			{ field: 'email', reason: 'fieldMappedTwice' },
+			{ field: 'firstName', reason: 'fieldMappedTwice' },
+		]);
+	});
+
 	it('blocks a partner row without customer number and email', () => {
 		const { rows, blocking } = transformRows(
 			partnerPayload([

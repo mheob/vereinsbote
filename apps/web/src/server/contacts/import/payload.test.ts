@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vite-plus/test';
 
-import { DEFAULT_IMPORT_OPTIONS } from './mapping';
+import {
+	DEFAULT_IMPORT_OPTIONS,
+	MAX_COLUMNS,
+	MAX_EMPTY_MARKERS,
+	MAX_HEADER_LENGTH,
+	savedMappingSchema,
+} from './mapping';
 import {
 	decodeImportPayload,
 	encodeImportPayload,
@@ -32,6 +38,20 @@ const PAYLOAD: ImportPayload = {
 const PARTNER_ROW = ['100001', 'Bäckerei Körner GmbH', '-', '-', 'keine Angabe'];
 const PARTNER = partnerPayload([PARTNER_ROW]);
 
+/**
+ * Distinct short labels.
+ *
+ * @param count The number of labels.
+ * @returns `c0`, `c1`, …
+ */
+function labels(count: number): string[] {
+	return Array.from({ length: count }, (_label, index) => `c${index}`);
+}
+
+/** As many discarded headers as fit beside the mapped columns of `PAYLOAD`. */
+const DISCARDED_AT_LIMIT = labels(MAX_COLUMNS - PAYLOAD.columns.length);
+const TOO_MANY_MARKERS = labels(MAX_EMPTY_MARKERS + 1);
+
 /** JSON the schema refuses, each case built from a valid payload. */
 const INVALID_JSON: [string, unknown][] = [
 	['an unknown kind', { ...PAYLOAD, kind: 'sponsor' }],
@@ -60,6 +80,18 @@ const INVALID_JSON: [string, unknown][] = [
 	],
 	['a header twice', { ...PAYLOAD, discardedHeaders: ['Typ', 'Nr.'] }],
 	['a line number below 1', { ...PAYLOAD, rows: [{ cells: ['0042', null, null], line: 0 }] }],
+	[
+		'too many empty markers',
+		{ ...PAYLOAD, options: { ...PAYLOAD.options, emptyMarkers: TOO_MANY_MARKERS } },
+	],
+	[
+		'more columns than the limit with the discarded ones',
+		{ ...PAYLOAD, discardedHeaders: [...DISCARDED_AT_LIMIT, 'extra'] },
+	],
+	[
+		'a header over the limit',
+		{ ...PAYLOAD, discardedHeaders: ['x'.repeat(MAX_HEADER_LENGTH + 1)] },
+	],
 	[
 		'a discard target among the columns',
 		{
@@ -149,6 +181,13 @@ describe(decodeImportPayload, () => {
 		const refusal = decodeImportPayload(body);
 		await expect(refusal).rejects.toBeInstanceOf(ImportPayloadError);
 		await expect(refusal).rejects.toMatchObject({ reason: 'invalid' });
+	});
+
+	it('reads a payload at the column limit and saves a mapping the schema reads back', async () => {
+		const wide = { ...PAYLOAD, discardedHeaders: DISCARDED_AT_LIMIT };
+		const decoded = await decodeImportPayload(await encodeImportPayload(wide));
+		expect(decoded).toStrictEqual(wide);
+		expect(savedMappingSchema.safeParse(toSavedMapping(decoded)).success).toBe(true);
 	});
 
 	it('cleans the names of new custom fields', async () => {

@@ -8,7 +8,13 @@ import { CONTACT_FIELDS, CUSTOM_FIELD_TYPES, GENDERS } from '@/server/contacts/f
 import type { ContactField, ContactKind, CustomFieldType, Gender } from '@/server/contacts/fields';
 import type { CustomFieldRecord } from '@/server/contacts/settings';
 
-import { cleanText, DEFAULT_EMPTY_MARKERS, DEFAULT_GROUP_SEPARATORS, isEmptyValue } from './values';
+import {
+	cleanText,
+	DEFAULT_EMPTY_MARKERS,
+	DEFAULT_GROUP_SEPARATORS,
+	isEmptyWith,
+	toMarkerSet,
+} from './values';
 
 /** Where the values of a column go. */
 type MappedTarget =
@@ -22,6 +28,22 @@ type ColumnTarget = MappedTarget | { readonly type: 'discard' };
 
 /** The longest name of a new custom field. */
 const MAX_CUSTOM_FIELD_NAME_LENGTH = 60;
+
+/*
+ * Limits of a mapping. A real export has about a dozen columns, so they never bite; they keep the
+ * server's check of a payload cheap, which cleans every cell and compares it with the markers.
+ */
+/** Columns of a file, mapped and discarded together. */
+const MAX_COLUMNS = 200;
+/** Characters of a column header, also where a filter rule names it. */
+const MAX_HEADER_LENGTH = 200;
+const MAX_EMPTY_MARKERS = 20;
+const MAX_GROUP_SEPARATORS = 10;
+/** Characters of an empty marker or a group separator. */
+const MAX_MARKER_LENGTH = 10;
+/** Values in the translation of the gender column. */
+const MAX_GENDER_VALUES = 200;
+const MAX_FILTER_RULES = 50;
 
 /** A row is imported only when the column is (`is`) or is not (`isNot`) the value. */
 interface FilterRule {
@@ -74,22 +96,37 @@ const mappedTargetSchema = z.discriminatedUnion('type', [
 
 const columnTargetSchema = z.union([mappedTargetSchema, z.object({ type: z.literal('discard') })]);
 
+const headerSchema = z.string().max(MAX_HEADER_LENGTH);
+const markerSchema = z.string().max(MAX_MARKER_LENGTH);
+
 const filterRuleSchema = z.object({
-	column: z.string(),
+	column: headerSchema,
 	operator: z.enum(['is', 'isNot']),
 	value: z.string(),
 });
 
+const genderValuesSchema = z
+	.record(z.string(), z.enum(GENDERS))
+	.refine((values) => Object.keys(values).length <= MAX_GENDER_VALUES, {
+		message: 'Too many gender values.',
+	});
+
 const importOptionsSchema = z.object({
-	emptyMarkers: z.array(z.string()),
-	genderValues: z.record(z.string(), z.enum(GENDERS)),
-	groupSeparators: z.array(z.string()),
+	emptyMarkers: z.array(markerSchema).max(MAX_EMPTY_MARKERS),
+	genderValues: genderValuesSchema,
+	groupSeparators: z.array(markerSchema).max(MAX_GROUP_SEPARATORS),
 	organizationFromLastName: z.boolean(),
 });
 
+const savedColumnsSchema = z
+	.record(headerSchema, columnTargetSchema)
+	.refine((columns) => Object.keys(columns).length <= MAX_COLUMNS, {
+		message: 'Too many columns.',
+	});
+
 const savedMappingSchema: z.ZodType<SavedMapping> = z.object({
-	columns: z.record(z.string(), columnTargetSchema),
-	filters: z.array(filterRuleSchema),
+	columns: savedColumnsSchema,
+	filters: z.array(filterRuleSchema).max(MAX_FILTER_RULES),
 	options: importOptionsSchema,
 });
 
@@ -260,12 +297,12 @@ function mappingChanges(
  * A value as the filters compare it: cleaned, empty markers as `''`, without case.
  *
  * @param raw The value.
- * @param markers The values that count as empty.
+ * @param markers The markers from `toMarkerSet`.
  * @returns The comparable value.
  */
-function comparable(raw: string | null, markers: readonly string[]): string {
+function comparable(raw: string | null, markers: ReadonlySet<string>): string {
 	const cleaned = cleanText(raw);
-	return isEmptyValue(cleaned, markers) ? '' : cleaned.toLowerCase();
+	return isEmptyWith(cleaned, markers) ? '' : cleaned.toLowerCase();
 }
 
 /**
@@ -281,9 +318,10 @@ function rowPassesFilters(
 	filters: readonly FilterRule[],
 	markers: readonly string[],
 ): boolean {
+	const markerSet = toMarkerSet(markers);
 	return filters.every((rule) => {
 		const cell = Object.hasOwn(row, rule.column) ? (row[rule.column] ?? null) : null;
-		const equal = comparable(cell, markers) === comparable(rule.value, markers);
+		const equal = comparable(cell, markerSet) === comparable(rule.value, markerSet);
 		return rule.operator === 'is' ? equal : !equal;
 	});
 }
@@ -291,11 +329,19 @@ function rowPassesFilters(
 export {
 	DEFAULT_IMPORT_OPTIONS,
 	filterRuleSchema,
+	headerSchema,
 	importOptionsSchema,
 	isTargetOfKind,
 	mappedTargetSchema,
 	mappingChanges,
+	MAX_COLUMNS,
 	MAX_CUSTOM_FIELD_NAME_LENGTH,
+	MAX_EMPTY_MARKERS,
+	MAX_FILTER_RULES,
+	MAX_GENDER_VALUES,
+	MAX_GROUP_SEPARATORS,
+	MAX_HEADER_LENGTH,
+	MAX_MARKER_LENGTH,
 	rowPassesFilters,
 	savedMappingSchema,
 	suggestMapping,
