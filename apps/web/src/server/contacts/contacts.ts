@@ -119,7 +119,8 @@ interface ContactDetail {
  * @returns The pattern; `\` is the escape character of `LIKE`.
  */
 function containsPattern(text: string): string {
-	return `%${text.replaceAll(/[%\\_]/gu, (char) => `\\${char}`)}%`;
+	const escaped = text.replaceAll(/[%\\_]/gu, (char) => `\\${char}`);
+	return `%${escaped}%`;
 }
 
 /**

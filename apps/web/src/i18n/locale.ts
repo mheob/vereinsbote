@@ -24,7 +24,8 @@ interface LanguageRange {
  * @returns True for `de` and `en`.
  */
 function isLocale(value: unknown): value is Locale {
-	return SUPPORTED_LOCALES.some((locale) => locale === value);
+	const locales: readonly unknown[] = SUPPORTED_LOCALES;
+	return locales.includes(value);
 }
 
 /**

@@ -160,9 +160,11 @@ function uniqueHeaders(cleaned: readonly string[]): string[] {
 	const used = new Set<string>();
 	return named.map((name) => {
 		let header = name;
-		for (let number = 2; used.has(header); number += 1) {
+		let number = 2;
+		while (used.has(header)) {
 			const candidate = `${name} (${number})`;
 			if (!taken.has(candidate)) header = candidate;
+			number += 1;
 		}
 		used.add(header);
 		return header;
