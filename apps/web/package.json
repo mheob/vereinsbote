@@ -12,7 +12,8 @@
 		"db:migrate:vercel": "tsx src/server/db/migrate-vercel-cli.ts",
 		"deploy:cloudflare": "vp run build:cloudflare && vp run db:migrate && wrangler deploy",
 		"dev": "vp dev",
-		"e2e": "playwright test"
+		"e2e": "playwright test",
+		"icons:social": "tsx scripts/build-social-icons.ts"
 	},
 	"dependencies": {
 		"@internationalized/date": "catalog:",
@@ -47,6 +48,7 @@
 		"@vitejs/plugin-react": "catalog:",
 		"drizzle-kit": "catalog:",
 		"nitro": "catalog:",
+		"simple-icons": "catalog:",
 		"tailwindcss": "catalog:",
 		"tsx": "catalog:",
 		"vite": "catalog:",

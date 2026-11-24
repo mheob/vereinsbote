@@ -43,9 +43,12 @@ describe(bundledMigrations, () => {
 			const client = new PGlite();
 			const db: Db = drizzle(client, { schema });
 			const migrations = await bundledMigrations();
-			const last = migrations.at(-1);
-			expect(last?.sql.join('\n')).toContain('placeholder_key');
-			await applyMigrations(db, migrations.slice(0, -1));
+			// Later migrations (new tables) come after the one that adds the key.
+			const index = migrations.findIndex((migration) =>
+				migration.sql.join('\n').includes('placeholder_key'),
+			);
+			expect(index).toBeGreaterThan(0);
+			await applyMigrations(db, migrations.slice(0, index));
 			await client.exec(`insert into custom_fields (id, kind, name, type, created_at) values
 				('00000000-0000-4000-8000-000000000001', 'member', 'Größe', 'text', '2026-01-01'),
 				('00000000-0000-4000-8000-000000000002', 'member', 'Groesse!', 'text', '2026-01-02'),

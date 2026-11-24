@@ -4,6 +4,7 @@ import { auditLog } from '@/server/db/schema';
 type AuditAction =
 	| 'area.created'
 	| 'area.renamed'
+	| 'brand.changed'
 	| 'contact.opt_out_removed'
 	| 'contact.opted_out'
 	| 'contact.suppressed'

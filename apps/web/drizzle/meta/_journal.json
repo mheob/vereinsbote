@@ -71,6 +71,13 @@
       "when": 1795560502904,
       "tag": "0009_spicy_preak",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1795561289200,
+      "tag": "0010_jittery_rafael_vega",
+      "breakpoints": true
     }
   ]
 }
