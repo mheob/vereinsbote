@@ -44,7 +44,8 @@ const headerCellClass = 'px-3 py-2 text-left font-semibold whitespace-nowrap';
  * @returns True for `base` and `protected`.
  */
 function isProtection(key: Key | null): key is Protection {
-	return PROTECTIONS.some((protection) => protection === key);
+	const known: readonly (Key | null)[] = PROTECTIONS;
+	return known.includes(key);
 }
 
 /**

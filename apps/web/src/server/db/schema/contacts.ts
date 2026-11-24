@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm';
+import { type SQL, sql } from 'drizzle-orm';
 import {
 	boolean,
 	check,
@@ -20,7 +20,16 @@ import { areas } from './areas';
 import { user } from './auth';
 
 /** `'member', 'partner'` as a SQL list for the checks. */
-const kindList = sql.raw(CONTACT_KINDS.map((kind) => `'${kind}'`).join(', '));
+/**
+ * The values as a quoted SQL list for a check constraint.
+ *
+ * @param values The allowed values.
+ * @returns The raw SQL list.
+ */
+const quotedList = (values: readonly string[]): SQL =>
+	sql.raw(values.map((value) => `'${value}'`).join(', '));
+
+const kindList = quotedList(CONTACT_KINDS);
 
 /**
  * A member or a partner, one table for both kinds. Members are identified by their member
@@ -73,10 +82,7 @@ export const contacts = pgTable(
 	},
 	(table) => [
 		check('contacts_kind_check', sql`${table.kind} in (${kindList})`),
-		check(
-			'contacts_gender_check',
-			sql`${table.gender} in (${sql.raw(GENDERS.map((gender) => `'${gender}'`).join(', '))})`,
-		),
+		check('contacts_gender_check', sql`${table.gender} in (${quotedList(GENDERS)})`),
 		check(
 			'contacts_member_number_check',
 			sql`(${table.kind} = 'member') = (${table.memberNumber} is not null)`,
@@ -115,13 +121,10 @@ export const customFields = pgTable(
 	},
 	(table) => [
 		check('custom_fields_kind_check', sql`${table.kind} in (${kindList})`),
-		check(
-			'custom_fields_type_check',
-			sql`${table.type} in (${sql.raw(CUSTOM_FIELD_TYPES.map((type) => `'${type}'`).join(', '))})`,
-		),
+		check('custom_fields_type_check', sql`${table.type} in (${quotedList(CUSTOM_FIELD_TYPES)})`),
 		check(
 			'custom_fields_protection_check',
-			sql`${table.protection} in (${sql.raw(PROTECTIONS.map((value) => `'${value}'`).join(', '))})`,
+			sql`${table.protection} in (${quotedList(PROTECTIONS)})`,
 		),
 		uniqueIndex('custom_fields_kind_name_idx').on(table.kind, sql`lower(${table.name})`),
 	],

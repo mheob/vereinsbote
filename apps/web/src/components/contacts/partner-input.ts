@@ -60,7 +60,8 @@ function textOf(formData: FormData, name: string): string {
  * @returns True for a gender.
  */
 function isGender(value: string): value is Gender {
-	return GENDERS.some((gender) => gender === value);
+	const genders: readonly string[] = GENDERS;
+	return genders.includes(value);
 }
 
 /**

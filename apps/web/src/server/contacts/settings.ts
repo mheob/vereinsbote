@@ -211,7 +211,8 @@ async function setContactAreas(
  */
 async function isProtectedField(db: Db, kind: ContactKind, fieldKey: FieldKey): Promise<boolean> {
 	if (!fieldKey.startsWith('custom:')) {
-		return BUILTIN_PROTECTED_FIELDS[kind].some((builtin) => builtin === fieldKey);
+		const builtin: readonly FieldKey[] = BUILTIN_PROTECTED_FIELDS[kind];
+		return builtin.includes(fieldKey);
 	}
 	const customFieldId = fieldKey.slice('custom:'.length);
 	const found = await listCustomFields(db, kind);

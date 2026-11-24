@@ -220,13 +220,12 @@ export function PartnerForm({
 		[messages, t],
 	);
 	// A new object per refusal, so a refused field shows its error again after it was edited.
-	const validationErrors = useMemo(
-		(): Readonly<Record<string, string>> =>
-			Object.fromEntries(
-				Object.entries(fieldMessages).filter(([name]) => !dateFields.some((date) => date === name)),
-			),
-		[dateFields, fieldMessages],
-	);
+	const validationErrors = useMemo((): Readonly<Record<string, string>> => {
+		const dates: readonly string[] = dateFields;
+		return Object.fromEntries(
+			Object.entries(fieldMessages).filter(([name]) => !dates.includes(name)),
+		);
+	}, [dateFields, fieldMessages]);
 	useEffect(() => {
 		// The first refused field gets the focus, so a screen reader reads it with its message.
 		if (errors === null) return;

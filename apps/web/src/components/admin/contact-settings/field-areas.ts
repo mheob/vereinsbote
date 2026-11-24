@@ -33,7 +33,8 @@ const BUILTIN_FIELD_NAMES: Readonly<Record<BuiltinProtectedField, MessageKey>> =
  * @returns True for a built-in protected field, false for a custom field.
  */
 function isBuiltinField(key: FieldKey): key is BuiltinProtectedField {
-	return BUILTIN_PROTECTED_FIELD_KEYS.some((builtin) => builtin === key);
+	const builtin: readonly FieldKey[] = BUILTIN_PROTECTED_FIELD_KEYS;
+	return builtin.includes(key);
 }
 
 /**
