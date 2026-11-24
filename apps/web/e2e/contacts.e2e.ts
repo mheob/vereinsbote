@@ -17,6 +17,10 @@ test.describe.configure({ mode: 'serial' });
 // oxlint-disable-next-line init-declarations -- signed in once in `beforeAll`, shared by the serial tests
 let admin: Page;
 
+/** Uli, who reads „Finanzen“; signed in by the test that hides protected fields, then kept. */
+// oxlint-disable-next-line init-declarations -- set by a serial test, closed in `afterAll`
+let uliPage: Page | undefined;
+
 test.beforeAll(async ({ browser }) => {
 	// Far from UTC: a date that went through the local time zone anywhere would be a day off here.
 	const context = await browser.newContext({ locale: 'de-DE', timezoneId: 'Pacific/Honolulu' });
@@ -26,6 +30,7 @@ test.beforeAll(async ({ browser }) => {
 
 test.afterAll(async () => {
 	await admin.context().close();
+	await uliPage?.context().close();
 });
 
 /** The second member import keeps the first 30 of the 39 members, so 9 go: more than 20 %. */
@@ -447,5 +452,130 @@ test('hides protected member fields from a reader of another area', async ({ bro
 	await expect(uli).toHaveTitle('Kein Zugriff – Vereinsbote');
 	await expect(uli.getByRole('heading', { name: 'Kein Zugriff' })).toBeVisible();
 	await expectNoA11yViolations(uli);
-	await context.close();
+	// Uli stays signed in: the contact settings change what Uli sees.
+	uliPage = uli;
+});
+
+/**
+ * Ticks or unticks a checkbox of the field protection by its box, as a user does. The table
+ * names the checkbox by its row and column; the box covers the hidden input (C20).
+ *
+ * @param page The page of the contact settings.
+ * @param name The label of the checkbox.
+ */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- see upload
+async function toggleBox(page: Page, name: string): Promise<void> {
+	await page
+		.locator('label')
+		.filter({ has: page.getByRole('checkbox', { exact: true, name }) })
+		.click();
+}
+
+/**
+ * Uli's page, which the test that hides protected fields signed in.
+ *
+ * @returns The page.
+ */
+function signedInUli(): Page {
+	if (uliPage === undefined) throw new Error('Uli is not signed in.');
+	return uliPage;
+}
+
+// oxlint-disable-next-line max-statements -- one flow, step by step, as the admin and Uli see it
+test('assigns a protected member field to another area', async () => {
+	const uli = signedInUli();
+	await openMember(uli, firstMember());
+	await expect(uli.getByText('Geburtsdatum')).toHaveCount(0);
+	await admin.goto('/admin/users');
+	await admin
+		.getByRole('navigation', { name: 'Verwaltung' })
+		.getByRole('link', { name: 'Kontakt-Einstellungen' })
+		.click();
+	await expect(admin).toHaveTitle('Kontakt-Einstellungen – Vereinsbote');
+	await expectNoA11yViolations(admin);
+	const forFinance = 'Geburtsdatum (Mitglieder) für Finanzen';
+	const forMembers = 'Geburtsdatum (Mitglieder) für Mitglieder';
+	const checkbox = (name: string): Locator => admin.getByRole('checkbox', { exact: true, name });
+	await expect(checkbox(forMembers)).toBeChecked();
+	await expect(checkbox(forFinance)).not.toBeChecked();
+	await toggleBox(admin, forFinance);
+	// The areas in the order of the area list, by name.
+	await expect(admin.getByRole('status')).toHaveText(
+		'Geburtsdatum (Mitglieder): Finanzen, Mitglieder',
+	);
+	await expect(checkbox(forFinance)).toBeChecked();
+	await toggleBox(admin, forMembers);
+	await expect(admin.getByRole('status')).toHaveText('Geburtsdatum (Mitglieder): Finanzen');
+	await expect(checkbox(forMembers)).not.toBeChecked();
+	await toggleBox(admin, forFinance);
+	await expect(admin.getByRole('alert')).toHaveText('Mindestens ein Bereich muss bleiben.');
+	await expect(checkbox(forFinance)).toBeChecked();
+	await expectNoA11yViolations(admin);
+	// Uli reads „Finanzen“ and now sees the members' dates of birth.
+	await uli.reload();
+	await expect(uli.getByText('Geburtsdatum')).toBeVisible();
+});
+
+// oxlint-disable-next-line max-statements -- one flow, step by step, as the admin sees it
+test('saves the areas and the period for old data', async () => {
+	await admin.goto('/admin/contact-settings');
+	const areasForm = admin.getByRole('form', { name: 'Bereiche' });
+	await expect(areasForm.getByLabel('Mitglieder-Bereich')).toContainText('Mitglieder');
+	await expect(areasForm.getByLabel('Partner-Bereich')).toContainText('Finanzen');
+	await areasForm.getByRole('button', { name: 'Speichern' }).click();
+	await expect(admin.getByRole('status')).toHaveText('Die Bereiche sind gespeichert.');
+
+	const periodForm = admin.getByRole('form', { name: 'Frist für alte Daten' });
+	const weeks = periodForm.getByLabel('Wochen');
+	await expect(weeks).toHaveValue('8');
+	// Out of range is shown at the field, not clamped to 52.
+	await weeks.fill('60');
+	await periodForm.getByRole('button', { name: 'Speichern' }).click();
+	await expect(periodForm.getByText('Bitte gib 1 bis 52 Wochen ein.')).toBeVisible();
+	await expect(weeks).toBeFocused();
+	await expect(weeks).toHaveValue('60');
+	await expectNoA11yViolations(admin);
+	await weeks.fill('6');
+	await periodForm.getByRole('button', { name: 'Speichern' }).click();
+	await expect(admin.getByRole('status')).toHaveText('Die Frist ist gespeichert.');
+	await expect(periodForm.getByText('Bitte gib 1 bis 52 Wochen ein.')).toHaveCount(0);
+	await admin.reload();
+	await expect(
+		admin.getByRole('form', { name: 'Frist für alte Daten' }).getByLabel('Wochen'),
+	).toHaveValue('6');
+});
+
+// oxlint-disable-next-line max-statements -- one flow, step by step, as the admin sees it
+test('makes a custom field from an import a base field and protects it again', async () => {
+	await admin.goto('/admin/contact-settings');
+	await expect(
+		admin.getByText('Es gibt noch keine Zusatzfelder. Sie entstehen beim Import.'),
+	).toBeVisible();
+	await admin.goto('/contacts/import/partners');
+	await upload(admin, { buffer: partnerExportCsv(), mimeType: 'text/csv', name: 'partner.csv' });
+	await admin.getByLabel('Typ zuordnen').click();
+	await admin.getByRole('option', { name: 'Neues Zusatzfeld' }).click();
+	await expect(admin.getByLabel('Name des Zusatzfelds für Typ')).toHaveValue('Typ');
+	await toPreview(admin);
+	await admin.getByRole('button', { name: 'Import bestätigen' }).click();
+	await expect(admin.getByRole('status')).toHaveText(/^Import abgeschlossen: /u);
+
+	await admin.goto('/admin/contact-settings');
+	// A new custom field is protected and belongs to the partners area.
+	const typeForFinance = admin.getByRole('checkbox', {
+		exact: true,
+		name: 'Typ (Partner) für Finanzen',
+	});
+	await expect(typeForFinance).toBeChecked();
+	const protection = admin.getByLabel('Schutz von Typ');
+	await expect(protection).toContainText('Geschützt');
+	await expectNoA11yViolations(admin);
+	await protection.click();
+	await admin.getByRole('option', { name: 'Basisfeld' }).click();
+	await expect(admin.getByRole('status')).toHaveText('Schutz von Typ: Basisfeld');
+	await expect(typeForFinance).toHaveCount(0);
+	await protection.click();
+	await admin.getByRole('option', { name: 'Geschützt' }).click();
+	await expect(admin.getByRole('status')).toHaveText('Schutz von Typ: Geschützt');
+	await expect(typeForFinance).toBeChecked();
 });

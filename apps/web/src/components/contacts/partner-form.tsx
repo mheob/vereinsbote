@@ -8,7 +8,6 @@ import {
 	DateInput,
 	DateSegment,
 	FieldError,
-	I18nProvider,
 	Input,
 	Label,
 	ListBox,
@@ -34,7 +33,7 @@ import {
 import { SubmitButton } from '@/components/submit-button';
 import { submitPartner } from '@/functions/contacts';
 import type { MessageKey } from '@/i18n/translate';
-import { useLocale, useT } from '@/i18n/use-t';
+import { useT } from '@/i18n/use-t';
 import { GENDERS } from '@/server/contacts/fields';
 import { MAX_LENGTH } from '@/server/contacts/import/values';
 import { invalidPartnerFields } from '@/server/contacts/partner-form';
@@ -193,7 +192,6 @@ export function PartnerForm({
 	onSaved: (contactId: string) => Promise<void>;
 }>): ReactNode {
 	const t = useT();
-	const locale = useLocale();
 	const save = useServerFn(submitPartner);
 	const formRef = useRef<HTMLFormElement>(null);
 	const [tags, setTags] = useState<readonly string[]>(form.values?.tags ?? []);
@@ -283,102 +281,95 @@ export function PartnerForm({
 		[announce, contactId, dateFields, form, isPending, onSaved, save, t, tagInput, tags],
 	);
 	return (
-		// Dates and React Aria's own texts follow the page's language, in the server render as well.
-		<I18nProvider locale={locale === 'de' ? 'de-DE' : 'en-US'}>
-			<PostForm
-				aria-labelledby={labelledBy}
-				className="flex max-w-3xl flex-col gap-6"
-				onSubmit={onSubmit}
-				ref={formRef}
-				// The form checks itself on submit; a field's message stays until the next check.
-				validationBehavior="aria"
-				validationErrors={validationErrors}
-			>
-				<div className="grid gap-4 sm:grid-cols-2">
-					{TEXT_FIELDS.map((field) => (
-						<PartnerTextField
-							defaultValue={values?.[field.name] ?? ''}
-							key={field.name}
-							label={t(field.label)}
-							maxLength={field.maxLength}
-							name={field.name}
-						/>
-					))}
-					<Select
-						className={fieldClass}
-						defaultValue={values?.gender ?? 'unspecified'}
-						name="gender"
-					>
-						<Label className="font-semibold">{t('import.field.gender')}</Label>
-						<Button className={selectButtonClass}>
-							<SelectValue />
-							<ChevronIcon />
-						</Button>
-						<Popover className={popoverClass}>
-							<ListBox className="outline-none">
-								{GENDERS.map((gender) => (
-									<ListBoxItem className={optionClass} id={gender} key={gender}>
-										{t(`import.gender.${gender}`)}
-									</ListBoxItem>
-								))}
-							</ListBox>
-						</Popover>
-					</Select>
-					{form.protectedFields.includes('birthDate') ? (
+		<PostForm
+			aria-labelledby={labelledBy}
+			className="flex max-w-3xl flex-col gap-6"
+			onSubmit={onSubmit}
+			ref={formRef}
+			// The form checks itself on submit; a field's message stays until the next check.
+			validationBehavior="aria"
+			validationErrors={validationErrors}
+		>
+			<div className="grid gap-4 sm:grid-cols-2">
+				{TEXT_FIELDS.map((field) => (
+					<PartnerTextField
+						defaultValue={values?.[field.name] ?? ''}
+						key={field.name}
+						label={t(field.label)}
+						maxLength={field.maxLength}
+						name={field.name}
+					/>
+				))}
+				<Select className={fieldClass} defaultValue={values?.gender ?? 'unspecified'} name="gender">
+					<Label className="font-semibold">{t('import.field.gender')}</Label>
+					<Button className={selectButtonClass}>
+						<SelectValue />
+						<ChevronIcon />
+					</Button>
+					<Popover className={popoverClass}>
+						<ListBox className="outline-none">
+							{GENDERS.map((gender) => (
+								<ListBoxItem className={optionClass} id={gender} key={gender}>
+									{t(`import.gender.${gender}`)}
+								</ListBoxItem>
+							))}
+						</ListBox>
+					</Popover>
+				</Select>
+				{form.protectedFields.includes('birthDate') ? (
+					<PartnerDateField
+						defaultValue={values?.birthDate ?? ''}
+						errorMessage={fieldMessages.birthDate}
+						label={t('import.field.birthDate')}
+						name="birthDate"
+					/>
+				) : null}
+				{ADDRESS_FIELDS.filter((field) => form.protectedFields.includes(field)).map((field) => (
+					<PartnerTextField
+						defaultValue={values?.[field] ?? ''}
+						key={field}
+						label={t(`import.field.${field}`)}
+						maxLength={ADDRESS_MAX_LENGTH[field]}
+						name={field}
+					/>
+				))}
+				{form.customFields.map((field) =>
+					field.type === 'date' ? (
 						<PartnerDateField
-							defaultValue={values?.birthDate ?? ''}
-							errorMessage={fieldMessages.birthDate}
-							label={t('import.field.birthDate')}
-							name="birthDate"
+							defaultValue={values?.custom?.[field.id] ?? ''}
+							errorMessage={fieldMessages[customFieldName(field.id)]}
+							key={field.id}
+							label={field.name}
+							name={customFieldName(field.id)}
 						/>
-					) : null}
-					{ADDRESS_FIELDS.filter((field) => form.protectedFields.includes(field)).map((field) => (
+					) : (
 						<PartnerTextField
-							defaultValue={values?.[field] ?? ''}
-							key={field}
-							label={t(`import.field.${field}`)}
-							maxLength={ADDRESS_MAX_LENGTH[field]}
-							name={field}
+							defaultValue={values?.custom?.[field.id] ?? ''}
+							key={field.id}
+							label={field.name}
+							maxLength={MAX_LENGTH.customText}
+							name={customFieldName(field.id)}
 						/>
-					))}
-					{form.customFields.map((field) =>
-						field.type === 'date' ? (
-							<PartnerDateField
-								defaultValue={values?.custom?.[field.id] ?? ''}
-								errorMessage={fieldMessages[customFieldName(field.id)]}
-								key={field.id}
-								label={field.name}
-								name={customFieldName(field.id)}
-							/>
-						) : (
-							<PartnerTextField
-								defaultValue={values?.custom?.[field.id] ?? ''}
-								key={field.id}
-								label={field.name}
-								maxLength={MAX_LENGTH.customText}
-								name={customFieldName(field.id)}
-							/>
-						),
-					)}
-				</div>
-				<TagField
-					announce={announce}
-					errorMessage={fieldMessages.tags}
-					input={tagInput}
-					onChange={setTags}
-					onInputChange={setTagInput}
-					suggestions={form.tagSuggestions}
-					tags={tags}
-				/>
-				<div className="flex flex-wrap gap-3">
-					<SubmitButton isPending={isPending}>{t('partner.save')}</SubmitButton>
-					{onCancel === undefined ? null : (
-						<Button className={secondaryButtonClass} onPress={onCancel}>
-							{t('partner.cancel')}
-						</Button>
-					)}
-				</div>
-			</PostForm>
-		</I18nProvider>
+					),
+				)}
+			</div>
+			<TagField
+				announce={announce}
+				errorMessage={fieldMessages.tags}
+				input={tagInput}
+				onChange={setTags}
+				onInputChange={setTagInput}
+				suggestions={form.tagSuggestions}
+				tags={tags}
+			/>
+			<div className="flex flex-wrap gap-3">
+				<SubmitButton isPending={isPending}>{t('partner.save')}</SubmitButton>
+				{onCancel === undefined ? null : (
+					<Button className={secondaryButtonClass} onPress={onCancel}>
+						{t('partner.cancel')}
+					</Button>
+				)}
+			</div>
+		</PostForm>
 	);
 }

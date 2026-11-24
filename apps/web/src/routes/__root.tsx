@@ -2,10 +2,10 @@ import { createRootRoute, HeadContent, Scripts, useMatch, useRouter } from '@tan
 import { createServerFn } from '@tanstack/react-start';
 import { useCallback } from 'react';
 import type { ReactNode } from 'react';
-import { RouterProvider } from 'react-aria-components';
+import { I18nProvider, RouterProvider } from 'react-aria-components';
 
 import { PageFrame } from '@/components/page-frame';
-import { DEFAULT_LOCALE } from '@/i18n/locale';
+import { DEFAULT_LOCALE, intlLocale } from '@/i18n/locale';
 import type { Locale } from '@/i18n/locale';
 import { pageHead } from '@/i18n/page-title';
 import { LocaleProvider } from '@/i18n/use-t';
@@ -93,11 +93,15 @@ export const Route = createRootRoute({
 				</head>
 				<body>
 					<LocaleProvider locale={locale}>
-						<RouterProvider navigate={navigate}>
-							<PageFrame frame={data?.frame ?? null} signedIn={data?.signedIn ?? false}>
-								{children}
-							</PageFrame>
-						</RouterProvider>
+						{/* React Aria's dates, numbers and own texts follow the page's language, not the
+						    browser's, in the server render as well. */}
+						<I18nProvider locale={intlLocale(locale)}>
+							<RouterProvider navigate={navigate}>
+								<PageFrame frame={data?.frame ?? null} signedIn={data?.signedIn ?? false}>
+									{children}
+								</PageFrame>
+							</RouterProvider>
+						</I18nProvider>
 					</LocaleProvider>
 					<Scripts />
 				</body>

@@ -16,6 +16,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as SetupRouteImport } from './routes/setup'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AdminAreasRouteImport } from './routes/admin/areas'
+import { Route as AdminContactSettingsRouteImport } from './routes/admin/contact-settings'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as ApiTickRouteImport } from './routes/api/tick'
@@ -59,6 +60,11 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
 const AdminAreasRoute = AdminAreasRouteImport.update({
   id: '/areas',
   path: '/areas',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminContactSettingsRoute = AdminContactSettingsRouteImport.update({
+  id: '/contact-settings',
+  path: '/contact-settings',
   getParentRoute: () => AdminRouteRoute,
 } as any)
 const AdminUsersRoute = AdminUsersRouteImport.update({
@@ -114,6 +120,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/setup': typeof SetupRoute
   '/admin/areas': typeof AdminAreasRoute
+  '/admin/contact-settings': typeof AdminContactSettingsRoute
   '/admin/users': typeof AdminUsersRoute
   '/api/health': typeof ApiHealthRoute
   '/api/tick': typeof ApiTickRoute
@@ -130,6 +137,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/setup': typeof SetupRoute
   '/admin/areas': typeof AdminAreasRoute
+  '/admin/contact-settings': typeof AdminContactSettingsRoute
   '/admin/users': typeof AdminUsersRoute
   '/api/health': typeof ApiHealthRoute
   '/api/tick': typeof ApiTickRoute
@@ -149,6 +157,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/setup': typeof SetupRoute
   '/admin/areas': typeof AdminAreasRoute
+  '/admin/contact-settings': typeof AdminContactSettingsRoute
   '/admin/users': typeof AdminUsersRoute
   '/api/health': typeof ApiHealthRoute
   '/api/tick': typeof ApiTickRoute
@@ -169,6 +178,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/setup'
     | '/admin/areas'
+    | '/admin/contact-settings'
     | '/admin/users'
     | '/api/health'
     | '/api/tick'
@@ -185,6 +195,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/setup'
     | '/admin/areas'
+    | '/admin/contact-settings'
     | '/admin/users'
     | '/api/health'
     | '/api/tick'
@@ -203,6 +214,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/setup'
     | '/admin/areas'
+    | '/admin/contact-settings'
     | '/admin/users'
     | '/api/health'
     | '/api/tick'
@@ -277,6 +289,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminAreasRouteImport
       parentRoute: typeof AdminRouteRoute
     }
+    '/admin/contact-settings': {
+      id: '/admin/contact-settings'
+      path: '/contact-settings'
+      fullPath: '/admin/contact-settings'
+      preLoaderRoute: typeof AdminContactSettingsRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
     '/admin/users': {
       id: '/admin/users'
       path: '/users'
@@ -345,12 +364,14 @@ declare module '@tanstack/react-router' {
 
 interface AdminRouteRouteChildren {
   AdminAreasRoute: typeof AdminAreasRoute
+  AdminContactSettingsRoute: typeof AdminContactSettingsRoute
   AdminUsersRoute: typeof AdminUsersRoute
   AdminIndexRoute: typeof AdminIndexRoute
 }
 
 const AdminRouteRouteChildren: AdminRouteRouteChildren = {
   AdminAreasRoute: AdminAreasRoute,
+  AdminContactSettingsRoute: AdminContactSettingsRoute,
   AdminUsersRoute: AdminUsersRoute,
   AdminIndexRoute: AdminIndexRoute,
 }

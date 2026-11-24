@@ -59,7 +59,8 @@ const CONTACT_FIELDS: Readonly<Record<ContactKind, readonly ContactField[]>> = {
 };
 
 /** The built-in fields that only users with a matching area see; the address counts as one. */
-type BuiltinProtectedField = 'address' | 'birthDate' | 'entryDate' | 'exitDate';
+const BUILTIN_PROTECTED_FIELD_KEYS = ['address', 'birthDate', 'entryDate', 'exitDate'] as const;
+type BuiltinProtectedField = (typeof BUILTIN_PROTECTED_FIELD_KEYS)[number];
 
 const BUILTIN_PROTECTED_FIELDS: Readonly<Record<ContactKind, readonly BuiltinProtectedField[]>> = {
 	member: ['birthDate', 'entryDate', 'exitDate', 'address'],
@@ -106,6 +107,7 @@ const PROTECTIONS = ['base', 'protected'] as const;
 type Protection = (typeof PROTECTIONS)[number];
 
 export {
+	BUILTIN_PROTECTED_FIELD_KEYS,
 	BUILTIN_PROTECTED_FIELDS,
 	CONTACT_FIELDS,
 	CONTACT_KINDS,

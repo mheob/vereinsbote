@@ -76,5 +76,20 @@ function resolveLocale(
 	return preferredLocale(input.acceptLanguage) ?? DEFAULT_LOCALE;
 }
 
-export { DEFAULT_LOCALE, LOCALE_COOKIE, SUPPORTED_LOCALES, isLocale, resolveLocale };
+/** The locales dates and numbers are formatted with, one per UI language. */
+const INTL_LOCALES = { de: 'de-DE', en: 'en-US' } as const satisfies Record<Locale, string>;
+
+/**
+ * The locale that formats dates and numbers for a UI language: in `Intl` and in React Aria's
+ * `I18nProvider`, whose dates, numbers and own texts then follow the page's language, not the
+ * browser's.
+ *
+ * @param locale The UI language.
+ * @returns The BCP 47 locale.
+ */
+function intlLocale(locale: Locale): (typeof INTL_LOCALES)[Locale] {
+	return INTL_LOCALES[locale];
+}
+
+export { DEFAULT_LOCALE, LOCALE_COOKIE, SUPPORTED_LOCALES, intlLocale, isLocale, resolveLocale };
 export type { Locale };

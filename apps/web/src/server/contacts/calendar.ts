@@ -1,3 +1,4 @@
+import { intlLocale } from '@/i18n/locale';
 import type { Locale } from '@/i18n/locale';
 
 /** "Today" for the club is the calendar day here, never the server's (UTC) or the browser's. */
@@ -93,7 +94,7 @@ function parseCalendarDate(input: string): DateParseResult {
  * @returns The date, e.g. `17.05.1980` in German.
  */
 function formatCalendarDate(value: string, locale: Locale): string {
-	return new Intl.DateTimeFormat(locale === 'de' ? 'de-DE' : 'en-US', {
+	return new Intl.DateTimeFormat(intlLocale(locale), {
 		dateStyle: 'medium',
 		timeZone: 'UTC',
 	}).format(new Date(`${value}T00:00:00Z`));
@@ -107,7 +108,7 @@ function formatCalendarDate(value: string, locale: Locale): string {
  * @returns The day, e.g. `1. Oktober 2026` in German.
  */
 function formatClubDate(at: Date, locale: Locale): string {
-	return new Intl.DateTimeFormat(locale === 'de' ? 'de-DE' : 'en-US', {
+	return new Intl.DateTimeFormat(intlLocale(locale), {
 		dateStyle: 'long',
 		timeZone: CLUB_TIME_ZONE,
 	}).format(at);

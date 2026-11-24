@@ -10,9 +10,11 @@ import type { Principal } from '@/server/permissions/principal';
 
 import { BUILTIN_PROTECTED_FIELDS, customFieldKey } from './fields';
 import type { ContactKind, CustomFieldType, FieldKey, Protection } from './fields';
-
-const DEFAULT_STALE_IMPORT_WEEKS = 8;
-const MAX_STALE_IMPORT_WEEKS = 52;
+import {
+	DEFAULT_STALE_IMPORT_WEEKS,
+	isValidStaleImportWeeks,
+	MAX_STALE_IMPORT_WEEKS,
+} from './stale-weeks';
 
 /** The areas of the two kinds and the age after which the last import counts as old. */
 interface ContactSettings {
@@ -287,9 +289,7 @@ async function setCustomFieldProtection(
  */
 async function setStaleImportWeeks(db: Db, actor: Principal, weeks: number): Promise<void> {
 	assertAdmin(actor);
-	if (!Number.isInteger(weeks) || weeks < 1 || weeks > MAX_STALE_IMPORT_WEEKS) {
-		throw new StaleImportWeeksInvalidError();
-	}
+	if (!isValidStaleImportWeeks(weeks)) throw new StaleImportWeeksInvalidError();
 	await db.transaction(async (tx) => {
 		await tx
 			.insert(contactSettings)
@@ -304,13 +304,11 @@ async function setStaleImportWeeks(db: Db, actor: Principal, weeks: number): Pro
 }
 
 export {
-	DEFAULT_STALE_IMPORT_WEEKS,
 	FieldAreasEmptyError,
 	getContactSettings,
 	getFieldAreas,
 	kindAreaId,
 	listCustomFields,
-	MAX_STALE_IMPORT_WEEKS,
 	saveContactAreas,
 	setContactAreas,
 	setCustomFieldProtection,
