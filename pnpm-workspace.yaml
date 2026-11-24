@@ -60,6 +60,9 @@ overrides:
   # drizzle-kit's loader (@esbuild-kit/core-utils) pins esbuild 0.18, whose dev server lets any
   # website read its responses (GHSA-67mh-4wv8-2f99, fixed in 0.25.0). Lifts only that package's esbuild.
   "@esbuild-kit/core-utils>esbuild": "catalog:"
+  # drizzle-kit itself (newest stable 0.31.11) asks for esbuild ^0.25. Snyk rates esbuild below 0.28.1
+  # critical: its `installFromNPM` fetches the binary over an insecure protocol. Lifts only that esbuild.
+  "drizzle-kit>esbuild": "catalog:"
 
 # Supply-chain protection, all supported by pnpm 12:
 # A dependency's install script runs only when `allowBuilds` lists it; any other fails the install.

@@ -223,7 +223,7 @@ Versions, the changelog, git tags and GitHub Releases come from [Changesets](htt
   - It runs install scripts only for packages listed in `allowBuilds` (`strictDepBuilds`).
   - Transitive dependencies come from the registry only (`blockExoticSubdeps`).
   - Exceptions are listed in the file with their reasons.
-  - `overrides` lift vulnerable transitive versions: drizzle-kit's loader (`@esbuild-kit/core-utils`) pins esbuild 0.18, which has a dev server advisory (fixed in 0.25), so every esbuild below 0.25 resolves to the catalog version. `vite` and `vitest` follow the catalog as well (Vite+).
+  - `overrides` lift vulnerable transitive versions: drizzle-kit's loader (`@esbuild-kit/core-utils`) pins esbuild 0.18, which has a dev server advisory (fixed in 0.25), and drizzle-kit itself asks for esbuild 0.25, which Snyk rates critical (insecure binary download in `installFromNPM`, fixed in 0.28.1). Both scoped overrides resolve that esbuild to the catalog version. `vite` and `vitest` follow the catalog as well (Vite+).
 
 ### Keeping the pins current with Renovate
 
