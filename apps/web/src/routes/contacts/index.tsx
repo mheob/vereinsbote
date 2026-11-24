@@ -1,11 +1,21 @@
-import { createFileRoute, useLoaderData, useRouter, useSearch } from '@tanstack/react-router';
-import { useState } from 'react';
+import {
+	createFileRoute,
+	Link,
+	useLoaderData,
+	useLocation,
+	useRouteContext,
+	useRouter,
+	useSearch,
+} from '@tanstack/react-router';
+import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Tab, TabList, TabPanel, Tabs } from 'react-aria-components';
 import { z } from 'zod';
 
 import { Announcements, useAnnouncer } from '@/components/announcements';
 import { ContactList } from '@/components/contacts/contact-list';
+import { clearHistoryNotice } from '@/components/contacts/history-notice';
+import { linkClass } from '@/components/styles';
 import { searchContacts } from '@/functions/contacts';
 import { contactsPageHead } from '@/i18n/page-title';
 import type { ContactsTitleContext } from '@/i18n/page-title';
@@ -36,6 +46,9 @@ export const Route = createFileRoute('/contacts/')({
 		const router = useRouter();
 		const kind = useSearch({ from: '/contacts/', select: (search) => search.kind ?? DEFAULT_KIND });
 		const data = useLoaderData({ from: '/contacts/' });
+		const { access } = useRouteContext({ from: '/contacts' });
+		const deleted = useLocation({ select: (location) => location.state.deletedContact });
+		const headingRef = useRef<HTMLHeadingElement>(null);
 		const [announcement, announce] = useAnnouncer();
 		const [announcedKind, setAnnouncedKind] = useState(kind);
 		if (announcedKind !== kind) {
@@ -43,12 +56,21 @@ export const Route = createFileRoute('/contacts/')({
 			setAnnouncedKind(kind);
 			announce('', 'status');
 		}
+		useEffect(() => {
+			// A partner was deleted on its page, which is gone: the focus starts here again.
+			if (deleted === undefined) return;
+			headingRef.current?.focus();
+			announce(t('partner.deleted', { name: deleted }), 'status');
+			clearHistoryNotice(globalThis.history, 'deletedContact');
+		}, [announce, deleted, t]);
 		// Without access the layout shows "no access" instead of this page.
 		if (data === null) return null;
 		return (
 			<>
 				<div className="flex flex-col gap-2">
-					<h1 className="text-2xl font-bold">{t('contacts.title')}</h1>
+					<h1 className="text-2xl font-bold" ref={headingRef} tabIndex={-1}>
+						{t('contacts.title')}
+					</h1>
 					<Announcements announcement={announcement} />
 				</div>
 				{/* The tabs are links: the kind is the page's address, the router keeps the frame. */}
@@ -73,6 +95,11 @@ export const Route = createFileRoute('/contacts/')({
 					{/* One panel per tab; only the selected one renders, with a list that starts empty. */}
 					{CONTACT_KINDS.map((panel) => (
 						<TabPanel className="flex flex-col gap-6 pt-6 outline-none" id={panel} key={panel}>
+							{panel === kind && kind === 'partner' && access.canManage.partner ? (
+								<Link className={`self-start ${linkClass}`} to="/contacts/new">
+									{t('partner.newTitle')}
+								</Link>
+							) : null}
 							{panel === kind ? (
 								<ContactList announce={announce} initial={data} kind={kind} />
 							) : null}
@@ -82,6 +109,10 @@ export const Route = createFileRoute('/contacts/')({
 			</>
 		);
 	},
+	// The list keeps its first page as its own state (search and page change replace it), so a
+	// cached page would stay on screen after a change elsewhere, e.g. a deleted partner. Each
+	// visit loads the list anew.
+	gcTime: 0,
 	head: (context: ContactsTitleContext) => contactsPageHead(context, 'contacts.title'),
 	validateSearch: contactsSearch,
 

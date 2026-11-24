@@ -83,28 +83,33 @@ const PROTECTED_VALUE_FIELDS = [
 
 /** A contact as one user may see it. */
 interface ContactDetail {
-	id: string;
-	kind: ContactKind;
-	memberNumber: string | null;
-	customerNumber: string | null;
-	organization: string | null;
-	firstName: string | null;
-	lastName: string | null;
-	email: string | null;
-	gender: Gender;
-	groups: string[];
-	tags: string[];
-	name: DisplayName;
+	readonly id: string;
+	readonly kind: ContactKind;
+	readonly memberNumber: string | null;
+	readonly customerNumber: string | null;
+	readonly organization: string | null;
+	readonly firstName: string | null;
+	readonly lastName: string | null;
+	readonly email: string | null;
+	readonly gender: Gender;
+	readonly groups: readonly string[];
+	readonly tags: readonly string[];
+	readonly name: DisplayName;
 	/** Only the visible fields that have a value. */
-	protectedValues: Partial<Record<ProtectedValueField, string>>;
+	readonly protectedValues: Readonly<Partial<Record<ProtectedValueField, string>>>;
 	/** Only the visible custom fields that have a value, oldest field first. */
-	customValues: { id: string; name: string; type: CustomFieldType; value: string }[];
-	suppression: { at: string } | null;
+	readonly customValues: readonly Readonly<{
+		id: string;
+		name: string;
+		type: CustomFieldType;
+		value: string;
+	}>[];
+	readonly suppression: Readonly<{ at: string }> | null;
 	/** The opt-outs per area, by area name. */
-	optOuts: { areaId: string; areaName: string; at: string }[];
-	canManage: boolean;
+	readonly optOuts: readonly Readonly<{ areaId: string; areaName: string; at: string }>[];
+	readonly canManage: boolean;
 	/** All areas by name, for setting opt-outs; empty without `canManage`. */
-	areas: { id: string; name: string }[];
+	readonly areas: readonly Readonly<{ id: string; name: string }>[];
 }
 
 /**

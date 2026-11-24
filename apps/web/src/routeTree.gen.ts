@@ -20,6 +20,8 @@ import { Route as AdminUsersRouteImport } from './routes/admin/users'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as ApiTickRouteImport } from './routes/api/tick'
 import { Route as ContactsIndexRouteImport } from './routes/contacts/index'
+import { Route as ContactsContactIdRouteImport } from './routes/contacts/$contactId'
+import { Route as ContactsNewRouteImport } from './routes/contacts/new'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ContactsImportMembersRouteImport } from './routes/contacts/import/members'
 import { Route as ContactsImportPartnersRouteImport } from './routes/contacts/import/partners'
@@ -79,6 +81,16 @@ const ContactsIndexRoute = ContactsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => ContactsRouteRoute,
 } as any)
+const ContactsContactIdRoute = ContactsContactIdRouteImport.update({
+  id: '/$contactId',
+  path: '/$contactId',
+  getParentRoute: () => ContactsRouteRoute,
+} as any)
+const ContactsNewRoute = ContactsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => ContactsRouteRoute,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -105,6 +117,8 @@ export interface FileRoutesByFullPath {
   '/admin/users': typeof AdminUsersRoute
   '/api/health': typeof ApiHealthRoute
   '/api/tick': typeof ApiTickRoute
+  '/contacts/$contactId': typeof ContactsContactIdRoute
+  '/contacts/new': typeof ContactsNewRoute
   '/admin/': typeof AdminIndexRoute
   '/contacts/': typeof ContactsIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -119,6 +133,8 @@ export interface FileRoutesByTo {
   '/admin/users': typeof AdminUsersRoute
   '/api/health': typeof ApiHealthRoute
   '/api/tick': typeof ApiTickRoute
+  '/contacts/$contactId': typeof ContactsContactIdRoute
+  '/contacts/new': typeof ContactsNewRoute
   '/admin': typeof AdminIndexRoute
   '/contacts': typeof ContactsIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -136,6 +152,8 @@ export interface FileRoutesById {
   '/admin/users': typeof AdminUsersRoute
   '/api/health': typeof ApiHealthRoute
   '/api/tick': typeof ApiTickRoute
+  '/contacts/$contactId': typeof ContactsContactIdRoute
+  '/contacts/new': typeof ContactsNewRoute
   '/admin/': typeof AdminIndexRoute
   '/contacts/': typeof ContactsIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -154,6 +172,8 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/api/health'
     | '/api/tick'
+    | '/contacts/$contactId'
+    | '/contacts/new'
     | '/admin/'
     | '/contacts/'
     | '/api/auth/$'
@@ -168,6 +188,8 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/api/health'
     | '/api/tick'
+    | '/contacts/$contactId'
+    | '/contacts/new'
     | '/admin'
     | '/contacts'
     | '/api/auth/$'
@@ -184,6 +206,8 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/api/health'
     | '/api/tick'
+    | '/contacts/$contactId'
+    | '/contacts/new'
     | '/admin/'
     | '/contacts/'
     | '/api/auth/$'
@@ -281,6 +305,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ContactsIndexRouteImport
       parentRoute: typeof ContactsRouteRoute
     }
+    '/contacts/$contactId': {
+      id: '/contacts/$contactId'
+      path: '/$contactId'
+      fullPath: '/contacts/$contactId'
+      preLoaderRoute: typeof ContactsContactIdRouteImport
+      parentRoute: typeof ContactsRouteRoute
+    }
+    '/contacts/new': {
+      id: '/contacts/new'
+      path: '/new'
+      fullPath: '/contacts/new'
+      preLoaderRoute: typeof ContactsNewRouteImport
+      parentRoute: typeof ContactsRouteRoute
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -322,12 +360,16 @@ const AdminRouteRouteWithChildren = AdminRouteRoute._addFileChildren(
 )
 
 interface ContactsRouteRouteChildren {
+  ContactsContactIdRoute: typeof ContactsContactIdRoute
+  ContactsNewRoute: typeof ContactsNewRoute
   ContactsIndexRoute: typeof ContactsIndexRoute
   ContactsImportMembersRoute: typeof ContactsImportMembersRoute
   ContactsImportPartnersRoute: typeof ContactsImportPartnersRoute
 }
 
 const ContactsRouteRouteChildren: ContactsRouteRouteChildren = {
+  ContactsContactIdRoute: ContactsContactIdRoute,
+  ContactsNewRoute: ContactsNewRoute,
   ContactsIndexRoute: ContactsIndexRoute,
   ContactsImportMembersRoute: ContactsImportMembersRoute,
   ContactsImportPartnersRoute: ContactsImportPartnersRoute,

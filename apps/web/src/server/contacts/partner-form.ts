@@ -2,8 +2,11 @@
  * The partner form: the checks the server makes and the browser repeats before sending, and the
  * rule for tags. No server imports: the browser uses this module too.
  */
+import { z } from 'zod';
+
 import { normalizeEmail } from '@/server/auth/email';
 import { parseCalendarDate } from '@/server/contacts/calendar';
+import { GENDERS } from '@/server/contacts/fields';
 import type { CustomFieldType, Gender } from '@/server/contacts/fields';
 import {
 	cleanText,
@@ -16,6 +19,16 @@ import {
 const MAX_TAGS = 20;
 /** At most this many characters per tag. */
 const MAX_TAG_LENGTH = 40;
+
+/**
+ * The longest text a request may carry in one field: above every field's limit, so a value that is
+ * too long is refused as a field error; anything longer is no form the app sends.
+ */
+const MAX_PARTNER_INPUT_LENGTH = 1000;
+/** At most this many tags per request; more than `MAX_TAGS` are refused as a field error. */
+const MAX_TAG_INPUTS = 100;
+/** At most this many custom values per request. */
+const MAX_CUSTOM_INPUTS = 500;
 
 /**
  * A field of the form that can have an error. `name` (organization, first and last name all
@@ -54,6 +67,30 @@ interface PartnerInput {
 	/** Custom field id → value; an empty value removes it. */
 	readonly custom?: Readonly<Record<string, string>>;
 }
+
+const inputText = z.string().max(MAX_PARTNER_INPUT_LENGTH);
+
+/**
+ * The partner form as a request carries it. It bounds the request only; the field rules are
+ * `checkPartnerInput`'s, so a refused value comes back as a field error.
+ */
+const partnerInputSchema = z.object({
+	birthDate: inputText.optional(),
+	city: inputText.optional(),
+	custom: z
+		.record(z.uuid(), inputText)
+		.refine((custom) => Object.keys(custom).length <= MAX_CUSTOM_INPUTS)
+		.optional(),
+	customerNumber: inputText,
+	email: inputText,
+	firstName: inputText,
+	gender: z.enum(GENDERS),
+	lastName: inputText,
+	organization: inputText,
+	postalCode: inputText.optional(),
+	street: inputText.optional(),
+	tags: z.array(inputText).max(MAX_TAG_INPUTS),
+});
 
 /** `taken` comes from the server only: another partner has the customer number. */
 type PartnerFieldError = 'invalid' | 'required' | 'taken';
@@ -318,7 +355,15 @@ function invalidPartnerFields(
 	return checked.ok ? {} : checked.errors;
 }
 
-export { checkPartnerInput, invalidPartnerFields, MAX_TAG_LENGTH, MAX_TAGS, normalizeTags };
+export {
+	checkPartnerInput,
+	invalidPartnerFields,
+	MAX_PARTNER_INPUT_LENGTH,
+	MAX_TAG_LENGTH,
+	MAX_TAGS,
+	normalizeTags,
+	partnerInputSchema,
+};
 export type {
 	PartnerCheck,
 	PartnerCustomField,

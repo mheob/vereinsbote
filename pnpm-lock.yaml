@@ -188,6 +188,9 @@ catalogs:
     '@electric-sql/pglite':
       specifier: ^0.6.0
       version: 0.6.0
+    '@internationalized/date':
+      specifier: ^3.12.4
+      version: 3.12.4
     '@mheob/changeset-changelog':
       specifier: ^3.0.2
       version: 3.0.2
@@ -379,6 +382,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@internationalized/date':
+        specifier: 'catalog:'
+        version: 3.12.4
       '@neondatabase/serverless':
         specifier: 'catalog:'
         version: 1.2.1

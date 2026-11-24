@@ -8,6 +8,7 @@ import { createTestDb } from '@/server/db/test-db';
 import { ForbiddenError } from '@/server/permissions/principal';
 
 import { getContact, listContacts } from './contacts';
+import { ContactNotFoundError } from './errors';
 import { getImportState } from './import-state';
 import {
 	auditTarget,
@@ -114,7 +115,15 @@ describe(setSuppression, () => {
 		const db = await createTestDb();
 		const { membersAreaId } = await setUpClub(db);
 		const editor = await userWith(db, { [membersAreaId]: 'edit' });
-		await expect(setSuppression(db, editor, UNKNOWN_ID, true)).rejects.toThrow('Unknown contact.');
+		await expect(setSuppression(db, editor, UNKNOWN_ID, true)).rejects.toBeInstanceOf(
+			ContactNotFoundError,
+		);
+		const optOut = setOptOut(db, editor, {
+			areaId: membersAreaId,
+			contactId: UNKNOWN_ID,
+			optedOut: true,
+		});
+		await expect(optOut).rejects.toBeInstanceOf(ContactNotFoundError);
 	});
 
 	it('keeps a suppression when the member is deleted and applies it on return', async () => {

@@ -15,6 +15,7 @@ import { createTestDb } from '@/server/db/test-db';
 import { ForbiddenError } from '@/server/permissions/principal';
 import type { Principal } from '@/server/permissions/principal';
 
+import { ContactNotFoundError } from './errors';
 import type { ContactKind, CustomFieldType } from './fields';
 import { getImportState } from './import-state';
 import type { PartnerInput } from './partner-form';
@@ -22,8 +23,10 @@ import {
 	createPartner,
 	CustomerNumberTakenError,
 	deletePartner,
+	getPartnerForm,
 	listTags,
 	PartnerInputInvalidError,
+	savePartner,
 	updatePartner,
 } from './partners';
 import { setFieldAreas } from './settings';
@@ -330,10 +333,12 @@ describe(updatePartner, () => {
 			lastName: 'Mitglied',
 			organization: null,
 		});
-		await expect(updatePartner(db, editor, UNKNOWN_ID, stadtwerke)).rejects.toThrow(
-			'Unknown contact.',
+		await expect(updatePartner(db, editor, UNKNOWN_ID, stadtwerke)).rejects.toBeInstanceOf(
+			ContactNotFoundError,
 		);
-		await expect(deletePartner(db, editor, UNKNOWN_ID)).rejects.toThrow('Unknown contact.');
+		await expect(deletePartner(db, editor, UNKNOWN_ID)).rejects.toBeInstanceOf(
+			ContactNotFoundError,
+		);
 		await expect(partnerVersion(db)).resolves.toBe(0);
 	});
 
@@ -582,6 +587,187 @@ describe(listTags, () => {
 		});
 		await expect(stored(db, contactId)).resolves.toMatchObject({ tags: ['Sponsor', 'Presse'] });
 		await expect(listTags(db)).resolves.toStrictEqual(['Presse', 'Sponsor']);
+	});
+});
+
+describe(getPartnerForm, () => {
+	it('requires edit in the partner area and refuses members and unknown contacts', async () => {
+		const db = await createTestDb();
+		const { admin, editor, membersAreaId, partnersAreaId } = await partnerClub(db);
+		const memberId = await insertContact(db, { kind: 'member', lastName: 'Mitglied' });
+		const refused = [
+			await userWith(db, { [partnersAreaId]: 'read' }),
+			await userWith(db, { [membersAreaId]: 'edit' }),
+			await userWith(db, {}, { isAdmin: true }),
+			admin,
+		];
+		for (const principal of refused) {
+			// oxlint-disable-next-line no-await-in-loop -- one refusal after the other
+			await expect(getPartnerForm(db, principal, null)).rejects.toBeInstanceOf(ForbiddenError);
+		}
+		await expect(getPartnerForm(db, editor, memberId)).rejects.toBeInstanceOf(ForbiddenError);
+		await expect(getPartnerForm(db, editor, UNKNOWN_ID)).rejects.toBeInstanceOf(
+			ContactNotFoundError,
+		);
+	});
+
+	it('gives a new partner an empty form with the fields the user sees', async () => {
+		const db = await createTestDb();
+		const { admin, editor, membersAreaId } = await partnerClub(db);
+		await insertContact(db, { kind: 'partner', tags: ['Sponsor', 'Presse'] });
+		const baseId = await insertCustomField(db, {
+			kind: 'partner',
+			name: 'Ansprechpartner',
+			protection: 'base',
+			type: 'text',
+		});
+		const hiddenId = await insertCustomField(db, {
+			kind: 'partner',
+			name: 'Bonität',
+			protection: 'protected',
+			type: 'text',
+		});
+		const visibleId = await insertCustomField(db, {
+			kind: 'partner',
+			name: 'Vertrag bis',
+			protection: 'protected',
+			type: 'date',
+		});
+		await insertCustomField(db, {
+			kind: 'member',
+			name: 'Spind',
+			protection: 'base',
+			type: 'text',
+		});
+		await setFieldAreas(db, admin, {
+			areaIds: [membersAreaId],
+			fieldKey: `custom:${hiddenId}`,
+			kind: 'partner',
+		});
+		await setFieldAreas(db, admin, {
+			areaIds: [membersAreaId],
+			fieldKey: 'birthDate',
+			kind: 'partner',
+		});
+		const form = await getPartnerForm(db, editor, null);
+		expect(form).toStrictEqual({
+			customFields: [
+				{ id: baseId, kind: 'partner', name: 'Ansprechpartner', protection: 'base', type: 'text' },
+				{
+					id: visibleId,
+					kind: 'partner',
+					name: 'Vertrag bis',
+					protection: 'protected',
+					type: 'date',
+				},
+			],
+			protectedFields: ['street', 'postalCode', 'city'],
+			tagSuggestions: ['Presse', 'Sponsor'],
+			values: null,
+		});
+	});
+
+	it('fills the form of a stored partner with the values the user sees', async () => {
+		const db = await createTestDb();
+		const { admin, editor, membersAreaId } = await partnerClub(db);
+		const visibleId = await insertCustomField(db, {
+			kind: 'partner',
+			name: 'Vertrag bis',
+			protection: 'protected',
+			type: 'date',
+		});
+		const emptyId = await insertCustomField(db, {
+			kind: 'partner',
+			name: 'Ansprechpartner',
+			protection: 'base',
+			type: 'text',
+		});
+		const hiddenId = await insertCustomField(db, {
+			kind: 'partner',
+			name: 'Bonität',
+			protection: 'protected',
+			type: 'text',
+		});
+		await setFieldAreas(db, admin, {
+			areaIds: [membersAreaId],
+			fieldKey: `custom:${hiddenId}`,
+			kind: 'partner',
+		});
+		await setFieldAreas(db, admin, {
+			areaIds: [membersAreaId],
+			fieldKey: 'address',
+			kind: 'partner',
+		});
+		const partnerId = await insertContact(db, {
+			birthDate: '1980-05-17',
+			city: 'Musterstadt',
+			customValues: { [hiddenId]: 'gut', [visibleId]: '2027-12-31' },
+			customerNumber: '100009',
+			email: 'presse@stadtwerke.example',
+			gender: 'female',
+			kind: 'partner',
+			organization: 'Stadtwerke',
+			street: 'Hauptstr. 1',
+			tags: ['Presse'],
+		});
+		const form = await getPartnerForm(db, editor, partnerId);
+		expect(form.protectedFields).toStrictEqual(['birthDate']);
+		// Hidden values never leave the server: no address, no "Bonität".
+		expect(form.values).toStrictEqual({
+			birthDate: '1980-05-17',
+			custom: { [emptyId]: '', [visibleId]: '2027-12-31' },
+			customerNumber: '100009',
+			email: 'presse@stadtwerke.example',
+			firstName: '',
+			gender: 'female',
+			lastName: '',
+			organization: 'Stadtwerke',
+			tags: ['Presse'],
+		});
+	});
+});
+
+describe(savePartner, () => {
+	it('creates a partner without id and edits the one with id', async () => {
+		const db = await createTestDb();
+		const { editor } = await partnerClub(db);
+		const created = await savePartner(db, editor, stadtwerke);
+		const rows = await db.select({ id: contacts.id }).from(contacts);
+		expect(rows.map((row) => ({ contactId: row.id, ok: true }))).toStrictEqual([created]);
+		const { contactId } = await createPartner(db, editor, {
+			...stadtwerke,
+			organization: 'Druckerei',
+		});
+		const edited = await savePartner(db, editor, {
+			...stadtwerke,
+			contactId,
+			organization: 'Druckerei Nord',
+		});
+		expect(edited).toStrictEqual({ contactId, ok: true });
+		await expect(stored(db, contactId)).resolves.toHaveProperty('organization', 'Druckerei Nord');
+	});
+
+	it('gives refused fields, a taken customer number and an unknown partner as results', async () => {
+		const db = await createTestDb();
+		const { editor } = await partnerClub(db);
+		await createPartner(db, editor, { ...stadtwerke, customerNumber: '100001' });
+		const results = [
+			await savePartner(db, editor, { ...stadtwerke, organization: '' }),
+			await savePartner(db, editor, { ...stadtwerke, customerNumber: '100001' }),
+			await savePartner(db, editor, { ...stadtwerke, contactId: UNKNOWN_ID }),
+		];
+		expect(results).toStrictEqual([
+			{ fields: { name: 'required' }, ok: false },
+			{ fields: { customerNumber: 'taken' }, ok: false },
+			{ failure: 'contactNotFound', ok: false },
+		]);
+	});
+
+	it('still refuses a user without the right', async () => {
+		const db = await createTestDb();
+		const { partnersAreaId } = await partnerClub(db);
+		const reader = await userWith(db, { [partnersAreaId]: 'read' });
+		await expect(savePartner(db, reader, stadtwerke)).rejects.toBeInstanceOf(ForbiddenError);
 	});
 });
 

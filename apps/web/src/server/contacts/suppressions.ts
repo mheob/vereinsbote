@@ -7,6 +7,7 @@ import type { Principal } from '@/server/permissions/principal';
 
 import { assertCanList, assertCanManage, loadContactAccess } from './access';
 import type { ContactAccess } from './access';
+import { ContactNotFoundError } from './errors';
 import type { ContactKind } from './fields';
 import { bumpStockVersion, lockImportState } from './import-state';
 
@@ -69,7 +70,7 @@ function auditTarget(
  * @param contactId The contact.
  * @returns The contact and its key.
  * @throws {ForbiddenError} Without `edit` in the area of the kind.
- * @throws {Error} For an unknown contact.
+ * @throws {ContactNotFoundError} For an unknown contact.
  */
 async function loadManagedContact(
 	tx: Db,
@@ -80,7 +81,7 @@ async function loadManagedContact(
 		.select({ kind: contacts.kind })
 		.from(contacts)
 		.where(eq(contacts.id, contactId));
-	if (found === undefined) throw new Error('Unknown contact.');
+	if (found === undefined) throw new ContactNotFoundError();
 	assertCanManage(access, found.kind);
 	await lockImportState(tx, found.kind);
 	const [row] = await tx
@@ -94,7 +95,7 @@ async function loadManagedContact(
 		.from(contacts)
 		.where(eq(contacts.id, contactId));
 	// Deleted while this waited for the lock.
-	if (row === undefined) throw new Error('Unknown contact.');
+	if (row === undefined) throw new ContactNotFoundError();
 	const key = contactKey(row);
 	if (key === null) throw new Error('The contact has no key.');
 	return { contact: row, key };
@@ -126,7 +127,7 @@ async function listingAccess(db: Db, principal: Principal): Promise<ContactAcces
  * @param contactId The contact.
  * @param suppressed Whether the contact is suppressed afterwards.
  * @throws {ForbiddenError} Without the right.
- * @throws {Error} For an unknown contact.
+ * @throws {ContactNotFoundError} For an unknown contact.
  */
 // oxlint-disable-next-line max-params -- the plan's interface fixes these parameters
 async function setSuppression(
@@ -172,7 +173,7 @@ async function setSuppression(
  * @param principal Who acts; needs `edit` in the area of the contact's kind.
  * @param input The contact, the area and whether the contact objects afterwards.
  * @throws {ForbiddenError} Without the right.
- * @throws {Error} For an unknown contact.
+ * @throws {ContactNotFoundError} For an unknown contact.
  * @throws {UnknownAreaError} For an unknown area.
  */
 async function setOptOut(

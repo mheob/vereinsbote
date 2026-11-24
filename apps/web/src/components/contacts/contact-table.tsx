@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { Link } from '@tanstack/react-router';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { Button, Cell, Column, Row, Table, TableBody, TableHeader } from 'react-aria-components';
 
-import { secondaryButtonClass } from '@/components/styles';
+import { linkClass, secondaryButtonClass } from '@/components/styles';
 import { useT } from '@/i18n/use-t';
 import type { ContactListItem } from '@/server/contacts/contacts';
 import type { ContactKind } from '@/server/contacts/fields';
@@ -17,9 +18,27 @@ const rowClass =
 	'border-b border-gray-300 outline-none data-focus-visible:outline-2 data-focus-visible:-outline-offset-2 data-focus-visible:outline-blue-700';
 
 /**
- * One page of contacts: number, name (with the contact person of an organization below it),
- * address, groups (members) or tags (partners) and whether the contact is suppressed. Without
- * contacts the table says so; that text is the only place of it on the page.
+ * The name of a contact as the link to its page.
+ *
+ * @param props The props.
+ * @param props.id The contact.
+ * @param props.name The name as the list shows it.
+ * @returns The link.
+ */
+function ContactLink({ id, name }: Readonly<{ id: string; name: string }>): ReactNode {
+	const params = useMemo(() => ({ contactId: id }), [id]);
+	return (
+		<Link className={linkClass} params={params} to="/contacts/$contactId">
+			{name}
+		</Link>
+	);
+}
+
+/**
+ * One page of contacts: number, name as the link to the contact (with the contact person of an
+ * organization below it), address, groups (members) or tags (partners) and whether the contact
+ * is suppressed. Without contacts the table says so; that text is the only place of it on the
+ * page.
  *
  * @param props The props.
  * @param props.items The contacts of the page.
@@ -61,7 +80,7 @@ export function ContactTable({
 						<Row className={rowClass} id={item.id}>
 							<Cell className={cellClass}>{item.number}</Cell>
 							<Cell className={cellClass}>
-								<span className="block">{item.name.primary}</span>
+								<ContactLink id={item.id} name={item.name.primary} />
 								{item.name.secondary === null ? null : (
 									<span className="block text-sm text-gray-700">{item.name.secondary}</span>
 								)}

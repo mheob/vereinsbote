@@ -15,6 +15,7 @@ const ON_SUBMIT_FORMS = [
 	'admin/areas-table.tsx',
 	'contacts/contact-search.tsx',
 	'contacts/import/mapping-step.tsx',
+	'contacts/partner-form.tsx',
 	'contacts/import/preview-step.tsx',
 	'../routes/setup.tsx',
 ];

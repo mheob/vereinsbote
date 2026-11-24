@@ -3,9 +3,11 @@ import { describe, expect, it } from 'vite-plus/test';
 import {
 	checkPartnerInput,
 	invalidPartnerFields,
+	MAX_PARTNER_INPUT_LENGTH,
 	MAX_TAG_LENGTH,
 	MAX_TAGS,
 	normalizeTags,
+	partnerInputSchema,
 } from './partner-form';
 import type { PartnerInput } from './partner-form';
 
@@ -242,5 +244,49 @@ describe(normalizeTags, () => {
 			'Jugend',
 		]);
 		expect(normalizeTags(['presse'], ['Presse', 'PRESSE'])).toStrictEqual(['Presse']);
+	});
+});
+
+describe('the partner input schema', () => {
+	const CONTRACT_ID = '0f8fad5b-d9cb-469f-a165-70867728950e';
+	const full: PartnerInput = {
+		...stadtwerke,
+		birthDate: '1980-05-17',
+		city: 'Musterstadt',
+		custom: { [CONTRACT_ID]: '2027-12-31' },
+		postalCode: '12345',
+		street: 'Hauptstr. 1',
+		tags: ['Presse'],
+	};
+
+	it('takes the form as the browser sends it', () => {
+		expect(partnerInputSchema.parse(full)).toStrictEqual(full);
+		expect(partnerInputSchema.parse(emptyPartner)).toStrictEqual(emptyPartner);
+	});
+
+	it('leaves the field rules to the check, but refuses what no form sends', () => {
+		// Too long for the field, short enough for the schema: a field error, not a broken request.
+		const long = 's'.repeat(MAX_PARTNER_INPUT_LENGTH);
+		const manyCustomValues = Array.from({ length: 501 }, (_, index): [string, string] => [
+			`0f8fad5b-d9cb-469f-a165-${String(index).padStart(12, '0')}`,
+			'x',
+		]);
+		expect(partnerInputSchema.safeParse({ ...full, street: long }).success).toBe(true);
+		const refused = [
+			{ ...full, street: `${long}s` },
+			{ ...full, tags: [`${long}s`] },
+			{ ...full, tags: Array.from({ length: 101 }, (_, index) => `Tag ${index}`) },
+			{ ...full, custom: { 'not-an-id': 'x' } },
+			{ ...full, custom: Object.fromEntries(manyCustomValues) },
+			{ ...full, gender: 'robot' },
+		];
+		expect(refused.map((input) => partnerInputSchema.safeParse(input).success)).toStrictEqual([
+			false,
+			false,
+			false,
+			false,
+			false,
+			false,
+		]);
 	});
 });

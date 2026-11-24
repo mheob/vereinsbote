@@ -14,12 +14,15 @@ import type { Principal } from '@/server/permissions/principal';
 
 import { assertCanManage, loadContactAccess } from './access';
 import type { ContactAccess } from './access';
+import { CONTACT_GONE, ContactNotFoundError } from './errors';
+import type { ContactGone } from './errors';
 import { customFieldKey, protectedFieldOf } from './fields';
 import type { Gender } from './fields';
 import { bumpStockVersion, lockImportState } from './import-state';
 import { checkPartnerInput, normalizeTags } from './partner-form';
 import type { PartnerFieldErrors, PartnerInput, PartnerValues } from './partner-form';
 import { listCustomFields } from './settings';
+import type { CustomFieldRecord } from './settings';
 import { auditTarget, copyContactKey, rekeyContactKey } from './suppressions';
 
 /** The form has fields the server refuses; `fields` names them, never their values. */
@@ -41,8 +44,29 @@ class CustomerNumberTakenError extends Error {
 	}
 }
 
-/** The protected built-in fields the form can carry. */
+/** The protected built-in fields the form can carry, in form order. */
 const PROTECTED_INPUT_FIELDS = ['birthDate', 'street', 'postalCode', 'city'] as const;
+
+/** A protected built-in field of the partner form. */
+type PartnerProtectedField = (typeof PROTECTED_INPUT_FIELDS)[number];
+
+/** The result of saving the partner form; refused fields come back with their reason. */
+type PartnerSaveResult =
+	| Readonly<{ ok: true; contactId: string }>
+	| Readonly<{ ok: false; fields: PartnerFieldErrors }>
+	| ContactGone;
+
+/** What the partner form shows; only fields and values the user sees. */
+interface PartnerForm {
+	/** The stored partner as the form shows it, empty values as `''`; null for a new partner. */
+	readonly values: PartnerInput | null;
+	/** The tags of the partners, for suggestions. */
+	readonly tagSuggestions: readonly string[];
+	/** The protected built-in fields the user sees, in form order. */
+	readonly protectedFields: readonly PartnerProtectedField[];
+	/** The custom fields of the partners the user sees, oldest first. */
+	readonly customFields: readonly Readonly<CustomFieldRecord>[];
+}
 
 /** The columns partner upkeep writes. */
 interface PartnerColumns {
@@ -277,7 +301,7 @@ function partnerTarget(id: string, columns: PartnerColumns): string {
  * @param contactId The contact.
  * @returns The partner.
  * @throws {ForbiddenError} For a member: members are read-only.
- * @throws {Error} For an unknown contact.
+ * @throws {ContactNotFoundError} For an unknown contact.
  */
 async function loadPartner(tx: Db, contactId: string): Promise<StoredPartner> {
 	const [row] = await tx
@@ -300,7 +324,7 @@ async function loadPartner(tx: Db, contactId: string): Promise<StoredPartner> {
 		})
 		.from(contacts)
 		.where(eq(contacts.id, contactId));
-	if (row === undefined) throw new Error('Unknown contact.');
+	if (row === undefined) throw new ContactNotFoundError();
 	const { contactKey: key, id, kind, ...columns } = row;
 	if (kind !== 'partner') throw new ForbiddenError('Forbidden');
 	return { columns, id, key };
@@ -391,7 +415,7 @@ async function createPartner(
  * @throws {ForbiddenError} Without the right, for a field the user does not see, or for a member.
  * @throws {PartnerInputInvalidError} For refused fields.
  * @throws {CustomerNumberTakenError} When another partner has the customer number.
- * @throws {Error} For an unknown contact.
+ * @throws {ContactNotFoundError} For an unknown contact.
  */
 // oxlint-disable-next-line max-params -- the plan's interface fixes these parameters
 async function updatePartner(
@@ -435,7 +459,7 @@ async function updatePartner(
  * @param principal Who acts; needs `edit` in the partners area.
  * @param contactId The partner.
  * @throws {ForbiddenError} Without the right or for a member.
- * @throws {Error} For an unknown contact.
+ * @throws {ContactNotFoundError} For an unknown contact.
  */
 async function deletePartner(db: Db, principal: Principal, contactId: string): Promise<void> {
 	const access = await loadContactAccess(db, principal);
@@ -453,11 +477,114 @@ async function deletePartner(db: Db, principal: Principal, contactId: string): P
 	});
 }
 
+/**
+ * Saves the partner form: creates a partner, or edits the one `contactId` names. Refused fields,
+ * a customer number another partner has (`taken`) and an unknown partner are results, so the
+ * page can show them.
+ *
+ * @param db The database.
+ * @param principal Who acts; needs `edit` in the partners area.
+ * @param request The form and, to edit a partner, its id.
+ * @returns The partner's id, or the refusal.
+ * @throws {ForbiddenError} Without the right, for a field the user does not see, or for a member.
+ */
+async function savePartner(
+	db: Db,
+	principal: Principal,
+	request: Readonly<PartnerInput & { contactId?: string }>,
+): Promise<PartnerSaveResult> {
+	const { contactId, ...input } = request;
+	try {
+		if (contactId === undefined)
+			return { ...(await createPartner(db, principal, input)), ok: true };
+		await updatePartner(db, principal, contactId, input);
+		return { contactId, ok: true };
+	} catch (error) {
+		if (error instanceof PartnerInputInvalidError) return { fields: error.fields, ok: false };
+		if (error instanceof CustomerNumberTakenError) {
+			return { fields: { customerNumber: 'taken' }, ok: false };
+		}
+		if (error instanceof ContactNotFoundError) return CONTACT_GONE;
+		throw error;
+	}
+}
+
+/**
+ * The stored values of a partner as the form shows them: `''` for an empty value, only the
+ * protected and custom fields the user sees.
+ *
+ * @param tx The database.
+ * @param contactId The partner.
+ * @param fields The protected and custom fields the user sees.
+ * @returns The values.
+ * @throws {ContactNotFoundError} For an unknown contact.
+ * @throws {ForbiddenError} For a member: members are read-only.
+ */
+async function storedPartnerInput(
+	tx: Db,
+	contactId: string,
+	fields: Readonly<Pick<PartnerForm, 'customFields' | 'protectedFields'>>,
+): Promise<PartnerInput> {
+	const { columns } = await loadPartner(tx, contactId);
+	const custom = Object.fromEntries(
+		fields.customFields.map((field) => [field.id, ownValue(columns.customValues, field.id) ?? '']),
+	);
+	const shown: Partial<Record<PartnerProtectedField, string>> = {};
+	for (const field of fields.protectedFields) shown[field] = columns[field] ?? '';
+	return {
+		...shown,
+		custom,
+		customerNumber: columns.customerNumber ?? '',
+		email: columns.email ?? '',
+		firstName: columns.firstName ?? '',
+		gender: columns.gender,
+		lastName: columns.lastName ?? '',
+		organization: columns.organization ?? '',
+		tags: [...columns.tags],
+	};
+}
+
+/**
+ * What the partner form needs: the fields the user sees, the tag suggestions and, to edit a
+ * partner, its values. Values of fields the user does not see never leave the server.
+ *
+ * @param db The database.
+ * @param principal Who asks; needs `edit` in the partners area.
+ * @param contactId The partner to edit, or null for a new one.
+ * @returns The form.
+ * @throws {ForbiddenError} Without the right, or for a member: members are read-only.
+ * @throws {ContactNotFoundError} For an unknown contact.
+ */
+async function getPartnerForm(
+	db: Db,
+	principal: Principal,
+	contactId: string | null,
+): Promise<PartnerForm> {
+	const access = await loadContactAccess(db, principal);
+	assertCanManage(access, 'partner');
+	const visible = access.visible.partner;
+	const protectedFields = PROTECTED_INPUT_FIELDS.filter((field) => {
+		const key = protectedFieldOf(field);
+		return key !== null && visible.has(key);
+	});
+	const allCustomFields = await listCustomFields(db, 'partner');
+	const customFields = allCustomFields.filter((field) => visible.has(customFieldKey(field.id)));
+	const fields = { customFields, protectedFields };
+	return {
+		...fields,
+		tagSuggestions: await listTags(db),
+		values: contactId === null ? null : await storedPartnerInput(db, contactId, fields),
+	};
+}
+
 export {
 	createPartner,
 	CustomerNumberTakenError,
 	deletePartner,
+	getPartnerForm,
 	listTags,
 	PartnerInputInvalidError,
+	savePartner,
 	updatePartner,
 };
+export type { PartnerForm, PartnerProtectedField, PartnerSaveResult };

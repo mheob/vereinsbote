@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 
 import { Announcements, useAnnouncer } from '@/components/announcements';
 import type { Announce } from '@/components/announcements';
+import { FAILED, settle } from '@/components/settle';
 import { confirmImport, previewImport } from '@/functions/contact-import';
 import type { ImportPage as ImportPageData, PreviewImportResult } from '@/functions/contact-import';
 import type { MessageKey } from '@/i18n/translate';
@@ -64,24 +65,6 @@ function stepHeading(t: Translate, step: ImportStep): string {
 		step: STEPS.indexOf(step) + 1,
 		steps: STEPS.length,
 	});
-}
-
-/** A server function call that failed (network, server error); the page says so. */
-const FAILED = 'failed';
-
-/**
- * Waits for a server function. The result is undefined when the server redirected (the session
- * ended; the redirect takes over then), although its type does not say so.
- *
- * @param call The call.
- * @returns The result, undefined after a redirect, or `failed` when the call failed.
- */
-async function settle<T>(call: Promise<T>): Promise<T | typeof FAILED | undefined> {
-	try {
-		return await call;
-	} catch {
-		return FAILED;
-	}
 }
 
 /**

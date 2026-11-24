@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import type { Locator, Page, Request } from '@playwright/test';
 
 import { memberExportRows, memberExportXlsx, XLSX_MIME } from './fixtures/member-export';
+import type { MemberExportRow } from './fixtures/member-export';
 import { partnerExportCsv } from './fixtures/partner-export';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { signIn } from './helpers/sign-in';
@@ -29,6 +30,9 @@ test.afterAll(async () => {
 
 /** The second member import keeps the first 30 of the 39 members, so 9 go: more than 20 %. */
 const KEPT_MEMBERS = 30;
+
+/** The status of a page the user may not open. */
+const HTTP_FORBIDDEN = 403;
 
 /** A file as the file chooser gives it. */
 type UploadFile = Readonly<{ name: string; mimeType: string; buffer: Buffer }>;
@@ -269,4 +273,166 @@ test('deletes a partner missing from the export only when it is ticked', async (
 	await admin.goto('/contacts?kind=partner');
 	await expect(admin.getByText('Sporthaus Großmann')).toBeVisible();
 	await expect(admin.getByText('Autohaus Schäfer OHG')).toHaveCount(0);
+});
+
+/**
+ * Opens a member from the contact list: search by last name, then the link of the name.
+ *
+ * @param page The page of a signed-in user.
+ * @param row The member's row of the export.
+ */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- see upload
+async function openMember(page: Page, row: MemberExportRow): Promise<void> {
+	await page.goto('/contacts');
+	const search = page.getByRole('button', { name: 'Suchen' });
+	await expect(search).toBeEnabled();
+	await page.getByLabel('Suche', { exact: true }).fill(row.lastName);
+	await search.click();
+	await expect(page.getByRole('status')).toHaveText('1 Kontakt gefunden.');
+	await page.getByRole('link', { name: `${row.firstName} ${row.lastName}` }).click();
+}
+
+/**
+ * The first member of the export, who stays through the second import.
+ *
+ * @returns The row.
+ */
+function firstMember(): MemberExportRow {
+	const [first] = memberExportRows(new Date());
+	if (first === undefined) throw new Error('The export has no rows.');
+	return first;
+}
+
+// oxlint-disable-next-line max-statements -- one flow, step by step, as the admin sees it
+test('shows a member, suppresses it and records an opt-out', async () => {
+	const first = firstMember();
+	await openMember(admin, first);
+	await expect(admin).toHaveTitle('Kontakt – Vereinsbote');
+	await expect(
+		admin.getByRole('heading', { level: 1, name: `${first.firstName} ${first.lastName}` }),
+	).toBeVisible();
+	// Read in Honolulu and still the same calendar day.
+	const birthday = first.birthday.toLocaleDateString('de-DE', {
+		day: '2-digit',
+		month: '2-digit',
+		timeZone: 'UTC',
+		year: 'numeric',
+	});
+	await expect(admin.getByText(birthday)).toBeVisible();
+	await expect(admin.getByText('Änderungen in der Mitgliederverwaltung vornehmen.')).toBeVisible();
+	await expect(admin.getByRole('button', { name: 'Bearbeiten' })).toHaveCount(0);
+	await expectNoA11yViolations(admin);
+	await admin.getByRole('button', { name: 'Keine Mails mehr' }).click();
+	await expect(admin.getByRole('status')).toHaveText('Der Kontakt bekommt keine Mails mehr.');
+	await expect(admin.getByText(/^Gesperrt seit /u)).toBeVisible();
+	await expect(admin.getByRole('button', { name: 'Sperre aufheben' })).toBeFocused();
+	await tick(admin, 'Widerspruch für Finanzen');
+	await expect(admin.getByRole('status')).toHaveText('Widerspruch für Finanzen gespeichert.');
+	await expectNoA11yViolations(admin);
+	// The list shows the suppression as well.
+	await admin.getByRole('link', { name: 'Zurück zur Kontaktliste' }).click();
+	const name = `${first.firstName} ${first.lastName}`;
+	await expect(admin.getByRole('row', { name })).toContainText('Gesperrt');
+});
+
+// oxlint-disable-next-line max-statements -- one flow, step by step, as the admin sees it
+test('creates, edits and deletes a partner with tags', async () => {
+	await admin.goto('/contacts?kind=partner');
+	await admin.getByRole('link', { name: 'Partner anlegen' }).click();
+	await expect(admin).toHaveTitle('Partner anlegen – Vereinsbote');
+	await admin.getByRole('button', { name: 'Speichern' }).click();
+	await expect(admin.getByText('Bitte gib einen Namen oder eine Firma ein.')).toBeVisible();
+	await expect(
+		admin.getByText('Bitte gib eine Kundennummer oder eine E-Mail-Adresse ein.'),
+	).toBeVisible();
+	// The focus moves to the first refused field, where the name is missing.
+	await expect(admin.getByLabel('Firma')).toBeFocused();
+	await expectNoA11yViolations(admin);
+	await admin.getByLabel('Firma').fill('Sportpresse Nord');
+	await admin.getByLabel('E-Mail').fill('redaktion@sportpresse.example');
+	await admin.getByLabel('Schlagwort hinzufügen').fill('Presse');
+	await admin.keyboard.press('Enter');
+	await expect(admin.getByRole('row', { name: 'Presse' })).toBeVisible();
+	await expect(admin.getByLabel('Schlagwort hinzufügen')).toHaveValue('');
+	await admin.getByRole('button', { name: 'Speichern' }).click();
+	await expect(admin.getByRole('heading', { name: 'Sportpresse Nord' })).toBeVisible();
+	await expect(admin.getByRole('status')).toHaveText('Gespeichert.');
+	await expect(admin.getByText('redaktion@sportpresse.example')).toBeVisible();
+	await expectNoA11yViolations(admin);
+
+	await admin.getByRole('button', { name: 'Bearbeiten' }).click();
+	await expect(admin.getByRole('heading', { name: 'Partner bearbeiten' })).toBeVisible();
+	// The Bäckerei has this customer number.
+	await admin.getByLabel('Kundennummer').fill('100001');
+	await admin.getByRole('button', { name: 'Speichern' }).click();
+	await expect(admin.getByText('Diese Kundennummer hat schon ein anderer Partner.')).toBeVisible();
+	await expect(admin.getByLabel('Kundennummer')).toBeFocused();
+	await expectNoA11yViolations(admin);
+	await admin.getByLabel('Kundennummer').fill('100099');
+	// The last tag goes: the focus moves to the input, where the next one is typed.
+	await admin.getByRole('row', { name: 'Presse' }).getByRole('button').click();
+	await expect(admin.getByRole('status')).toHaveText('Schlagwort Presse entfernt.');
+	const tagInput = admin.getByLabel('Schlagwort hinzufügen');
+	await expect(tagInput).toBeFocused();
+	// The stored tag is suggested again; Enter takes the chosen suggestion once.
+	await admin.keyboard.type('pre');
+	await expect(admin.getByRole('option', { name: 'Presse' })).toBeVisible();
+	await admin.keyboard.press('ArrowDown');
+	await admin.keyboard.press('Enter');
+	await expect(admin.getByRole('status')).toHaveText('Schlagwort Presse hinzugefügt.');
+	await expect(admin.getByRole('row', { name: 'Presse' })).toHaveCount(1);
+	await expect(tagInput).toHaveValue('');
+	await admin.keyboard.type('Sponsor');
+	await admin.keyboard.press('Enter');
+	await expect(admin.getByRole('status')).toHaveText('Schlagwort Sponsor hinzugefügt.');
+	await expectNoA11yViolations(admin);
+	await admin.getByRole('button', { name: 'Speichern' }).click();
+	await expect(admin.getByRole('status')).toHaveText('Gespeichert.');
+	await expect(admin.getByRole('heading', { name: 'Partner bearbeiten' })).toHaveCount(0);
+	await expect(admin.getByRole('button', { name: 'Bearbeiten' })).toBeFocused();
+	await expect(admin.getByText('100099')).toBeVisible();
+	await expect(admin.getByText('Presse, Sponsor', { exact: true })).toBeVisible();
+
+	// The list shows the partner; its name leads back to it.
+	await admin.getByRole('link', { name: 'Zurück zur Kontaktliste' }).click();
+	await expect(admin).toHaveURL(/\/contacts\?kind=partner$/u);
+	await admin.getByRole('link', { name: 'Sportpresse Nord' }).click();
+	await admin.getByRole('button', { name: 'Löschen' }).click();
+	await expect(admin.getByRole('dialog', { name: 'Sportpresse Nord löschen?' })).toBeVisible();
+	await expectNoA11yViolations(admin);
+	await admin.getByRole('button', { name: 'Ja, löschen' }).click();
+	await expect(admin.getByRole('status')).toHaveText('Sportpresse Nord wurde gelöscht.');
+	await expect(admin).toHaveURL(/\/contacts\?kind=partner$/u);
+	await expect(admin.getByRole('table').getByText('Sportpresse Nord')).toHaveCount(0);
+	// A reload does not announce the deletion again.
+	await admin.reload();
+	await expect(admin.getByRole('button', { name: 'Suchen' })).toBeEnabled();
+	await expect(admin.getByRole('status')).toHaveText('');
+});
+
+// oxlint-disable-next-line max-statements -- one flow, step by step, as a reader of „Finanzen“ sees it
+test('hides protected member fields from a reader of another area', async ({ browser }) => {
+	const context = await browser.newContext({ locale: 'de-DE' });
+	const uli = await context.newPage();
+	await signIn(uli, 'uli@verein.test');
+	await openMember(uli, firstMember());
+	await expect(uli).toHaveTitle('Kontakt – Vereinsbote');
+	await expect(uli.getByText('Geburtsdatum')).toHaveCount(0);
+	await expect(uli.getByRole('button', { name: 'Keine Mails mehr' })).toHaveCount(0);
+	// Without the right Uli sees the opt-out as a list, without checkboxes.
+	await expect(uli.getByText('Finanzen, seit ')).toBeVisible();
+	await expect(uli.getByRole('checkbox')).toHaveCount(0);
+	await expect(
+		uli
+			.getByRole('navigation', { name: 'Hauptnavigation' })
+			.getByRole('link', { name: 'Mitglieder importieren' }),
+	).toHaveCount(0);
+	await expectNoA11yViolations(uli);
+	// Uli only reads the partners: no partner can be added.
+	const response = await uli.goto('/contacts/new');
+	expect(response?.status()).toBe(HTTP_FORBIDDEN);
+	await expect(uli).toHaveTitle('Kein Zugriff – Vereinsbote');
+	await expect(uli.getByRole('heading', { name: 'Kein Zugriff' })).toBeVisible();
+	await expectNoA11yViolations(uli);
+	await context.close();
 });
