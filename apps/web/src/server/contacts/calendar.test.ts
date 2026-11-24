@@ -8,16 +8,23 @@ describe(parseCalendarDate, () => {
 		['7.5.1980', '1980-05-07'],
 		['1980-05-17', '1980-05-17'],
 		['29.02.2024', '2024-02-29'],
+		['01.01.0001', '0001-01-01'],
 	])('parses %s', (input, value) => {
 		expect(parseCalendarDate(input)).toStrictEqual({ ok: true, value });
 	});
 
-	it.each(['31.02.2020', '29.02.2023', '2020-13-01', '00.01.2020', 'gestern', '17.05.1980 10:00'])(
-		'refuses %s',
-		(input) => {
-			expect(parseCalendarDate(input)).toStrictEqual({ ok: false, reason: 'invalidDate' });
-		},
-	);
+	it.each([
+		'31.02.2020',
+		'29.02.2023',
+		'2020-13-01',
+		'00.01.2020',
+		'0000-01-01',
+		'01.01.0000',
+		'gestern',
+		'17.05.1980 10:00',
+	])('refuses %s', (input) => {
+		expect(parseCalendarDate(input)).toStrictEqual({ ok: false, reason: 'invalidDate' });
+	});
 
 	it.each(['17.05.80', '1.1.99'])('refuses the two-digit year in %s', (input) => {
 		expect(parseCalendarDate(input)).toStrictEqual({ ok: false, reason: 'twoDigitYear' });

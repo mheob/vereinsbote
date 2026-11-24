@@ -41,7 +41,7 @@ function pad(value: number, length: number): string {
 }
 
 /**
- * Builds a calendar date if the day exists.
+ * Builds a calendar date if the day exists. The year 0 does not: PostgreSQL refuses it.
  *
  * @param year The year, four digits.
  * @param month The month, 1 to 12.
@@ -49,6 +49,7 @@ function pad(value: number, length: number): string {
  * @returns The date as `YYYY-MM-DD`, or the invalid result.
  */
 function calendarDate(year: number, month: number, day: number): DateParseResult {
+	if (year < 1) return INVALID;
 	const probe = new Date(Date.UTC(year, month - 1, day));
 	// `Date.UTC` maps years 0 to 99 to 1900 to 1999; `setUTCFullYear` does not.
 	probe.setUTCFullYear(year);
