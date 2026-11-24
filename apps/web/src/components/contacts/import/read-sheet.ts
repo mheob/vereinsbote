@@ -6,6 +6,8 @@
 import { MAX_COLUMNS, MAX_HEADER_LENGTH } from '@/server/contacts/import/mapping';
 import { cleanText } from '@/server/contacts/import/values';
 
+import { keepLeadingZeros } from './leading-zeros';
+
 /**
  * A row of the file with a cell per column. `line` is its row number in the file, from 1: the
  * row Excel shows (in a CSV file a quoted cell may span lines, it still counts as one row).
@@ -38,6 +40,12 @@ interface Grid {
 	cells: readonly (readonly unknown[])[];
 	sheetNames: string[];
 	sheetName: string | null;
+}
+
+/** A sheet of a workbook as read-excel-file returns it. */
+interface WorkbookSheet {
+	readonly sheet: string;
+	readonly data: readonly (readonly unknown[])[];
 }
 
 /** Reads the bytes of a file; throws when they are not a file of its type. */
@@ -90,7 +98,8 @@ function calendarDay(date: Readonly<Date>): string {
 
 /**
  * Turns a cell of a library into text: a date into its calendar day, a number as JavaScript writes
- * it (`100001`, not `100001.0`), an empty text into null.
+ * it (`100001`, not `100001.0`), an empty text into null. Leading zeros of a zero-only number
+ * format are added before, see `leading-zeros.ts`.
  *
  * @param cell The cell as papaparse or read-excel-file returns it.
  * @returns The text, or null for an empty cell.
@@ -121,6 +130,21 @@ function usedWidth(cells: readonly (string | null)[]): number {
  */
 function hasText(grid: readonly (readonly unknown[])[]): boolean {
 	return grid.some((row) => row.some((cell) => cleanText(normalizeCell(cell)) !== ''));
+}
+
+/**
+ * Picks the sheet to read: the chosen one, otherwise the first one with text, so an empty cover
+ * sheet does not hide the others, otherwise the first one.
+ *
+ * @param sheets The sheets of the workbook.
+ * @param sheetName The chosen sheet, if any.
+ * @returns The index of the sheet; 0 for a workbook without sheets.
+ */
+function sheetIndex(sheets: readonly WorkbookSheet[], sheetName: string | undefined): number {
+	const named = sheets.findIndex(({ sheet }) => sheet === sheetName);
+	if (named !== NOT_FOUND) return named;
+	const withText = sheets.findIndex(({ data }) => hasText(data));
+	return withText === NOT_FOUND ? 0 : withText;
 }
 
 /**
@@ -210,12 +234,11 @@ async function loadWorkbookReader(): Promise<GridReader> {
 		const entries = unzipSync(bytes, { filter: ({ name }) => WORKBOOK_ENTRY.test(name) });
 		// oxlint-disable-next-line node/no-sync -- see above; level 0 stores the entries
 		const sheets = await readXlsxFile(zipSync(entries, { level: 0 }));
-		const chosen =
-			sheets.find(({ sheet }) => sheet === sheetName) ??
-			sheets.find(({ data }) => hasText(data)) ??
-			sheets[0];
+		const index = sheetIndex(sheets, sheetName);
+		const chosen = sheets[index];
 		return {
-			cells: chosen?.data ?? [],
+			// read-excel-file drops the number format: `00000` must keep `01067`.
+			cells: chosen === undefined ? [] : keepLeadingZeros(entries, index, chosen.data),
 			sheetName: chosen?.sheet ?? null,
 			sheetNames: sheets.map(({ sheet }) => sheet),
 		};

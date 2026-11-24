@@ -269,6 +269,50 @@ describe(readSheetFile, () => {
 		});
 	});
 
+	it('keeps the leading zeros Excel shows for zero-only formats', async () => {
+		const file = await xlsx([
+			['PLZ', 'Nr.', 'Kundennummer'],
+			[
+				{ format: '00000', type: Number, value: 1067 },
+				{ format: '000000', type: Number, value: 123 },
+				{ type: Number, value: 100_001 },
+			],
+		]);
+		await expect(readSheetFile(file)).resolves.toMatchObject({
+			sheet: { rows: [{ cells: ['01067', '000123', '100001'], line: 2 }] },
+		});
+	});
+
+	it('pads only whole numbers that are not negative', async () => {
+		// A zero-only format rounds 12.5 for display; the value itself stays, the server checks it.
+		const file = await xlsx([
+			['A', 'B', 'C', 'D'],
+			[
+				{ format: '00000', type: Number, value: 12.5 },
+				{ format: '00000', type: Number, value: 1_234_567 },
+				{ format: '00000', type: Number, value: -42 },
+				{ format: '0.00', type: Number, value: 7 },
+			],
+		]);
+		await expect(readSheetFile(file)).resolves.toMatchObject({
+			sheet: { rows: [{ cells: ['12.5', '1234567', '-42', '7'], line: 2 }] },
+		});
+	});
+
+	it('keeps the leading zeros on the chosen sheet', async () => {
+		const workbook = await writeXlsxFile([
+			{ data: [['Nr.'], [{ type: Number, value: 7 }]], sheet: 'Mitglieder' },
+			{ data: [['PLZ'], [], [{ format: '00000', type: Number, value: 1067 }]], sheet: 'Partner' },
+		]).toBuffer();
+		const file = new File([Uint8Array.from(workbook)], 'export.xlsx');
+		await expect(readSheetFile(file, 'Partner')).resolves.toMatchObject({
+			sheet: { rows: [{ cells: ['01067'], line: 3 }] },
+		});
+		await expect(readSheetFile(file)).resolves.toMatchObject({
+			sheet: { rows: [{ cells: ['7'], line: 2 }] },
+		});
+	});
+
 	it('lists the sheets of a workbook and reads the chosen one', async () => {
 		const workbook = await writeXlsxFile([
 			{ data: [['Nr.'], [{ type: Number, value: 1001 }]], sheet: 'Mitglieder' },
