@@ -1,0 +1,6 @@
+# Snyk (https://snyk.io) policy file
+# Ignores only for findings that no released version fixes. Each entry names the reason and
+# expires, so it gets reviewed again.
+version: v1.25.1
+ignore: {}
+patch: {}
