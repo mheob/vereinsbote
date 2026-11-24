@@ -1,0 +1,4 @@
+{
+	"$schema": "https://openapi.vercel.sh/vercel.json",
+	"buildCommand": "vp run --filter web build:vercel && VB_VERCEL_BUILD=1 vp run --filter web db:migrate:vercel"
+}

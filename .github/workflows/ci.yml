@@ -1,0 +1,190 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+# Read-only token for every job; no job needs more.
+permissions:
+  contents: read
+
+# A newer push supersedes a running check of the same branch or pull request; on main every
+# commit keeps its own run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  # `vp install` runs `prepare` (`vp config`); CI needs no Git hooks.
+  VP_GIT_HOOKS: "0"
+
+# Every action is pinned to the commit of its release (Renovate updates the pins, see README).
+# setup-vp installs Vite+, Node from .node-version and pnpm from `packageManager`, restores the
+# dependency cache and installs with the lockfile as it is.
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # commitlint reads the commits of the pull request.
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: voidzero-dev/setup-vp@cab1ab9eaff52d4857875f4f2c016e36af8f2c76 # v1.22.0
+        with:
+          node-version-file: .node-version
+          cache: true
+          run-install: |
+            - args: ['--frozen-lockfile']
+      - name: Format, lint and types
+        run: vp check
+      - name: Catalog versions
+        run: pnpm check:catalog
+      - name: Vite+ toolchain versions
+        run: pnpm check:vite-plus
+      # Fails on a high or critical advisory in pnpm-lock.yaml (OSV and npm advisories).
+      - name: Dependency advisories
+        run: pnpm cve
+      - name: Commit messages
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: pnpm exec commitlint --from "$BASE_SHA" --to "$HEAD_SHA" --verbose
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # PostgreSQL for the tests that need real concurrency (TEST_POSTGRES_URL); each creates and
+    # drops a database of its own. Image pinned by digest, like in the compose files. The throwaway
+    # service trusts every connection, so the workflow holds no password.
+    services:
+      postgres:
+        image: postgres:19@sha256:766ddae4967301b9802b341bb596905f11dd5c558149690a7a4d80c2f61bbcf9
+        env:
+          POSTGRES_DB: vereinsbote
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_USER: vereinsbote
+        options: >-
+          --health-cmd "pg_isready --username=vereinsbote --dbname=vereinsbote" --health-interval 2s --health-timeout 5s
+          --health-retries 30
+        ports:
+          - 5432:5432
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # SonarQube Cloud needs the history to detect new code and to assign issues.
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: voidzero-dev/setup-vp@cab1ab9eaff52d4857875f4f2c016e36af8f2c76 # v1.22.0
+        with:
+          node-version-file: .node-version
+          cache: true
+          run-install: |
+            - args: ['--frozen-lockfile']
+      - name: Unit and integration tests
+        env:
+          TEST_POSTGRES_URL: postgres://vereinsbote@localhost:5432/vereinsbote
+        run: vp test --coverage
+      # Pushes to main and pull requests of this repository only: other pushes would analyze the
+      # same code twice, and pull requests from forks get no secrets. Needs the repository secret
+      # SONAR_TOKEN and Automatic Analysis switched off (see README, "Security scanning").
+      - name: SonarQube Cloud scan
+        if: >-
+          (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository)
+        uses: SonarSource/sonarqube-scan-action@70bad232163b09d998ea0707ee80c0ec80798c16 # v8.5.1
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [node, vercel, cloudflare]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: voidzero-dev/setup-vp@cab1ab9eaff52d4857875f4f2c016e36af8f2c76 # v1.22.0
+        with:
+          node-version-file: .node-version
+          cache: true
+          run-install: |
+            - args: ['--frozen-lockfile']
+      - name: Build for ${{ matrix.target }}
+        run: vp run --filter web build:${{ matrix.target }}
+      # nodemailer and pg (with pg-pool and pg-protocol) are loaded on the Node path only and must
+      # never reach the Worker. The bundle names the module of each piece of code by its path
+      # (`node_modules/pg-pool/…`, in comments and source maps); Neon's driver carries pg's
+      # package.json as text, which names pg-pool without being its code. grep exits with 1 when
+      # nothing matches; 0 (a match) and 2 (an error) fail the step.
+      - name: Check the Cloudflare bundle for Node-only modules
+        if: matrix.target == 'cloudflare'
+        run: |
+          status=0
+          grep -rlE 'nodemailer|from "pg"|node_modules/(pg|pg-pool|pg-protocol)/' apps/web/dist/cloudflare || status=$?
+          if [ "$status" -ne 1 ]; then
+            echo "::error::The Cloudflare bundle contains nodemailer or pg (grep exit code $status)."
+            exit 1
+          fi
+
+  # The production image (docker/Dockerfile), built only, never pushed.
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the image
+        run: docker build --file docker/Dockerfile --tag vereinsbote:ci .
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # The services of docker/compose.dev.yml, with the database the tests expect
+    # (apps/web/e2e/env.ts). Images pinned by digest, like in the compose files. The throwaway
+    # database trusts every connection and ignores the password of the tests' URL.
+    services:
+      postgres:
+        image: postgres:19@sha256:766ddae4967301b9802b341bb596905f11dd5c558149690a7a4d80c2f61bbcf9
+        env:
+          POSTGRES_DB: vereinsbote_e2e
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_USER: vereinsbote
+        options: >-
+          --health-cmd "pg_isready --username=vereinsbote --dbname=vereinsbote_e2e" --health-interval 2s --health-timeout 5s
+          --health-retries 30
+        ports:
+          - 5432:5432
+      mailpit:
+        image: axllent/mailpit:v1.34.0@sha256:23a2ef85bc50853ab3093645d1d64679afd8887e89da5e48a88940c172591a4e
+        ports:
+          - 1025:1025
+          - 8025:8025
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: voidzero-dev/setup-vp@cab1ab9eaff52d4857875f4f2c016e36af8f2c76 # v1.22.0
+        with:
+          node-version-file: .node-version
+          cache: true
+          run-install: |
+            - args: ['--frozen-lockfile']
+      - name: Install Chromium for Playwright
+        run: pnpm --filter web exec playwright install --with-deps chromium
+      - name: End-to-end tests
+        run: vp run --filter web e2e
+      - name: Keep the traces of failed tests
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: playwright-test-results
+          path: apps/web/test-results
+          retention-days: 7

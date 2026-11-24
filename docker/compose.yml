@@ -1,0 +1,50 @@
+# The app with PostgreSQL, built from this repository:
+#   docker compose -f docker/compose.yml up -d --build
+# Settings come from docker/.env (see README): the app's variables from apps/web/.env.example,
+# except DATABASE_URL, which is set below, plus POSTGRES_PASSWORD for the database.
+# The app listens on 127.0.0.1:3000 only. Put a reverse proxy in front that terminates HTTPS and
+# sets X-Forwarded-For to the client address, which the sign-in rate limit relies on.
+name: vereinsbote
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://vereinsbote:${POSTGRES_PASSWORD}@postgres:5432/vereinsbote
+    # The health check is part of the image (docker/Dockerfile): GET /api/health.
+    ports:
+      - "127.0.0.1:3000:3000"
+    # The server writes nothing but temporary files; it needs no capabilities or privileges.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:19@sha256:766ddae4967301b9802b341bb596905f11dd5c558149690a7a4d80c2f61bbcf9
+    environment:
+      POSTGRES_DB: vereinsbote
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in docker/.env}
+      POSTGRES_USER: vereinsbote
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready --username=vereinsbote --dbname=vereinsbote"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+    volumes:
+      # Since PostgreSQL 18 the image keeps its data below /var/lib/postgresql/<major>/.
+      - postgres-data:/var/lib/postgresql
+
+volumes:
+  postgres-data:

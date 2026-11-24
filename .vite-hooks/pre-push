@@ -1,0 +1,7 @@
+# CI checks pull requests itself; a push there needs no local check.
+[ -n "$CI" ] && exit 0
+# Fails when a package changed without a changeset. For a change without a user-facing effect,
+# add an empty one: `pnpm changeset --empty`.
+pnpm exec changeset status --since=origin/main
+# Fails on a high or critical advisory in the lockfile (cve-lite, OSV data). Snyk and CI check as well.
+pnpm run cve

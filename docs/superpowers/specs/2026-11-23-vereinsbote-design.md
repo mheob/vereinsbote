@@ -86,7 +86,7 @@ Die ersten Zielvereine hosten ihre Websites bereits auf **Vercel oder Cloudflare
 - **Datenschutz:** DSGVO. Daten und Dateien liegen in EU-Regionen.
 - **Barrierefreiheit:** Die App erfüllt WCAG 2.2 AA. Die Mails sind barrierearm (siehe 6.5).
 - **Volumen-Annahme:** 300–1.000 Mitglieder, 5.000–15.000 Mails im Jahr, Spitzen von etwa 1.000 Mails an einem Tag.
-- **[Claude] Sprache:** Die Oberfläche ist auf Deutsch. Alle Texte liegen zentral, damit eine spätere Übersetzung möglich ist.
+- **Sprache:** Die Oberfläche ist von Beginn an zweisprachig, Deutsch (Standard) und Englisch. Alle Texte liegen zentral. Alles, was Code ist (Bezeichner, URL-Pfade, HTML-IDs usw.), ist englisch. (Nachtrag 2026-11-23, Wunsch des Projekts.)
 
 ---
 
@@ -438,7 +438,7 @@ Ein Assistent führt durch die Einrichtung:
   - Datenbank-Migrationen laufen beim Deploy automatisch und bleiben mit älteren Daten verträglich.
   - Ein Verein aktualisiert, indem er seinen Fork synchronisiert und neu deployt.
 - **Lizenz:** MIT.
-- **Doku-Website im Projekt:** Eine typische Dokumentations-Website ist Teil des Repos.
+- **Doku-Website im Projekt:** Eine typische Dokumentations-Website ist Teil des Repos, zweisprachig in Deutsch und Englisch. Die `README.md` ist englisch. (Nachtrag 2026-11-23, Wunsch des Projekts.)
   - **[Claude]** Gebaut mit Astro und Starlight. Starlight ist auf Dokumentation zugeschnitten und bringt Suche, Navigation und eine barrierefreie Grundlage mit.
   - **[Claude]** Das Repo ist ein Monorepo mit App und Doku-Website nebeneinander.
   - Sie enthält alle Anleitungen unten, ein Benutzerhandbuch für Ehrenamtliche und eine Entwickler-Doku (Architektur, Mitwirken).
@@ -490,7 +490,7 @@ Ein Assistent führt durch die Einrichtung:
 9. **Löschfristen:** Versandprotokoll 6 Monate, Aktivitätsprotokoll 12 Monate.
 10. **Datenexport pro Kontakt** (Auskunft).
 11. **Keine Vier-Augen-Freigabe** in der ersten Version.
-12. **Oberfläche nur auf Deutsch**, aber vorbereitet für Übersetzungen.
+12. ~~Oberfläche nur auf Deutsch~~ – ersetzt: Deutsch und Englisch von Beginn an (Wunsch des Projekts).
 13. **Erfolgskriterium:** Ein weiterer Verein installiert den Vereinsbote anhand der Doku selbst.
 14. **Optionale Heartbeat-URL** zur Überwachung der Zeitsteuerung.
 15. **Tarife:** Cloudflare Workers Paid ist Pflicht. Auf Vercel ist Pro offiziell unterstützt, Hobby läuft ohne Zusage.

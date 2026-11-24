@@ -1,0 +1,25 @@
+# Build context of docker/Dockerfile (the repository root). Docker reads this file instead of a
+# root .dockerignore because it sits next to the Dockerfile and shares its name.
+
+# Installed and built in the image itself
+**/node_modules
+**/dist
+**/.vercel
+**/.wrangler
+**/.tanstack
+**/.nitro
+**/.output
+apps/web/test-results
+apps/web/playwright-report
+
+# Settings and secrets stay out of the image; the container gets them at runtime.
+**/.env*
+!**/.env.example
+
+# Not needed for the build
+.git
+.github
+.superpowers
+.openidea
+docs
+docker

@@ -1,0 +1,71 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".changeset/**"
+      - "apps/**"
+      - pnpm-lock.yaml
+      - .github/workflows/release.yml
+  workflow_dispatch:
+
+# Only the release PR and the release itself need write access: the action pushes the version
+# branch and the tags and creates the pull request and the GitHub Releases.
+permissions:
+  contents: write
+  pull-requests: write
+
+# Releases of one ref run one after the other, never in parallel and never cancelled midway.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # `vp install` runs `prepare` (`vp config`); CI needs no Git hooks.
+  VP_GIT_HOOKS: "0"
+
+# Every action is pinned to the commit of its release (Renovate updates the pins, see README).
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # The token of the machine user (not GITHUB_TOKEN), so the pull request the action opens
+      # triggers CI. The credentials stay persisted, the one deliberate exception to
+      # `persist-credentials: false` of the other workflows: this job runs only on `main`, and
+      # `changeset git-tag` looks up existing tags with `git ls-remote`, which must be authenticated
+      # (a private repository or rate-limited anonymous access would otherwise re-create tags).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          token: ${{ secrets.MACHINE_USER_TOKEN }}
+      - uses: voidzero-dev/setup-vp@cab1ab9eaff52d4857875f4f2c016e36af8f2c76 # v1.22.0
+        with:
+          node-version-file: .node-version
+          cache: true
+          run-install: |
+            - args: ['--frozen-lockfile']
+      - name: Set the Git identity of the machine user
+        env:
+          GIT_EMAIL: ${{ secrets.MACHINE_USER_EMAIL }}
+          GIT_NAME: ${{ secrets.MACHINE_USER_NAME }}
+        run: |
+          git config --local user.email "${GIT_EMAIL}"
+          git config --local user.name "${GIT_NAME}"
+      # Without changesets it tags the version of every versioned package (`pnpm run release`)
+      # and creates a GitHub Release per new tag. With changesets it opens or updates the
+      # "version packages" pull request (`pnpm run version-packages`). Nothing goes to npm.
+      - name: Create the release pull request or the release
+        uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
+        with:
+          commit-message: "chore(release): version packages"
+          create-github-releases: true
+          github-token: ${{ secrets.MACHINE_USER_TOKEN }}
+          pr-title: "chore(release): version packages"
+          publish-script: pnpm run release
+          version-script: pnpm run version-packages
+        env:
+          # The action only uses the `github-token` input, the changelog generator reads this one
+          # (it must be the same token, the action refuses a different one).
+          GITHUB_TOKEN: ${{ secrets.MACHINE_USER_TOKEN }}

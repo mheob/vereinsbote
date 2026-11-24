@@ -1,0 +1,86 @@
+packages:
+  - apps/*
+
+catalogMode: strict
+
+catalog:
+  "@axe-core/playwright": ^4.14.0
+  "@changesets/cli": ^3.0.3
+  "@cloudflare/vite-plugin": ^1.70.1
+  "@commitlint/cli": ^21.2.4
+  "@electric-sql/pglite": ^0.6.0
+  "@mheob/changeset-changelog": ^3.0.2
+  "@mheob/commitlint-config": ^3.0.0
+  "@mheob/oxfmt-config": ^1.3.3
+  "@mheob/oxlint-config": ^4.1.3
+  "@neondatabase/serverless": ^1.2.1
+  "@playwright/test": ^1.65.1
+  "@tailwindcss/vite": ^4.3.5
+  "@tanstack/react-router": ^1.170.46
+  "@tanstack/react-start": ^1.169.7
+  "@types/node": ^26.6.6
+  "@types/pg": ^8.23.1
+  "@types/react": ^19.3.0
+  "@types/react-dom": ^19.3.0
+  "@vitejs/plugin-react": ^6.3.0
+  # Pinned to the Vitest that vite-plus bundles (see `vitest` below); the coverage provider must match it.
+  "@vitest/coverage-v8": 5.1.0
+  better-auth: ^1.7.27
+  cve-lite-cli: ^1.42.0
+  czg: ^1.14.0
+  # drizzle-orm and drizzle-kit 1.0 are release candidates on npm; `latest` is the newest stable 0.x.
+  drizzle-kit: ^0.31.11
+  drizzle-orm: ^0.45.4
+  # Only for the override below, no package depends on it directly.
+  esbuild: ^0.28.2
+  eslint-plugin-better-tailwindcss: ^4.11.0
+  eslint-plugin-regexp: ^3.3.3
+  # Nitro 3 has no stable release yet; `latest` on npm is this release candidate, and TanStack Start's hosting docs require Nitro 3.
+  nitro: 3.0.261103-rc
+  nodemailer: ^10.6.1
+  oxfmt: 0.79.0
+  oxlint: 1.94.0
+  pg: ^8.23.1
+  react: ^19.3.1
+  react-aria-components: ^1.22.1
+  react-dom: ^19.3.1
+  tailwindcss: ^4.3.5
+  tsx: ^4.23.15
+  typescript: ^7.0.2
+  vite: npm:@voidzero-dev/vite-plus-core@8.3.8000
+  vite-plus: 1.7.0
+  # Pinned to the Vitest that vite-plus bundles (`vp toolchain vitest`), npm already has a newer one.
+  vitest: 5.1.0
+  wrangler: ^4.166.0
+  zod: ^4.6.7
+
+overrides:
+  vite@*: "catalog:"
+  vitest@*: "catalog:"
+  # drizzle-kit's loader (@esbuild-kit/core-utils) pins esbuild 0.18, whose dev server lets any
+  # website read its responses (GHSA-67mh-4wv8-2f99, fixed in 0.25.0). Lifts only that package's esbuild.
+  "@esbuild-kit/core-utils>esbuild": "catalog:"
+
+# Supply-chain protection, all supported by pnpm 12:
+# A dependency's install script runs only when `allowBuilds` lists it; any other fails the install.
+strictDepBuilds: true
+allowBuilds:
+  esbuild: true
+  workerd: true
+
+# Transitive dependencies come from the registry only, never from Git or tarball URLs.
+blockExoticSubdeps: true
+
+# Refuses a version that is published with less trust than an earlier one (e.g. without provenance).
+trustPolicy: no-downgrade
+trustPolicyExclude:
+  # Pinned by vite-plus 1.7.0. Flagged as a downgrade, but it comes from the same trusted publisher,
+  # repository and release workflow as the versions before it, with provenance (checked 2026-11-23).
+  - "tsrs@7.1.0-beta.tsrs2"
+
+# Installs only versions that are at least a day (1440 minutes) old, so a compromised release is
+# usually unpublished before it arrives here. The exceptions are pinned on purpose.
+minimumReleaseAge: 1440
+minimumReleaseAgeExclude:
+  - "@electric-sql/pglite@0.6.0"
+  - "@mheob/*"

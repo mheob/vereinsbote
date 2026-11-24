@@ -1,0 +1,41 @@
+{
+	"name": "vereinsbote",
+	"private": true,
+	"license": "MIT",
+	"type": "module",
+	"scripts": {
+		"changeset": "changeset",
+		"check": "vp check",
+		"check:catalog": "node scripts/check-catalog.ts",
+		"check:vite-plus": "node scripts/check-vite-plus-versions.ts",
+		"commit": "czg",
+		"cve": "cve-lite . --fail-on high --verbose --cache-dir .cache/cve-lite",
+		"prepare": "vp config",
+		"release": "changeset git-tag",
+		"test": "vp test",
+		"version-packages": "changeset version && vp fmt apps/web/package.json"
+	},
+	"devDependencies": {
+		"@changesets/cli": "catalog:",
+		"@commitlint/cli": "catalog:",
+		"@mheob/changeset-changelog": "catalog:",
+		"@mheob/commitlint-config": "catalog:",
+		"@mheob/oxfmt-config": "catalog:",
+		"@mheob/oxlint-config": "catalog:",
+		"@types/node": "catalog:",
+		"@vitest/coverage-v8": "catalog:",
+		"cve-lite-cli": "catalog:",
+		"czg": "catalog:",
+		"eslint-plugin-better-tailwindcss": "catalog:",
+		"eslint-plugin-regexp": "catalog:",
+		"oxfmt": "catalog:",
+		"oxlint": "catalog:",
+		"tailwindcss": "catalog:",
+		"typescript": "catalog:",
+		"vite-plus": "catalog:"
+	},
+	"engines": {
+		"node": ">=26.0.0"
+	},
+	"packageManager": "pnpm@12.21.0"
+}

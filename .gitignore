@@ -1,0 +1,29 @@
+# Dependencies
+node_modules
+
+# Build outputs
+dist
+.vercel
+.output
+.nitro
+.wrangler
+.tanstack
+
+# Playwright output
+test-results
+playwright-report
+blob-report
+
+# Coverage report and the cve-lite advisory cache
+coverage
+.cache
+
+# Environment, only the example is committed
+.env*
+!.env.example
+
+# Local workspace of the SDD tooling
+.superpowers/
+
+# OS
+.DS_Store
