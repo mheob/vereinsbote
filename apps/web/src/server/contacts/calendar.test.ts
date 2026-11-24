@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 
-import { formatCalendarDate, parseCalendarDate, todayInClubZone } from './calendar';
+import { formatCalendarDate, formatClubDate, parseCalendarDate, todayInClubZone } from './calendar';
 
 describe(parseCalendarDate, () => {
 	it.each([
@@ -43,5 +43,12 @@ describe(formatCalendarDate, () => {
 	it('formats without shifting the day', () => {
 		expect(formatCalendarDate('1980-05-17', 'de')).toBe('17.05.1980');
 		expect(formatCalendarDate('1980-05-17', 'en')).toBe('May 17, 1980');
+	});
+});
+
+describe(formatClubDate, () => {
+	it('formats an instant as the Berlin day', () => {
+		expect(formatClubDate(new Date('2026-09-30T22:30:00Z'), 'de')).toBe('1. Oktober 2026');
+		expect(formatClubDate(new Date('2026-09-30T22:30:00Z'), 'en')).toBe('October 1, 2026');
 	});
 });

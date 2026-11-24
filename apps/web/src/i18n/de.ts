@@ -58,6 +58,9 @@ export const de = {
 	'mail.login.subject': 'Dein Anmeldelink für den Vereinsbote',
 	'mail.login.text':
 		'Hallo,\n\nhier ist dein Anmeldelink:\n{link}\n\nDer Link ist 15 Minuten gültig und funktioniert einmal.',
+	'mail.staleImport.subject': 'Die Mitgliederdaten im Vereinsbote sind veraltet',
+	'mail.staleImport.text':
+		'Hallo {name},\n\nder letzte Mitglieder-Import war am {date}. Bitte lade einen aktuellen Export hoch:\n{link}',
 	'notFound.text': 'Diese Seite gibt es nicht.',
 	'notFound.title': 'Seite nicht gefunden',
 	'setup.disabled': 'Die Einrichtung ist nicht freigeschaltet. Setze SETUP_TOKEN.',

@@ -58,6 +58,9 @@ export const en: Record<keyof typeof de, string> = {
 	'mail.login.subject': 'Your sign-in link for Vereinsbote',
 	'mail.login.text':
 		'Hello,\n\nhere is your sign-in link:\n{link}\n\nThe link is valid for 15 minutes and works once.',
+	'mail.staleImport.subject': 'The member data in Vereinsbote is out of date',
+	'mail.staleImport.text':
+		'Hello {name},\n\nthe last member import was on {date}. Please upload a current export:\n{link}',
 	'notFound.text': 'This page does not exist.',
 	'notFound.title': 'Page not found',
 	'setup.disabled': 'Setup is not enabled. Set SETUP_TOKEN.',

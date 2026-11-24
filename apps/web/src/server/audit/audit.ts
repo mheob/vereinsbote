@@ -11,6 +11,7 @@ type AuditAction =
 	| 'contacts.settings_changed'
 	| 'import.members'
 	| 'import.partners'
+	| 'import.stale_warning'
 	| 'partner.created'
 	| 'partner.deleted'
 	| 'partner.updated'

@@ -99,5 +99,19 @@ function formatCalendarDate(value: string, locale: Locale): string {
 	}).format(new Date(`${value}T00:00:00Z`));
 }
 
-export { CLUB_TIME_ZONE, formatCalendarDate, parseCalendarDate, todayInClubZone };
+/**
+ * Formats an instant as the calendar day in the club's time zone.
+ *
+ * @param at The instant.
+ * @param locale The UI language.
+ * @returns The day, e.g. `1. Oktober 2026` in German.
+ */
+function formatClubDate(at: Date, locale: Locale): string {
+	return new Intl.DateTimeFormat(locale === 'de' ? 'de-DE' : 'en-US', {
+		dateStyle: 'long',
+		timeZone: CLUB_TIME_ZONE,
+	}).format(at);
+}
+
+export { CLUB_TIME_ZONE, formatCalendarDate, formatClubDate, parseCalendarDate, todayInClubZone };
 export type { DateParseResult };
