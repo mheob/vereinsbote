@@ -569,6 +569,29 @@ describe('passwordless sign-in', () => {
 			expect(output).not.toContain('session_gone');
 		});
 
+		it('logs a 5xx response of Better Auth by its status only', async () => {
+			const logged = captureConsole();
+			const failing = {
+				// oxlint-disable-next-line typescript/require-await -- the fake resolves immediately
+				handler: async () => new Response('db down at anna@verein.de', { status: 503 }),
+			};
+			const request = new Request(`${APP_URL}/api/auth/sign-out`, { method: 'POST' });
+			const response = await handleAuthRequest(failing, request);
+			expect(response.status).toBe(503);
+			expect(logged()).toBe('better auth HTTP 503');
+		});
+
+		it('does not log a 4xx response of Better Auth', async () => {
+			const logged = captureConsole();
+			const refusing = {
+				// oxlint-disable-next-line typescript/require-await -- the fake resolves immediately
+				handler: async () => new Response(null, { status: 404 }),
+			};
+			const request = new Request(`${APP_URL}/api/auth/get-session`);
+			await expect(handleAuthRequest(refusing, request)).resolves.toMatchObject({ status: 404 });
+			expect(logged()).toBe('');
+		});
+
 		it('logs a failed login link request without the address', async () => {
 			const { auth, db } = await setup();
 			await db.execute(sql`alter table "user" rename to "user_gone"`);

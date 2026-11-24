@@ -356,15 +356,21 @@ async function createAuth(deps: AuthDeps): Promise<Auth> {
 /**
  * Hands an HTTP request under `/api/auth/` to Better Auth. An unexpected failure is logged by
  * code only and answered with a bare 500: the error of a failed query lists the query and its
- * parameters (session tokens, addresses), which Better Auth's router would print whole.
+ * parameters (session tokens, addresses), which Better Auth's router would print whole. A 5xx
+ * response of Better Auth itself is logged by its status only, never its body.
  *
- * @param auth The auth instance.
+ * @param auth The auth instance (its HTTP handler).
  * @param request The request.
  * @returns Better Auth's response, or 500.
  */
-async function handleAuthRequest(auth: Auth, request: Request): Promise<Response> {
+async function handleAuthRequest(auth: Pick<Auth, 'handler'>, request: Request): Promise<Response> {
 	try {
-		return await auth.handler(request);
+		const response = await auth.handler(request);
+		if (response.status >= HTTP_INTERNAL_SERVER_ERROR) {
+			// oxlint-disable-next-line no-console -- the status only, the body may carry details
+			console.error(`better auth HTTP ${response.status}`);
+		}
+		return response;
 	} catch (error) {
 		// oxlint-disable-next-line no-console -- code or name only, see above
 		console.error('auth request failed', errorLabelWithCause(error));

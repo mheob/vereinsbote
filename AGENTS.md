@@ -90,7 +90,7 @@ Run them from the repository root.
 - **Cloudflare:**
   - The database and auth instance are request-scoped (`apps/web/src/platform/request-scope.ts`). Never cache an I/O object across requests.
   - `nodemailer` and `pg` must never end up in the Cloudflare bundle. Load them only on the Node path, behind build-constant branches (`import.meta.env.VITE_VB_PLATFORM`). CI checks the bundle.
-- **No secrets, e-mail addresses or tokens** in logs, URLs or error messages. Log error codes only, through `errorLabel` / `errorLabelWithCause` (`apps/web/src/server/error-label.ts`). Better Auth logs through the same labels (`logger` in `auth.ts`), and its HTTP errors go through `handleAuthRequest`.
+- **No secrets, e-mail addresses or tokens** in logs, URLs or error messages. Log error codes only, through `errorLabel` / `errorLabelWithCause` (`apps/web/src/server/error-label.ts`). Better Auth logs through the same labels (`logger` in `auth.ts`), and its HTTP errors go through `handleAuthRequest`, which logs a thrown error by code and a 5xx response by its status only.
 - **Pages and responses:** `routerDefaults` (`apps/web/src/router-defaults.ts`) sets the generic, translated error and not-found pages; they never show an error's message. Every response gets the security headers of `apps/web/src/platform/security-headers.ts`.
 - **Work after the response** goes through `platform.waitUntil` (`createBackgroundRunner`): it never rejects into the runtime and warns once on Vercel or Cloudflare when the runtime offers no `waitUntil`.
 - E-mail addresses are stored and compared through `normalizeEmail` (trim and lowercase).
