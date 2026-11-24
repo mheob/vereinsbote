@@ -1,6 +1,12 @@
-import { describe, expect, it } from 'vite-plus/test';
+import { createTransport } from 'nodemailer';
+import { describe, expect, it, vi } from 'vite-plus/test';
 
 import { openSmtpTransport, smtpTransportOptions } from './smtp-transport';
+
+vi.mock(import('nodemailer'), async (importOriginal) => ({
+	...(await importOriginal()),
+	createTransport: vi.fn<typeof createTransport>(),
+}));
 
 describe(smtpTransportOptions, () => {
 	it('sends without TLS only to the local machine', () => {
@@ -40,7 +46,13 @@ describe(smtpTransportOptions, () => {
 });
 
 describe(openSmtpTransport, () => {
-	it('opens a transport without connecting', () => {
-		expect(openSmtpTransport('smtp://localhost:1025').sendMail).toBeTypeOf('function');
+	it('hands all options to nodemailer', () => {
+		openSmtpTransport('smtp://kim:pw@mail.example.org:587');
+		expect(createTransport).toHaveBeenCalledWith({
+			auth: { pass: 'pw', user: 'kim' },
+			host: 'mail.example.org',
+			port: 587,
+			requireTLS: true,
+		});
 	});
 });
