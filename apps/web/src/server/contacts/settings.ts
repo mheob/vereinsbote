@@ -103,6 +103,7 @@ async function saveContactAreas(
  * @returns The custom fields.
  */
 async function listCustomFields(db: Db, kind: ContactKind): Promise<CustomFieldRecord[]> {
+	// Fields created in one transaction share `now()`; the name keeps their order stable.
 	return db
 		.select({
 			id: customFields.id,
@@ -113,7 +114,7 @@ async function listCustomFields(db: Db, kind: ContactKind): Promise<CustomFieldR
 		})
 		.from(customFields)
 		.where(eq(customFields.kind, kind))
-		.orderBy(customFields.createdAt, customFields.id);
+		.orderBy(customFields.createdAt, sql`lower(${customFields.name})`, customFields.id);
 }
 
 /**

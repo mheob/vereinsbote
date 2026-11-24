@@ -373,6 +373,42 @@ describe(setCustomFieldProtection, () => {
 		await expect(listCustomFields(db, 'partner')).resolves.toStrictEqual([]);
 	});
 
+	it('orders custom fields created at the same time by name, not by their random id', async () => {
+		// One import creates several fields in one transaction, so they share `now()`; PGlite's
+		// clock even ties fields created a millisecond apart.
+		const db = await createTestDb();
+		const createdAt = new Date('2026-11-24T10:00:00.000Z');
+		await db.insert(customFields).values([
+			{
+				createdAt,
+				id: '00000000-0000-4000-8000-000000000001',
+				kind: 'partner',
+				name: 'Zahlweise',
+				type: 'text',
+			},
+			{
+				createdAt,
+				id: 'ffffffff-ffff-4fff-bfff-ffffffffffff',
+				kind: 'partner',
+				name: 'ansprechpartner',
+				type: 'text',
+			},
+			{
+				createdAt,
+				id: '88888888-8888-4888-8888-888888888888',
+				kind: 'partner',
+				name: 'Branche',
+				type: 'text',
+			},
+		]);
+		const fields = await listCustomFields(db, 'partner');
+		expect(fields.map((field) => field.name)).toStrictEqual([
+			'ansprechpartner',
+			'Branche',
+			'Zahlweise',
+		]);
+	});
+
 	it('switches a custom field between base and protected', async () => {
 		const db = await createTestDb();
 		const { admin, membersAreaId } = await setUpClub(db);
