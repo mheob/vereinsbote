@@ -10,11 +10,10 @@ on:
       - .github/workflows/release.yml
   workflow_dispatch:
 
-# Only the release PR and the release itself need write access: the action pushes the version
-# branch and the tags and creates the pull request and the GitHub Releases.
+# Read-only GITHUB_TOKEN: every write (the version branch, the tags, the pull request and the
+# GitHub Releases) uses the token of the release app below.
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 # Releases of one ref run one after the other, never in parallel and never cancelled midway.
 concurrency:
