@@ -84,6 +84,7 @@ The image (`docker/Dockerfile`) builds in a separate stage. At runtime it contai
 - The project's root directory is `apps/web`.
 - `apps/web/vercel.json` sets the build command: first `build:vercel`, then `db:migrate:vercel`. A failing build therefore never touches the database. The command lives in the file rather than the project settings, so it is versioned and visible in review.
 - **Migrations run in production builds only** (`VERCEL_ENV=production`). A preview build skips them, so a push to any branch never runs unreviewed migrations against a shared database. To migrate previews, give Preview a database of its own (e.g. a Neon branch) and set `MIGRATE_ON_PREVIEW=1` for the Preview environment. Without either, a preview runs on whatever schema its `DATABASE_URL` has.
+- **A Vercel build without a known `VERCEL_ENV` fails.** If `VERCEL=1` is set but `VERCEL_ENV` is missing or is not `production`, `preview` or `development`, `db:migrate:vercel` exits with code 1 and names the variable (never its value), so the deployment stops instead of going live on the old schema. Both variables come from Vercel's system environment variables: keep "Automatically expose System Environment Variables" switched on in the project settings (the default). Outside Vercel (`VERCEL` unset) the script keeps the rules above.
 - The cron job and the `maxDuration` of `/api/tick` are set in the Nitro config (`apps/web/vite.config.ts`), not in `vercel.json`.
 - `DATABASE_URL` must also be available to the build.
 - Toolchain on Vercel:
@@ -132,7 +133,7 @@ The deployment itself is the owner's step. Before the first production deploymen
 3. On the preview URL: `/api/health` returns `{"ok":true}`; `/setup` creates the first admin; `/admin/users` and `/admin/areas` load; an invitation and a level change are saved; „Abmelden“ works; an unknown address shows the 404 page.
 4. Call the tick the way Vercel Cron does: `curl -s -H "Authorization: Bearer $CRON_SECRET" https://<preview>/api/tick` returns the report of a completed tick. The function log shows no `no waitUntil` warning.
 5. Check the response headers of a page (`X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'`).
-6. Then promote with the production variables (without `MIGRATE_ON_PREVIEW`), and check that the cron job `/api/tick` appears under Settings → Cron Jobs.
+6. Then promote with the production variables (without `MIGRATE_ON_PREVIEW`). Promoting rebuilds the deployment for production: its build log must show `Migrations applied.` as well (not `Migrations skipped`, and no `Migrations not run` error). Check that the cron job `/api/tick` appears under Settings → Cron Jobs.
 
 **Cloudflare Workers:**
 

@@ -96,7 +96,7 @@ Run them from the repository root.
 - E-mail addresses are stored and compared through `normalizeEmail` (trim and lowercase).
 - Credentials are encrypted with AES-GCM through WebCrypto only, so the code runs on Node and on Workers.
 - **Tick steps** go into `apps/web/src/server/tick/steps.ts` and respect the tick's time budget. A step resumes at the next tick.
-- Migrations run automatically on deploy and must stay compatible with older data. On Vercel they run in production builds only, in preview builds only with `MIGRATE_ON_PREVIEW=1` (`db:migrate:vercel`).
+- Migrations run automatically on deploy and must stay compatible with older data. On Vercel they run in production builds only, in preview builds only with `MIGRATE_ON_PREVIEW=1` (`db:migrate:vercel`); a Vercel build (`VERCEL=1`) without a known `VERCEL_ENV` fails instead of skipping them.
 
 ## Testing
 
