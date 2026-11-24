@@ -129,11 +129,12 @@ Die ersten Zielvereine hosten ihre Websites bereits auf **Vercel oder Cloudflare
   - Logo(s), Farben (Primär, Sekundär, Text, Hintergrund, Links)
   - Schrift: Auswahl mit mailtauglichen Ersatzschriften
   - Fußzeile: Impressum, Anschrift, Vereinsregister, Links
-  - Alles ist als Variable verfügbar, z. B. `{{cd.farbe_primaer}}` oder `{{cd.logo}}`.
+  - Alles ist als Variable verfügbar, z. B. `{{cd.farbe_primaer}}` oder `{{cd.logo}}`. *(Teilplan 3: englische Schlüssel, z. B. `{{brand.primaryColor}}`, `{{brand.logoUrl}}`; nur Schriftstapel, keine Webfonts; Social-Media-Links als Text oder Icon.)*
 - **Layout:** Rahmen (Kopf, Fuß, Inhaltsbereich).
   - Ein Standard-Layout wird automatisch aus dem CD erzeugt.
-  - Importierte HTML-Layouts gelten global oder für einen einzelnen Anlass.
+  - Importierte HTML-Layouts gelten global oder für einen einzelnen Anlass. *(Teilplan 3: global oder für eine einzelne Vorlage.)*
 - **Inhalt:** Liste von Bausteinen aus dem Klick-Editor, eingesetzt in den Inhaltsbereich des Layouts. Alternativ ist eine vollständige importierte HTML-Vorlage nur mit Platzhaltern möglich.
+- **Vorlage** *(Teilplan 3)*: eigenständig, gehört zu genau einem Bereich; Name, Betreff, Vorschautext, Briefanrede-Form, Inhalt und Layout-Wahl. Ein Anlass verweist auf eine Vorlage; mehrere Anlässe dürfen eine Vorlage teilen. Bilder liegen in einer Bildersammlung pro Bereich. Details: `2026-11-24-vereinsbote-03-gestaltung-design.md`.
 - **Absender:** Postfachadresse, Anzeigename, Antwortadresse und Anbindung (Graph oder Resend). Mehrere Absender sind möglich, jeder Anlass wählt einen.
 - **Versandwelle:** ein Lauf eines Anlasses mit N Empfängern.
 - **Postausgangs-Eintrag:** eine Mail an einen Empfänger.
@@ -251,7 +252,7 @@ Ein Assistent führt durch die Einrichtung:
   - Anlassdaten (Alter, Jahre der Mitgliedschaft)
   - Rechnungsdaten
   - CD-Variablen
-- **[Claude] Briefanrede:** Der berechnete Platzhalter `{{briefanrede}}` ergibt sich aus dem Feld Geschlecht (und bei Organisationen aus dem leeren Vornamen), z. B. „Liebe Anna“, „Lieber Max“, „Hallo Kim“ oder „Sehr geehrte Damen und Herren“. Die Zuordnung (auch für die Sie-Form) stellt der Verein pro Anlass ein.
+- **[Claude] Briefanrede:** Der berechnete Platzhalter `{{briefanrede}}` ergibt sich aus dem Feld Geschlecht (und bei Organisationen aus dem leeren Vornamen), z. B. „Liebe Anna“, „Lieber Max“, „Hallo Kim“ oder „Sehr geehrte Damen und Herren“. Die Zuordnung (auch für die Sie-Form) stellt der Verein pro Anlass ein. *(Teilplan 3: Schlüssel `{{salutation}}`, Du- oder Sie-Form und Texte pro Vorlage; alle Platzhalter-Schlüssel sind englisch, z. B. `{{contact.firstName}}`, mit Ersatztext `{{contact.firstName | "…"}}`.)*
 - **[Claude] Keine Bedingungen in Vorlagen:** Bedingte Textblöcke gibt es in der ersten Version nicht. Unterschiedliche Texte (z. B. 50. vs. 90. Geburtstag, Mitglieder vs. Partner) entstehen über getrennte Anlässe mit eigener Regel bzw. eigenem Filter. So bleibt es dabei, dass pro Versandwelle nur einmal gerendert wird (siehe 7).
 - Jeder Platzhalter kann einen Ersatztext für fehlende Werte haben.
 - **[Claude]** Fehlt ein Pflichtwert ohne Ersatztext, wird die Mail an diesen Empfänger nicht verschickt, sondern als Fehler markiert.
@@ -268,7 +269,7 @@ Ein Assistent führt durch die Einrichtung:
 
 **HTML-Import (für Profis)**
 
-- **Eingabe:** HTML-Datei hochladen oder Code einfügen. Die Vorlage nutzt dieselbe Platzhalter- und CD-Variablen-Syntax. Ein Layout markiert seinen Inhaltsbereich mit `{{inhalt}}`.
+- **Eingabe:** HTML-Datei hochladen oder Code einfügen. Die Vorlage nutzt dieselbe Platzhalter- und CD-Variablen-Syntax. Ein Layout markiert seinen Inhaltsbereich mit `{{inhalt}}`. *(Teilplan 3: `{{content}}`.)*
 - **React-Email-Vorlagen:** Sie werden außerhalb der App nach HTML exportiert und dann importiert. Die App führt keinen fremden Code aus.
 - **Prüfungen beim Import:**
   - Mailtauglichkeit: Warnung bei CSS, das Outlook ignoriert.
@@ -281,7 +282,7 @@ Ein Assistent führt durch die Einrichtung:
   - **[Claude]** Höchstbreite 1200 px, also doppelte Auflösung für die übliche Mailbreite von 600 px.
   - **[Claude]** Formate: JPEG für Fotos, PNG für Grafiken und Logos mit Transparenz. WebP und AVIF nicht, weil Outlook sie nicht zuverlässig anzeigt.
   - **[Claude]** Die Verarbeitung passiert im Browser vor dem Hochladen. Das kostet auf dem Server keine Rechenzeit und funktioniert auf jeder Plattform gleich. Der Server prüft nur Größe und Format.
-- **[Claude]** Bilder werden in den Dateispeicher hochgeladen und über öffentliche, nicht erratbare URLs eingebunden. Die URLs sind für alle Empfänger gleich, es gibt also kein Tracking.
+- **[Claude]** Bilder werden in den Dateispeicher hochgeladen und über öffentliche, nicht erratbare URLs eingebunden. Die URLs sind für alle Empfänger gleich, es gibt also kein Tracking. *(Teilplan 3: Der Speicher ist privat; die App liefert die Bilder selbst unter nicht erratbaren `/media/…`-Adressen aus.)*
 - Anhänge bleiben privat.
 
 ### 6.6 Versand
@@ -412,6 +413,7 @@ Ein Assistent führt durch die Einrichtung:
   - Vercel Blob in einer EU-Region (auf Vercel; die verfügbare Region vor der Umsetzung prüfen)
   - S3 (im Docker)
   - Grund: Vercel-Vereine brauchen so kein zusätzliches Cloudflare-Konto. Die Datenbank (Neon) können sie direkt über den Vercel Marketplace anlegen.
+  - *(Teilplan 3: R2 per Binding mit `jurisdiction = "eu"`, Vercel Blob als privater Store in `fra1`, S3 über `s3mini`; in Entwicklung und CI SeaweedFS. Alle Objekte sind privat.)*
 - **Zeitsteuerung:**
   - Auslöser: die Zeitsteuerung der Plattform (Vercel Cron/Schedules, Cloudflare Cron Triggers), im Docker ein interner Taktgeber.
   - Alle rufen einen geschützten Endpunkt „tick“ auf.
@@ -447,7 +449,7 @@ Ein Assistent führt durch die Einrichtung:
 - **Anleitung für Microsoft Entra** mit Screenshots, inklusive Beschränkung auf die Absenderpostfächer und Hinweis auf den Ablauf des Secrets.
 - **Anleitung für Resend**, inklusive DNS-Einträge und Hinweis auf die Tarifgrenzen.
 - **Datenschutz-Vorlagen** (siehe 6.8).
-- **Mitgelieferte Startvorlagen:** runder Geburtstag, Mitgliedsjubiläum, Einladung, Rechnung. Sie übernehmen das CD automatisch.
+- **Mitgelieferte Startvorlagen:** runder Geburtstag, Mitgliedsjubiläum, Einladung, Rechnung. Sie übernehmen das CD automatisch. *(Teilplan 3: Sie kommen mit dem Teilplan ihrer Platzhalter: Einladung 3, Geburtstag und Jubiläum 5, Rechnung 6.)*
 
 ---
 
