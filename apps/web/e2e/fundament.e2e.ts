@@ -1,10 +1,38 @@
 import { expect, test } from '@playwright/test';
+import type { Page, Request } from '@playwright/test';
 
 import { E2E_SETUP_TOKEN, E2E_URL } from './env';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { latestLink } from './helpers/mailpit';
 
 const HTTP_NOT_FOUND = 404;
+
+/**
+ * The response bodies of the server function calls a page makes while `act` runs.
+ *
+ * @param page The page.
+ * @param act What the user does.
+ * @returns One body per call, in order.
+ */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Playwright's page is a handle on the browser, mutable by design
+async function serverFnBodiesDuring(page: Page, act: () => Promise<void>): Promise<string[]> {
+	const calls: Request[] = [];
+	const record = (request: Request): void => {
+		if (new URL(request.url()).pathname.startsWith('/_serverFn/')) calls.push(request);
+	};
+	page.on('request', record);
+	try {
+		await act();
+	} finally {
+		page.off('request', record);
+	}
+	return Promise.all(
+		calls.map(async (call) => {
+			const response = await call.response();
+			return response === null ? '' : response.text();
+		}),
+	);
+}
 
 /*
  * The forms submit through React, so their buttons stay pending (`aria-disabled`) until the page
@@ -28,6 +56,8 @@ test('setup, invitation, sign-in, permissions, blocking and sign-out', async ({
 	await expect(page).toHaveURL(/\/admin\/users$/u);
 	await expect(page.getByRole('heading', { exact: true, name: 'Benutzer' })).toBeVisible();
 	await expect(page).toHaveTitle('Benutzer – Vereinsbote');
+	// The setup signed the admin in, so the header offers to sign out.
+	await expect(page.getByRole('button', { name: 'Abmelden' })).toBeVisible();
 	await expectNoA11yViolations(page);
 
 	await page.getByLabel('Name').fill('Kim');
@@ -72,13 +102,28 @@ test('setup, invitation, sign-in, permissions, blocking and sign-out', async ({
 
 	await page.goto('/admin');
 	await expect(page).toHaveURL(/\/admin\/users$/u);
-	await page.goto('/admin/areas');
-	await expect(page.getByRole('heading', { exact: true, name: 'Bereiche' })).toBeVisible();
+	const navigationCalls = await serverFnBodiesDuring(page, async () => {
+		await page.getByRole('link', { name: 'Bereiche' }).click();
+		await expect(page.getByRole('heading', { exact: true, name: 'Bereiche' })).toBeVisible();
+	});
+	// The page's own checks run again; the frame's data (language, session) comes from the document.
+	expect(navigationCalls).not.toHaveLength(0);
+	expect(navigationCalls.filter((body) => body.includes('"signedIn"'))).toStrictEqual([]);
 	await expect(page).toHaveTitle('Bereiche – Vereinsbote');
+	await expect(page.getByRole('button', { name: 'Abmelden' })).toBeVisible();
 	await expectNoA11yViolations(page);
 
-	await page.getByRole('button', { name: 'Abmelden' }).click();
+	// Signing out in another tab ends the session of this one as well: its next navigation lands
+	// on the sign-in page, whose header no longer offers to sign out.
+	const otherTab = await page.context().newPage();
+	await otherTab.goto('/admin/users');
+	await otherTab.getByRole('button', { name: 'Abmelden' }).click();
+	await expect(otherTab).toHaveURL(/\/login$/u);
+	await expect(otherTab.getByRole('button', { name: 'Abmelden' })).toHaveCount(0);
+	await otherTab.close();
+	await page.getByRole('link', { name: 'Benutzer' }).click();
 	await expect(page).toHaveURL(/\/login$/u);
+	await expect(page.getByRole('button', { name: 'Anmeldelink anfordern' })).toBeVisible();
 	await expect(page.getByRole('button', { name: 'Abmelden' })).toHaveCount(0);
 	await page.goto('/admin/users');
 	await expect(page).toHaveURL(/\/login$/u);

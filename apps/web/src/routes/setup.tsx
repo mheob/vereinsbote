@@ -130,9 +130,10 @@ const submitSetup = createServerFn({ method: 'POST' })
 			if (error instanceof setup.SetupAlreadyDoneError) return { failure: 'done', fields: [] };
 			throw error;
 		}
-		// The first admin goes on to the user management.
+		// The first admin goes on to the user management, in a new document: the frame of the page
+		// (the header's Sign out) is resolved per document, see the root route.
 		// oxlint-disable-next-line typescript/only-throw-error -- TanStack Start sends a thrown redirect to the client
-		throw redirect({ to: '/admin/users' });
+		throw redirect({ reloadDocument: true, to: '/admin/users' });
 	});
 
 /**

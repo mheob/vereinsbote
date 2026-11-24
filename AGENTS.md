@@ -76,6 +76,7 @@ Run them from the repository root.
 - **UI text** lives only in `apps/web/src/i18n/de.ts` and `en.ts`. Every key exists in both. Read it with `useT()` in components and `translate(locale, key, params)` on the server. System mails use the recipient's language.
 - **Page titles:** every route sets `head: (context) => pageHead(context, '<key>')` (`apps/web/src/i18n/page-title.ts`), which gives „{Seite} – Vereinsbote“ in the request's language and names the error or not-found page when the route fails. Admin pages use `adminPageHead` with a typed context.
 - **Paths** used in code (`LOGIN_PATH`, `AFTER_SIGN_IN_PATH`) come from `apps/web/src/paths.ts`.
+- **The page frame** (language, signed in or not) comes from the root loader, once per document; client navigation does not ask again. Whatever changes it loads a new document: a redirect with `reloadDocument: true` (setup's sign-in, `requireRequestPrincipal`), `location.assign` or `location.reload` (Sign out, language switcher). Protected pages and server functions still check the session themselves.
 - **Access levels** are defined once in `apps/web/src/server/permissions/levels.ts` (`accessLevels`); the schema and the level selects use that list.
 - **Accessibility:** WCAG 2.2 AA.
   - Use React Aria Components. Show errors at the field. Announce changes in live regions.
