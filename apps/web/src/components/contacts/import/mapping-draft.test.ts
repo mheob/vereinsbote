@@ -22,6 +22,7 @@ const LOCKER: CustomFieldRecord = {
 	id: '0f8fad5b-d9cb-469f-a165-70867728950e',
 	kind: 'member',
 	name: 'Spind',
+	placeholderKey: 'spind',
 	protection: 'protected',
 	type: 'text',
 };

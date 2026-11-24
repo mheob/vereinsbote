@@ -11,8 +11,22 @@ const SPIND_ID = '0b9a4c39-3f6e-4d0b-9a64-0c4c3b0f7a11';
 const GONE_ID = '5d1f8f2e-7c2a-4f55-8a0e-2b7d9c6e4a22';
 
 const CUSTOM_FIELDS: CustomFieldRecord[] = [
-	{ id: SINCE_ID, kind: 'member', name: 'Ehrenamt seit', protection: 'protected', type: 'date' },
-	{ id: SPIND_ID, kind: 'member', name: 'Spind', protection: 'base', type: 'text' },
+	{
+		id: SINCE_ID,
+		kind: 'member',
+		name: 'Ehrenamt seit',
+		placeholderKey: 'ehrenamtSeit',
+		protection: 'protected',
+		type: 'date',
+	},
+	{
+		id: SPIND_ID,
+		kind: 'member',
+		name: 'Spind',
+		placeholderKey: 'spind',
+		protection: 'base',
+		type: 'text',
+	},
 ];
 
 /**
@@ -562,7 +576,16 @@ describe(transformRows, () => {
 		[
 			'a custom field of the partners',
 			[{ header: 'Trikot', target: { customFieldId: SPIND_ID, type: 'customField' } }],
-			[{ id: SPIND_ID, kind: 'partner', name: 'Spind', protection: 'base', type: 'text' }],
+			[
+				{
+					id: SPIND_ID,
+					kind: 'partner',
+					name: 'Spind',
+					placeholderKey: 'spind',
+					protection: 'base',
+					type: 'text',
+				},
+			],
 		],
 	])('blocks %s', (_name, columns, customFields) => {
 		const payload = withColumns(memberPayload([['1']]), columns, [columns.map(() => 'L')]);

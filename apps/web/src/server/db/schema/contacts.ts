@@ -116,6 +116,8 @@ export const customFields = pgTable(
 		id: uuid('id').primaryKey().defaultRandom(),
 		kind: text('kind', { enum: CONTACT_KINDS }).notNull(),
 		name: text('name').notNull(),
+		/** The stable key in `{{contact.custom.<key>}}`, built from the name, unique per kind. */
+		placeholderKey: text('placeholder_key').notNull(),
 		protection: text('protection', { enum: PROTECTIONS }).notNull().default('protected'),
 		type: text('type', { enum: CUSTOM_FIELD_TYPES }).notNull(),
 	},
@@ -127,6 +129,7 @@ export const customFields = pgTable(
 			sql`${table.protection} in (${quotedList(PROTECTIONS)})`,
 		),
 		uniqueIndex('custom_fields_kind_name_idx').on(table.kind, sql`lower(${table.name})`),
+		uniqueIndex('custom_fields_kind_placeholder_key_idx').on(table.kind, table.placeholderKey),
 	],
 );
 

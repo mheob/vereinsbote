@@ -51,7 +51,7 @@ async function failureOf(promise: Promise<unknown>): Promise<unknown> {
 async function insertNote(db: Db): Promise<string> {
 	const [row] = await db
 		.insert(customFields)
-		.values({ kind: 'member', name: 'Notiz', type: 'text' })
+		.values({ kind: 'member', name: 'Notiz', placeholderKey: 'notiz', type: 'text' })
 		.returning({ id: customFields.id });
 	if (row === undefined) throw new Error('Inserting the custom field returned no row.');
 	return row.id;
@@ -368,7 +368,14 @@ describe(setCustomFieldProtection, () => {
 		const db = await createTestDb();
 		const id = await insertNote(db);
 		await expect(listCustomFields(db, 'member')).resolves.toStrictEqual([
-			{ id, kind: 'member', name: 'Notiz', protection: 'protected', type: 'text' },
+			{
+				id,
+				kind: 'member',
+				name: 'Notiz',
+				placeholderKey: 'notiz',
+				protection: 'protected',
+				type: 'text',
+			},
 		]);
 		await expect(listCustomFields(db, 'partner')).resolves.toStrictEqual([]);
 	});
@@ -384,6 +391,7 @@ describe(setCustomFieldProtection, () => {
 				id: '00000000-0000-4000-8000-000000000001',
 				kind: 'partner',
 				name: 'Zahlweise',
+				placeholderKey: 'zahlweise',
 				type: 'text',
 			},
 			{
@@ -391,6 +399,7 @@ describe(setCustomFieldProtection, () => {
 				id: 'ffffffff-ffff-4fff-bfff-ffffffffffff',
 				kind: 'partner',
 				name: 'ansprechpartner',
+				placeholderKey: 'ansprechpartner',
 				type: 'text',
 			},
 			{
@@ -398,6 +407,7 @@ describe(setCustomFieldProtection, () => {
 				id: '88888888-8888-4888-8888-888888888888',
 				kind: 'partner',
 				name: 'Branche',
+				placeholderKey: 'branche',
 				type: 'text',
 			},
 		]);

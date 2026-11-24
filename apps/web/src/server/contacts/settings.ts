@@ -29,6 +29,8 @@ interface CustomFieldRecord {
 	id: string;
 	kind: ContactKind;
 	name: string;
+	/** The stable key of the field in `{{contact.custom.<key>}}`. */
+	placeholderKey: string;
 	type: CustomFieldType;
 	protection: Protection;
 }
@@ -109,6 +111,7 @@ async function listCustomFields(db: Db, kind: ContactKind): Promise<CustomFieldR
 			id: customFields.id,
 			kind: customFields.kind,
 			name: customFields.name,
+			placeholderKey: customFields.placeholderKey,
 			protection: customFields.protection,
 			type: customFields.type,
 		})

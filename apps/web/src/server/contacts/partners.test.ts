@@ -147,7 +147,10 @@ async function insertCustomField(
 		protection: 'base' | 'protected';
 	}>,
 ): Promise<string> {
-	const [row] = await db.insert(customFields).values(field).returning({ id: customFields.id });
+	const [row] = await db
+		.insert(customFields)
+		.values({ ...field, placeholderKey: field.name.toLowerCase() })
+		.returning({ id: customFields.id });
 	if (row === undefined) throw new Error('Inserting the custom field returned no row.');
 	return row.id;
 }
@@ -745,11 +748,19 @@ describe(getPartnerForm, () => {
 		const form = await getPartnerForm(db, editor, null);
 		expect(form).toStrictEqual({
 			customFields: [
-				{ id: baseId, kind: 'partner', name: 'Ansprechpartner', protection: 'base', type: 'text' },
+				{
+					id: baseId,
+					kind: 'partner',
+					name: 'Ansprechpartner',
+					placeholderKey: 'ansprechpartner',
+					protection: 'base',
+					type: 'text',
+				},
 				{
 					id: visibleId,
 					kind: 'partner',
 					name: 'Vertrag bis',
+					placeholderKey: 'vertrag bis',
 					protection: 'protected',
 					type: 'date',
 				},
