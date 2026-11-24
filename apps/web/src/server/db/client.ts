@@ -1,6 +1,6 @@
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 
-import { logPoolError } from './pool-error';
+import { logPoolErrorsUntilEnd } from './pool-error';
 // oxlint-disable-next-line import/no-namespace -- Drizzle needs the whole schema module
 import * as schema from './schema';
 
@@ -34,8 +34,7 @@ async function openNeonDb(databaseUrl: string, devNeonWsProxy: string | null): P
 		neonConfig.pipelineConnect = false;
 	}
 	const pool = new Pool({ connectionString: databaseUrl });
-	pool.on('error', logPoolError);
-	return { db: drizzle(pool, { schema }), end: async () => pool.end() };
+	return { db: drizzle(pool, { schema }), end: logPoolErrorsUntilEnd(pool) };
 }
 
 /**

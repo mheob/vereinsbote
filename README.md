@@ -159,6 +159,7 @@ The deployment itself is the owner's step. Before the first production deploymen
 - **Two database pools on Node.**
   - The tick runs on a second pool of its own, next to the pool of the requests. Both are node-postgres pools with at most 10 connections each.
   - The database's connection limit must cover both.
+- **Database pool errors** are logged as `db pool error <code>` (Neon's WebSocket errors as `db pool error Event error`). Errors of a pool that is closing, as every request's pool does on Cloudflare, are not logged: they are the sockets going away, not the database.
 - **Health:** `GET /api/health` answers 200 with `{"ok":true}` when the database is reachable, otherwise 503.
 
 ## CI
