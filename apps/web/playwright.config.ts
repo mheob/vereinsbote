@@ -15,10 +15,18 @@ export default defineConfig({
 	forbidOnly: isCi,
 	fullyParallel: false,
 	globalSetup: './e2e/global-setup.ts',
-	projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+	// One project per flow. `contacts` needs the club that `fundament` sets up, so it runs after it.
+	projects: [
+		{ name: 'fundament', testMatch: 'fundament.e2e.ts', use: { ...devices['Desktop Chrome'] } },
+		{
+			dependencies: ['fundament'],
+			name: 'contacts',
+			testMatch: 'contacts.e2e.ts',
+			use: { ...devices['Desktop Chrome'] },
+		},
+	],
 	reporter: isCi ? [['github'], ['list']] : 'list',
 	testDir: './e2e',
-	testMatch: '**/*.e2e.ts',
 	use: {
 		baseURL: E2E_URL,
 		// What the reverse proxy in front of a Node server sets (README); without it, Better Auth

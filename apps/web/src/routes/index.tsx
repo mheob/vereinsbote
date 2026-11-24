@@ -1,8 +1,8 @@
-import { createFileRoute, useLoaderData } from '@tanstack/react-router';
+import { createFileRoute, Link, useLoaderData } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
 import type { ReactNode } from 'react';
 
-import { AdminNav } from '@/components/admin-nav';
+import { linkClass } from '@/components/styles';
 import { LEVEL_MESSAGES } from '@/i18n/levels';
 import { pageHead } from '@/i18n/page-title';
 import { useT } from '@/i18n/use-t';
@@ -22,7 +22,6 @@ const loadHome = createServerFn({ method: 'GET' }).handler(async () => {
 	const areas = await listAreas(context.db, principal);
 	return {
 		areas: areas.flatMap(({ id, level, name }) => (level === null ? [] : [{ id, level, name }])),
-		isAdmin: principal.isAdmin,
 	};
 });
 
@@ -31,10 +30,13 @@ export const Route = createFileRoute('/')({
 	// oxlint-disable-next-line func-name-matching -- see above
 	component: function HomePage(): ReactNode {
 		const t = useT();
-		const { areas, isAdmin } = useLoaderData({ from: '/' });
+		const { areas } = useLoaderData({ from: '/' });
+		// Before the first member import the page says so, to readers of the members area and to
+		// admins (design 11), with the link to the import for those who may import. The notice
+		// comes with the page frame (`loadFrameInfo`).
+		const notice = useLoaderData({ from: '__root__', select: (root) => root.frame?.notice });
 		return (
 			<div className="mx-auto flex max-w-2xl flex-col gap-6 p-6">
-				{isAdmin ? <AdminNav /> : null}
 				<h1 className="text-2xl font-bold">{t('home.title')}</h1>
 				{areas.length === 0 ? (
 					<p>{t('home.noAreas')}</p>
@@ -47,6 +49,22 @@ export const Route = createFileRoute('/')({
 						))}
 					</ul>
 				)}
+				{notice?.kind === 'firstImport' ? (
+					<div className="flex flex-col gap-2">
+						<p>{t('home.firstImport')}</p>
+						{notice.canImport ? (
+							<p>
+								<Link
+									className={linkClass}
+									// @ts-expect-error -- the route comes with the import wizard; then this line goes
+									to="/contacts/import/members"
+								>
+									{t('home.startFirstImport')}
+								</Link>
+							</p>
+						) : null}
+					</div>
+				) : null}
 			</div>
 		);
 	},

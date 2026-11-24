@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test';
 
-import { pageHead } from './page-title';
+import { contactsPageHead, pageHead } from './page-title';
+import type { ContactsTitleContext } from './page-title';
 
 /**
  * A head context as TanStack Router passes it: the root match carries the request's locale.
@@ -56,5 +57,50 @@ describe(pageHead, () => {
 			'Ein Fehler ist aufgetreten – Vereinsbote',
 		);
 		expect(pageHead(context('fr'), 'auth.title').meta[0].title).toBe('Anmelden – Vereinsbote');
+	});
+});
+
+/**
+ * The head context of a contacts page whose layout loaded the user's access.
+ *
+ * @param access What the user may do with contacts.
+ * @param access.canList Whether the user sees the list.
+ * @param access.canManage Whether the user manages members and partners.
+ * @returns The context.
+ */
+function contactsContext(
+	access: Readonly<{
+		canList: boolean;
+		canManage: Readonly<{ member: boolean; partner: boolean }>;
+	}>,
+): ContactsTitleContext {
+	return {
+		match: { context: { access }, status: 'success' },
+		matches: [{ loaderData: { locale: 'de' } }],
+	};
+}
+
+describe(contactsPageHead, () => {
+	it('names a contacts page as no access without the needed right', () => {
+		const reader = { canList: true, canManage: { member: false, partner: false } };
+		expect(
+			contactsPageHead(
+				contactsContext({ canList: false, canManage: { member: false, partner: false } }),
+				'contacts.title',
+			).meta[0].title,
+		).toBe('Kein Zugriff – Vereinsbote');
+		expect(
+			contactsPageHead(contactsContext(reader), 'contacts.title', 'partner').meta[0].title,
+		).toBe('Kein Zugriff – Vereinsbote');
+		expect(contactsPageHead(contactsContext(reader), 'contacts.title').meta[0].title).toBe(
+			'Kontakte – Vereinsbote',
+		);
+		const partnerEditor = { canList: true, canManage: { member: false, partner: true } };
+		expect(
+			contactsPageHead(contactsContext(partnerEditor), 'contacts.title', 'partner').meta[0].title,
+		).toBe('Kontakte – Vereinsbote');
+		expect(
+			contactsPageHead(contactsContext(partnerEditor), 'contacts.title', 'member').meta[0].title,
+		).toBe('Kein Zugriff – Vereinsbote');
 	});
 });

@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteRouteImport } from './routes/admin/route'
+import { Route as ContactsRouteRouteImport } from './routes/contacts/route'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as SetupRouteImport } from './routes/setup'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
@@ -18,6 +19,7 @@ import { Route as AdminAreasRouteImport } from './routes/admin/areas'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as ApiTickRouteImport } from './routes/api/tick'
+import { Route as ContactsIndexRouteImport } from './routes/contacts/index'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 
 const IndexRoute = IndexRouteImport.update({
@@ -28,6 +30,11 @@ const IndexRoute = IndexRouteImport.update({
 const AdminRouteRoute = AdminRouteRouteImport.update({
   id: '/admin',
   path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ContactsRouteRoute = ContactsRouteRouteImport.update({
+  id: '/contacts',
+  path: '/contacts',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -65,6 +72,11 @@ const ApiTickRoute = ApiTickRouteImport.update({
   path: '/api/tick',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ContactsIndexRoute = ContactsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ContactsRouteRoute,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -74,6 +86,7 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteRouteWithChildren
+  '/contacts': typeof ContactsRouteRouteWithChildren
   '/login': typeof LoginRoute
   '/setup': typeof SetupRoute
   '/admin/areas': typeof AdminAreasRoute
@@ -81,6 +94,7 @@ export interface FileRoutesByFullPath {
   '/api/health': typeof ApiHealthRoute
   '/api/tick': typeof ApiTickRoute
   '/admin/': typeof AdminIndexRoute
+  '/contacts/': typeof ContactsIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesByTo {
@@ -92,12 +106,14 @@ export interface FileRoutesByTo {
   '/api/health': typeof ApiHealthRoute
   '/api/tick': typeof ApiTickRoute
   '/admin': typeof AdminIndexRoute
+  '/contacts': typeof ContactsIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteRouteWithChildren
+  '/contacts': typeof ContactsRouteRouteWithChildren
   '/login': typeof LoginRoute
   '/setup': typeof SetupRoute
   '/admin/areas': typeof AdminAreasRoute
@@ -105,6 +121,7 @@ export interface FileRoutesById {
   '/api/health': typeof ApiHealthRoute
   '/api/tick': typeof ApiTickRoute
   '/admin/': typeof AdminIndexRoute
+  '/contacts/': typeof ContactsIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRouteTypes {
@@ -112,6 +129,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/admin'
+    | '/contacts'
     | '/login'
     | '/setup'
     | '/admin/areas'
@@ -119,6 +137,7 @@ export interface FileRouteTypes {
     | '/api/health'
     | '/api/tick'
     | '/admin/'
+    | '/contacts/'
     | '/api/auth/$'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -130,11 +149,13 @@ export interface FileRouteTypes {
     | '/api/health'
     | '/api/tick'
     | '/admin'
+    | '/contacts'
     | '/api/auth/$'
   id:
     | '__root__'
     | '/'
     | '/admin'
+    | '/contacts'
     | '/login'
     | '/setup'
     | '/admin/areas'
@@ -142,12 +163,14 @@ export interface FileRouteTypes {
     | '/api/health'
     | '/api/tick'
     | '/admin/'
+    | '/contacts/'
     | '/api/auth/$'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRouteRoute: typeof AdminRouteRouteWithChildren
+  ContactsRouteRoute: typeof ContactsRouteRouteWithChildren
   LoginRoute: typeof LoginRoute
   SetupRoute: typeof SetupRoute
   ApiHealthRoute: typeof ApiHealthRoute
@@ -169,6 +192,13 @@ declare module '@tanstack/react-router' {
       path: '/admin'
       fullPath: '/admin'
       preLoaderRoute: typeof AdminRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/contacts': {
+      id: '/contacts'
+      path: '/contacts'
+      fullPath: '/contacts'
+      preLoaderRoute: typeof ContactsRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -220,6 +250,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiTickRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/contacts/': {
+      id: '/contacts/'
+      path: '/'
+      fullPath: '/contacts/'
+      preLoaderRoute: typeof ContactsIndexRouteImport
+      parentRoute: typeof ContactsRouteRoute
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -246,9 +283,22 @@ const AdminRouteRouteWithChildren = AdminRouteRoute._addFileChildren(
   AdminRouteRouteChildren,
 )
 
+interface ContactsRouteRouteChildren {
+  ContactsIndexRoute: typeof ContactsIndexRoute
+}
+
+const ContactsRouteRouteChildren: ContactsRouteRouteChildren = {
+  ContactsIndexRoute: ContactsIndexRoute,
+}
+
+const ContactsRouteRouteWithChildren = ContactsRouteRoute._addFileChildren(
+  ContactsRouteRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRouteRoute: AdminRouteRouteWithChildren,
+  ContactsRouteRoute: ContactsRouteRouteWithChildren,
   LoginRoute: LoginRoute,
   SetupRoute: SetupRoute,
   ApiHealthRoute: ApiHealthRoute,

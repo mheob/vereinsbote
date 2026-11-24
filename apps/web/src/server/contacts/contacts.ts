@@ -13,11 +13,9 @@ import { displayName } from './display-name';
 import type { DisplayName } from './display-name';
 import { customFieldKey, protectedFieldOf } from './fields';
 import type { ContactKind, CustomFieldType, FieldKey, Gender } from './fields';
+import { CONTACTS_PAGE_SIZE, MAX_SEARCH_LENGTH } from './list-query';
 import { listTags } from './partners';
 import { listCustomFields } from './settings';
-
-const CONTACTS_PAGE_SIZE = 50;
-const MAX_SEARCH_LENGTH = 100;
 
 const UUID = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/iu;
 
@@ -43,26 +41,26 @@ interface ContactListQuery {
 
 /** A contact in the list: base fields only. */
 interface ContactListItem {
-	id: string;
+	readonly id: string;
 	/** The member number of a member, the customer number of a partner. */
-	number: string | null;
-	name: DisplayName;
-	email: string | null;
-	groups: string[];
-	tags: string[];
-	suppressed: boolean;
+	readonly number: string | null;
+	readonly name: DisplayName;
+	readonly email: string | null;
+	readonly groups: readonly string[];
+	readonly tags: readonly string[];
+	readonly suppressed: boolean;
 }
 
 interface ContactListPage {
-	items: ContactListItem[];
-	total: number;
-	page: number;
+	readonly items: readonly ContactListItem[];
+	readonly total: number;
+	readonly page: number;
 	/** All groups of the kind, for the filter. */
-	groups: string[];
+	readonly groups: readonly string[];
 	/** The tags of the partners, one per tag ignoring case, for the filter; members have none. */
-	tags: string[];
+	readonly tags: readonly string[];
 	/** Whether the user may filter by exit, i.e. sees the members' exit date. */
-	canFilterExit: boolean;
+	readonly canFilterExit: boolean;
 }
 
 /** The columns of the protected built-in fields. */
@@ -406,7 +404,7 @@ async function getContact(
 	};
 }
 
-export { CONTACTS_PAGE_SIZE, getContact, listContacts, MAX_SEARCH_LENGTH };
+export { getContact, listContacts };
 export type {
 	ContactDetail,
 	ContactFilters,

@@ -6,14 +6,19 @@ import { canAccessArea } from '@/server/permissions/principal';
 import type { Principal } from '@/server/permissions/principal';
 
 type FrameNotice =
-	| { kind: 'stale'; lastImportAt: string; weeks: number; canImport: boolean }
-	| { kind: 'firstImport'; canImport: boolean };
+	| Readonly<{ kind: 'stale'; lastImportAt: string; weeks: number; canImport: boolean }>
+	| Readonly<{ kind: 'firstImport'; canImport: boolean }>;
 
 /** What the page frame needs besides the language and the session. */
 interface FrameInfo {
-	nav: { admin: boolean; contacts: boolean; importMembers: boolean; importPartners: boolean };
+	readonly nav: Readonly<{
+		admin: boolean;
+		contacts: boolean;
+		importMembers: boolean;
+		importPartners: boolean;
+	}>;
 	/** Only for readers of the members area and for admins. */
-	notice: FrameNotice | null;
+	readonly notice: FrameNotice | null;
 }
 
 /**

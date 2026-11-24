@@ -10,8 +10,8 @@ interface NameParts {
 
 /** How a contact is shown: `primary` in the list, `secondary` (the contact person) below it. */
 interface DisplayName {
-	primary: string;
-	secondary: string | null;
+	readonly primary: string;
+	readonly secondary: string | null;
 }
 
 /**

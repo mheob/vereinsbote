@@ -7,9 +7,10 @@ import { createTestDb } from '@/server/db/test-db';
 import { ForbiddenError } from '@/server/permissions/principal';
 import type { Principal } from '@/server/permissions/principal';
 
-import { CONTACTS_PAGE_SIZE, getContact, listContacts, MAX_SEARCH_LENGTH } from './contacts';
+import { getContact, listContacts } from './contacts';
 import type { ContactDetail, ContactFilters, ContactListPage } from './contacts';
 import type { ContactKind, CustomFieldType, Protection } from './fields';
+import { CONTACTS_PAGE_SIZE, MAX_SEARCH_LENGTH } from './list-query';
 import { insertContact, setUpClub, userWith } from './testing';
 
 /** 00:30 in Berlin on 2026-06-15 while it is still 2026-06-14 in UTC. */
