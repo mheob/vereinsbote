@@ -55,9 +55,10 @@ interface PartnerRowIssue {
 	readonly line: number;
 	/**
 	 * `emailAmbiguous`: a row without customer number whose address several partners have;
-	 * `emailRepeated`: an earlier row without customer number has the address.
+	 * `emailRepeated`: an earlier row without customer number has the address; `nameMissing`: a
+	 * row that would create a partner without organization, first and last name.
 	 */
-	readonly reason: 'emailAmbiguous' | 'emailRepeated';
+	readonly reason: 'emailAmbiguous' | 'emailRepeated' | 'nameMissing';
 }
 
 /** An empty cell or a field issue: the value the partner has stays. */
@@ -192,6 +193,17 @@ function hasValue(values: ContactValues, key: BlankKey): boolean {
 }
 
 /**
+ * Tells whether a partner has a name: an organization, a first or a last name (decision 12 of
+ * the plan).
+ *
+ * @param values The partner's values.
+ * @returns True with a name.
+ */
+function hasName(values: ContactValues): boolean {
+	return [values.organization, values.firstName, values.lastName].some((part) => part !== null);
+}
+
+/**
  * The field a column fills, as `ImportedRow.blank` names it.
  *
  * @param target The target of the column.
@@ -262,7 +274,8 @@ class PartnerMatcher {
 
 	/**
 	 * A row with a customer number: updates the partner with it; a new number takes over the only
-	 * partner without number that has the row's address, else it creates a partner.
+	 * partner without number that has the row's address, else it creates a partner (or skips a
+	 * row without name).
 	 *
 	 * @param row The row.
 	 * @param number Its customer number.
@@ -282,7 +295,8 @@ class PartnerMatcher {
 
 	/**
 	 * A row without customer number: skipped when an earlier such row had the address or several
-	 * partners have it; else updates the one partner with the address or creates one.
+	 * partners have it; else updates the one partner with the address or creates one (or skips a
+	 * row without name).
 	 *
 	 * @param row The row.
 	 * @throws {TypeError} For a row without address, which the blocking check excludes.
@@ -332,14 +346,20 @@ class PartnerMatcher {
 	}
 
 	/**
-	 * Creates a partner with the values of a row; a gender without value is `unspecified`.
+	 * Creates a partner with the values of a row; a gender without value is `unspecified`. A row
+	 * without any name is skipped: a partner needs one, in the app as in the import.
 	 *
 	 * @param row The row.
 	 */
 	private create(row: ImportedRow): void {
+		const values = replacedValues('partner', row);
+		if (!hasName(values)) {
+			this.rowIssues.push({ line: row.line, reason: 'nameMissing' });
+			return;
+		}
 		this.createdCount += 1;
 		const key = `new:${this.createdCount}`;
-		this.put(key, { stored: null, values: replacedValues('partner', row) });
+		this.put(key, { stored: null, values });
 		this.matched.add(key);
 	}
 

@@ -676,6 +676,76 @@ describe('the partner import', () => {
 		});
 	});
 
+	it('skips a row that would create a partner without a name', async () => {
+		const club = await setUp();
+		const payload = partnerPayload([
+			['100001', '', '', 'info@ohne-namen.example', 'keine Angabe'],
+			['', '-', '-', 'kontakt@ohne-namen.example', ''],
+			['100002', 'Berger', 'Lena', 'lena.berger@example.org', 'weiblich'],
+		]);
+		await expect(preview(club, payload)).resolves.toMatchObject({
+			changes: [{ ...PLAIN, name: nameOf('Lena Berger'), number: '100002', type: 'created' }],
+			counts: { ...NO_COUNTS, created: 1, skipped: 2 },
+			rowIssues: [
+				{ line: 2, reason: 'nameMissing' },
+				{ line: 3, reason: 'nameMissing' },
+			],
+		});
+		await expect(importPartners(club, payload)).resolves.toStrictEqual({
+			counts: { changed: 0, created: 1, removed: 0, warnings: 0 },
+			ok: true,
+		});
+		await expect(storedPartners(club.db)).resolves.toStrictEqual([['100002', null]]);
+	});
+
+	it('updates a stored partner from a row without a name and keeps its name', async () => {
+		const club = await setUp();
+		const { db } = club;
+		const bakeryId = await addPartner(db, {
+			customerNumber: '100001',
+			email: 'info@baeckerei-koerner.example',
+			organization: 'Bäckerei Körner GmbH',
+		});
+		const personId = await addPartner(db, {
+			email: 'lena.berger@example.org',
+			firstName: 'Lena',
+			lastName: 'Berger',
+		});
+		const payload = partnerPayload(
+			[
+				['100001', '', '-', 'kontakt@baeckerei-koerner.example', 'keine Angabe'],
+				['', '-', '-', 'lena.berger@example.org', 'weiblich'],
+			],
+			ORGANIZATION_RULE,
+		);
+		await expect(preview(club, payload)).resolves.toMatchObject({
+			changes: [
+				{ fields: ['email'], name: nameOf('Bäckerei Körner GmbH'), type: 'changed' },
+				{ fields: ['gender'], name: nameOf('Lena Berger'), type: 'changed' },
+			],
+			counts: { ...NO_COUNTS, updated: 2 },
+			keptValues: [
+				{ column: 'Nachname', line: 3 },
+				{ column: 'Vorname', line: 3 },
+			],
+			rowIssues: [],
+		});
+		await expect(importPartners(club, payload)).resolves.toMatchObject({
+			counts: { changed: 2, created: 0, removed: 0 },
+		});
+		const [bakery, person] = [await storedPartner(db, bakeryId), await storedPartner(db, personId)];
+		expect(
+			[bakery, person].map(({ firstName, lastName, organization }) => [
+				organization,
+				firstName,
+				lastName,
+			]),
+		).toStrictEqual([
+			['Bäckerei Körner GmbH', null, null],
+			[null, 'Lena', 'Berger'],
+		]);
+	});
+
 	it('applies the organization rule', async () => {
 		const club = await setUp();
 		const { db } = club;

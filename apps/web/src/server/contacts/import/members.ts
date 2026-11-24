@@ -172,7 +172,7 @@ function compareWithStock(
 	const changed: ChangedMember[] = [];
 	for (const { memberNumber, row, values } of taken) {
 		const record = byNumber.get(memberNumber);
-		const fields = record === undefined ? [] : changedFields(record, row, 'replace');
+		const fields = record === undefined ? [] : changedFields(record, row);
 		if (record === undefined) created.push(values);
 		else if (fields.length > 0) changed.push({ fields, stored: record, values });
 	}

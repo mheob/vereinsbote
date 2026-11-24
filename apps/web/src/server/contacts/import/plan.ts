@@ -281,21 +281,15 @@ function diffValues(before: ContactValues, after: ContactValues): ChangedField[]
 }
 
 /**
- * The fields of a stored contact a row changes.
+ * The fields of a stored contact a row changes that replaces every value (members). The partner
+ * import merges instead: `mergedValues`, compared with `diffValues`.
  *
  * @param stored The stored contact.
  * @param row The row.
- * @param mode `replace` (members): the row replaces every value; `merge` (partners): only the
- *   values the row carries count.
  * @returns The changed fields; empty when the contact stays as it is.
  */
-function changedFields(
-	stored: StoredContact,
-	row: ImportedRow,
-	mode: 'merge' | 'replace',
-): ChangedField[] {
-	const after = mode === 'replace' ? replacedValues(stored.kind, row) : mergedValues(stored, row);
-	return diffValues(storedValues(stored), after);
+function changedFields(stored: StoredContact, row: ImportedRow): ChangedField[] {
+	return diffValues(storedValues(stored), replacedValues(stored.kind, row));
 }
 
 /**
