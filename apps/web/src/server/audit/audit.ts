@@ -4,6 +4,10 @@ import { auditLog } from '@/server/db/schema';
 type AuditAction =
 	| 'area.created'
 	| 'area.renamed'
+	| 'contact.opt_out_removed'
+	| 'contact.opted_out'
+	| 'contact.suppressed'
+	| 'contact.unsuppressed'
 	| 'contacts.settings_changed'
 	| 'setup.completed'
 	| 'user.admin_changed'
