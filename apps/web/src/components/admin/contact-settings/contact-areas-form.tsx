@@ -103,7 +103,8 @@ function AreaSelect({
 
 /**
  * The form „Bereiche“: which area holds the members and which the partners. While one is not
- * set (an instance set up before the contacts existed), a hint says that imports need them.
+ * set (an instance set up before the contacts existed), a hint says that imports need them. An
+ * area deleted in another tab is refused; the selects then show the stored areas again.
  *
  * @param props The props.
  * @param props.announce Announces the result.
@@ -124,8 +125,9 @@ export function ContactAreasForm({
 	const router = useRouter();
 	const save = useServerFn(submitContactAreas);
 	const headingId = useId();
-	const [, submitForm, isPending] = useActionState(
-		async (_previous: null, formData: FormData): Promise<null> => {
+	// Counts the refusals of a gone area; each one shows the selects anew with the stored areas.
+	const [revision, submitForm, isPending] = useActionState(
+		async (previous: number, formData: FormData): Promise<number> => {
 			const result = await settle(
 				save({
 					data: {
@@ -134,17 +136,21 @@ export function ContactAreasForm({
 					},
 				}),
 			);
-			if (result === undefined) return null;
+			if (result === undefined) return previous;
 			if (result === FAILED) {
 				announce(t('auth.requestFailed'), 'alert');
-				return null;
+				return previous;
 			}
-			// The navigation and the import rights follow the areas.
+			// The navigation and the import rights follow the areas; a gone area leaves the list.
 			await router.invalidate();
+			if (!result.ok) {
+				announce(t('contactSettings.gone'), 'alert');
+				return previous + 1;
+			}
 			announce(t('contactSettings.areasSaved'), 'status');
-			return null;
+			return previous;
 		},
-		null,
+		0,
 	);
 	const onSubmit = useFormSubmit(submitForm);
 	const missing = settings.membersAreaId === null || settings.partnersAreaId === null;
@@ -160,7 +166,7 @@ export function ContactAreasForm({
 					<AreaSelect
 						areas={areas}
 						defaultValue={settings[select.name]}
-						key={select.name}
+						key={`${select.name}-${revision}`}
 						label={t(select.label)}
 						name={select.name}
 					/>

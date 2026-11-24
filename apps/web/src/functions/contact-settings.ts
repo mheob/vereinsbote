@@ -30,8 +30,20 @@ interface ContactSettingsPage {
 /** A saved setting; distinct from `undefined`, which `useServerFn` gives after a redirect. */
 type SavedResult = Readonly<{ ok: true }>;
 
-/** The areas of a field; the last area cannot go. */
-type FieldAreasResult = SavedResult | Readonly<{ ok: false; failure: 'noArea' }>;
+/**
+ * The setting changed in another tab: an area, a protected field or a custom field is gone. The
+ * page loads the current state.
+ */
+type SettingGone = Readonly<{ ok: false; failure: 'gone' }>;
+
+/** The members and partners area; an area may be gone. */
+type ContactAreasResult = SavedResult | SettingGone;
+
+/** The areas of a field; the last area cannot go, and the field or an area may be gone. */
+type FieldAreasResult = SavedResult | SettingGone | Readonly<{ ok: false; failure: 'noArea' }>;
+
+/** The protection of a custom field; the field may be gone. */
+type CustomFieldProtectionResult = SavedResult | SettingGone;
 
 /** The weeks; the server refuses what is no whole number from 1 to 52. */
 type StaleImportWeeksResult = SavedResult | Readonly<{ ok: false; failure: 'invalid' }>;
@@ -40,6 +52,8 @@ type StaleImportWeeksResult = SavedResult | Readonly<{ ok: false; failure: 'inva
 const MAX_AREA_IDS = 1000;
 
 const SAVED: SavedResult = { ok: true };
+
+const GONE: SettingGone = { failure: 'gone', ok: false };
 
 const contactAreasRequest = z.object({ membersAreaId: z.uuid(), partnersAreaId: z.uuid() });
 
@@ -97,26 +111,37 @@ const loadContactSettingsPage = createServerFn({ method: 'GET' }).handler(
 	},
 );
 
-/** Changes the members and partners area. */
+/** Changes the members and partners area; an area deleted meanwhile is refused. */
 const submitContactAreas = createServerFn({ method: 'POST' })
 	.validator(contactAreasRequest)
-	.handler(async ({ data }): Promise<SavedResult> => {
-		const [{ requireRequestPrincipal }, { setContactAreas }] = await Promise.all([
-			import('@/platform/request-principal'),
-			import('@/server/contacts/settings'),
-		]);
+	.handler(async ({ data }): Promise<ContactAreasResult> => {
+		const [{ requireRequestPrincipal }, { setContactAreas }, { UnknownAreaError }] =
+			await Promise.all([
+				import('@/platform/request-principal'),
+				import('@/server/contacts/settings'),
+				import('@/server/contacts/errors'),
+			]);
 		const { context, principal } = await requireRequestPrincipal();
-		await setContactAreas(context.db, principal, data);
-		return SAVED;
+		try {
+			await setContactAreas(context.db, principal, data);
+			return SAVED;
+		} catch (error) {
+			if (error instanceof UnknownAreaError) return GONE;
+			throw error;
+		}
 	});
 
-/** Sets the areas that see one protected field of one kind; without an area it is refused. */
+/**
+ * Sets the areas that see one protected field of one kind. Without an area it is refused, and so
+ * is a field that is no longer protected or an area deleted meanwhile.
+ */
 const submitFieldAreas = createServerFn({ method: 'POST' })
 	.validator(fieldAreasRequest)
 	.handler(async ({ data }): Promise<FieldAreasResult> => {
-		const [{ requireRequestPrincipal }, settings] = await Promise.all([
+		const [{ requireRequestPrincipal }, settings, errors] = await Promise.all([
 			import('@/platform/request-principal'),
 			import('@/server/contacts/settings'),
+			import('@/server/contacts/errors'),
 		]);
 		const { context, principal } = await requireRequestPrincipal();
 		try {
@@ -124,21 +149,34 @@ const submitFieldAreas = createServerFn({ method: 'POST' })
 			return SAVED;
 		} catch (error) {
 			if (error instanceof settings.FieldAreasEmptyError) return { failure: 'noArea', ok: false };
+			if (
+				error instanceof errors.NotProtectedFieldError ||
+				error instanceof errors.UnknownAreaError
+			) {
+				return GONE;
+			}
 			throw error;
 		}
 	});
 
-/** Switches a custom field between base field and protected field. */
+/** Switches a custom field between base field and protected field; an unknown one is refused. */
 const submitCustomFieldProtection = createServerFn({ method: 'POST' })
 	.validator(customFieldProtectionRequest)
-	.handler(async ({ data }): Promise<SavedResult> => {
-		const [{ requireRequestPrincipal }, { setCustomFieldProtection }] = await Promise.all([
-			import('@/platform/request-principal'),
-			import('@/server/contacts/settings'),
-		]);
+	.handler(async ({ data }): Promise<CustomFieldProtectionResult> => {
+		const [{ requireRequestPrincipal }, { setCustomFieldProtection }, { UnknownCustomFieldError }] =
+			await Promise.all([
+				import('@/platform/request-principal'),
+				import('@/server/contacts/settings'),
+				import('@/server/contacts/errors'),
+			]);
 		const { context, principal } = await requireRequestPrincipal();
-		await setCustomFieldProtection(context.db, principal, data);
-		return SAVED;
+		try {
+			await setCustomFieldProtection(context.db, principal, data);
+			return SAVED;
+		} catch (error) {
+			if (error instanceof UnknownCustomFieldError) return GONE;
+			throw error;
+		}
 	});
 
 /** Sets the weeks after which the member data counts as old; refused weeks come back. */

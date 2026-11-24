@@ -126,19 +126,22 @@ const submitSuppression = createServerFn({ method: 'POST' })
 const submitOptOut = createServerFn({ method: 'POST' })
 	.validator(optOutRequest)
 	.handler(async ({ data }): Promise<OptOutResult> => {
-		const [{ requireRequestPrincipal }, suppressions, { CONTACT_GONE, ContactNotFoundError }] =
-			await Promise.all([
-				import('@/platform/request-principal'),
-				import('@/server/contacts/suppressions'),
-				import('@/server/contacts/errors'),
-			]);
+		const [
+			{ requireRequestPrincipal },
+			{ setOptOut },
+			{ CONTACT_GONE, ContactNotFoundError, UnknownAreaError },
+		] = await Promise.all([
+			import('@/platform/request-principal'),
+			import('@/server/contacts/suppressions'),
+			import('@/server/contacts/errors'),
+		]);
 		const { context, principal } = await requireRequestPrincipal();
 		try {
-			await suppressions.setOptOut(context.db, principal, data);
+			await setOptOut(context.db, principal, data);
 			return { ok: true };
 		} catch (error) {
 			if (error instanceof ContactNotFoundError) return CONTACT_GONE;
-			if (error instanceof suppressions.UnknownAreaError) {
+			if (error instanceof UnknownAreaError) {
 				return { failure: 'areaNotFound', ok: false };
 			}
 			throw error;

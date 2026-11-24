@@ -7,6 +7,7 @@ import { auditLog, customFields } from '@/server/db/schema';
 import { createTestDb } from '@/server/db/test-db';
 import { ForbiddenError } from '@/server/permissions/principal';
 
+import { NotProtectedFieldError, UnknownAreaError, UnknownCustomFieldError } from './errors';
 import { customFieldKey } from './fields';
 import type { ContactKind, FieldKey } from './fields';
 import {
@@ -82,6 +83,20 @@ async function areasOf(
 async function lastAudit(db: Db): Promise<typeof auditLog.$inferSelect | undefined> {
 	const [entry] = await db.select().from(auditLog).orderBy(desc(auditLog.id)).limit(1);
 	return entry;
+}
+
+/**
+ * How many changes of the contact settings the audit log has.
+ *
+ * @param db The database.
+ * @returns The number of entries.
+ */
+async function settingsChanges(db: Db): Promise<number> {
+	const entries = await db
+		.select()
+		.from(auditLog)
+		.where(eq(auditLog.action, 'contacts.settings_changed'));
+	return entries.length;
 }
 
 describe(getContactSettings, () => {
@@ -393,5 +408,71 @@ describe(setCustomFieldProtection, () => {
 		await expect(
 			setCustomFieldProtection(db, admin, { customFieldId: UNKNOWN_ID, protection: 'base' }),
 		).rejects.toThrow('does not exist');
+	});
+});
+
+describe('a setting changed in another tab', () => {
+	it('refuses an unknown area as members or partners area and changes nothing', async () => {
+		const db = await createTestDb();
+		const { admin, membersAreaId, partnersAreaId } = await setUpClub(db);
+		const before = await settingsChanges(db);
+		await expect(
+			setContactAreas(db, admin, { membersAreaId: UNKNOWN_ID, partnersAreaId }),
+		).rejects.toBeInstanceOf(UnknownAreaError);
+		await expect(
+			setContactAreas(db, admin, { membersAreaId, partnersAreaId: UNKNOWN_ID }),
+		).rejects.toBeInstanceOf(UnknownAreaError);
+		await expect(getContactSettings(db)).resolves.toStrictEqual({
+			membersAreaId,
+			partnersAreaId,
+			staleImportWeeks: 8,
+		});
+		await expect(settingsChanges(db)).resolves.toBe(before);
+	});
+
+	it('refuses an unknown area for a protected field and changes nothing', async () => {
+		const db = await createTestDb();
+		const { admin, membersAreaId } = await setUpClub(db);
+		const before = await settingsChanges(db);
+		await expect(
+			setFieldAreas(db, admin, {
+				areaIds: [membersAreaId, UNKNOWN_ID],
+				fieldKey: 'birthDate',
+				kind: 'member',
+			}),
+		).rejects.toBeInstanceOf(UnknownAreaError);
+		await expect(areasOf(db, 'member', 'birthDate')).resolves.toStrictEqual([membersAreaId]);
+		await expect(settingsChanges(db)).resolves.toBe(before);
+	});
+
+	it('refuses the areas of a custom field that became a base field and changes nothing', async () => {
+		const db = await createTestDb();
+		const { admin, membersAreaId, partnersAreaId } = await setUpClub(db);
+		const customFieldId = await insertNote(db);
+		await setCustomFieldProtection(db, admin, { customFieldId, protection: 'base' });
+		const before = await settingsChanges(db);
+		const key = customFieldKey(customFieldId);
+		await expect(
+			setFieldAreas(db, admin, { areaIds: [partnersAreaId], fieldKey: key, kind: 'member' }),
+		).rejects.toBeInstanceOf(NotProtectedFieldError);
+		await expect(areasOf(db, 'member', key)).resolves.toBeUndefined();
+		await expect(settingsChanges(db)).resolves.toBe(before);
+		// Protected again, it starts from the members area: nothing of the refused areas stayed.
+		await setCustomFieldProtection(db, admin, { customFieldId, protection: 'protected' });
+		await expect(areasOf(db, 'member', key)).resolves.toStrictEqual([membersAreaId]);
+	});
+
+	it('refuses the protection of an unknown custom field and changes nothing', async () => {
+		const db = await createTestDb();
+		const { admin } = await setUpClub(db);
+		const customFieldId = await insertNote(db);
+		const before = await settingsChanges(db);
+		await expect(
+			setCustomFieldProtection(db, admin, { customFieldId: UNKNOWN_ID, protection: 'base' }),
+		).rejects.toBeInstanceOf(UnknownCustomFieldError);
+		await expect(listCustomFields(db, 'member')).resolves.toMatchObject([
+			{ id: customFieldId, protection: 'protected' },
+		]);
+		await expect(settingsChanges(db)).resolves.toBe(before);
 	});
 });

@@ -1,5 +1,5 @@
 /* oxlint-disable max-classes-per-file -- the plan's interface defines both errors in this module */
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 
 import { writeAudit } from '@/server/audit/audit';
@@ -8,6 +8,7 @@ import { areas, contactSettings, customFields, protectedFieldAreas } from '@/ser
 import { assertAdmin } from '@/server/permissions/principal';
 import type { Principal } from '@/server/permissions/principal';
 
+import { NotProtectedFieldError, UnknownAreaError, UnknownCustomFieldError } from './errors';
 import { BUILTIN_PROTECTED_FIELDS, customFieldKey } from './fields';
 import type { ContactKind, CustomFieldType, FieldKey, Protection } from './fields';
 import {
@@ -154,12 +155,32 @@ async function getFieldAreas(
 }
 
 /**
+ * Makes sure that areas exist and keeps them until the transaction ends, as a foreign key does
+ * (`FOR KEY SHARE`, so a rename does not wait): a deletion in another tab waits, and one that came
+ * first is a refusal instead of a foreign key error.
+ *
+ * @param tx The transaction.
+ * @param areaIds The areas.
+ * @throws {UnknownAreaError} When one of them does not exist.
+ */
+async function assertAreasExist(tx: Db, areaIds: readonly string[]): Promise<void> {
+	const wanted = [...new Set(areaIds)];
+	const found = await tx
+		.select({ id: areas.id })
+		.from(areas)
+		.where(inArray(areas.id, wanted))
+		.for('key share');
+	if (found.length !== wanted.length) throw new UnknownAreaError();
+}
+
+/**
  * Changes the members and partners area. Fields without an own assignment follow.
  *
  * @param db The database.
  * @param actor Who changes it; must be an admin.
  * @param ids The two areas.
  * @throws {ForbiddenError} When the actor is no admin.
+ * @throws {UnknownAreaError} When an area does not exist (any more).
  */
 async function setContactAreas(
 	db: Db,
@@ -168,6 +189,7 @@ async function setContactAreas(
 ): Promise<void> {
 	assertAdmin(actor);
 	await db.transaction(async (tx) => {
+		await assertAreasExist(tx, [ids.membersAreaId, ids.partnersAreaId]);
 		await saveContactAreas(tx, ids);
 		await writeAudit(tx, {
 			action: 'contacts.settings_changed',
@@ -215,7 +237,8 @@ function ownAreasOf(kind: ContactKind, fieldKey: FieldKey): SQL | undefined {
  * @param input The kind, the field and its areas.
  * @throws {ForbiddenError} When the actor is no admin.
  * @throws {FieldAreasEmptyError} When no area is given.
- * @throws {Error} When the field is no protected field of the kind.
+ * @throws {NotProtectedFieldError} When the field is no protected field of the kind (any more).
+ * @throws {UnknownAreaError} When an area does not exist (any more).
  */
 async function setFieldAreas(
 	db: Db,
@@ -227,8 +250,9 @@ async function setFieldAreas(
 	if (areaIds.length === 0) throw new FieldAreasEmptyError();
 	await db.transaction(async (tx) => {
 		if (!(await isProtectedField(tx, input.kind, input.fieldKey))) {
-			throw new Error('The field is not a protected field of this kind.');
+			throw new NotProtectedFieldError();
 		}
+		await assertAreasExist(tx, areaIds);
 		await tx.delete(protectedFieldAreas).where(ownAreasOf(input.kind, input.fieldKey));
 		await tx
 			.insert(protectedFieldAreas)
@@ -250,7 +274,7 @@ async function setFieldAreas(
  * @param actor Who changes it; must be an admin.
  * @param input The custom field and the protection.
  * @throws {ForbiddenError} When the actor is no admin.
- * @throws {Error} When the custom field does not exist.
+ * @throws {UnknownCustomFieldError} When the custom field does not exist.
  */
 async function setCustomFieldProtection(
 	db: Db,
@@ -264,7 +288,7 @@ async function setCustomFieldProtection(
 			.set({ protection: input.protection })
 			.where(eq(customFields.id, input.customFieldId))
 			.returning({ kind: customFields.kind });
-		if (updated === undefined) throw new Error('The custom field does not exist.');
+		if (updated === undefined) throw new UnknownCustomFieldError();
 		if (input.protection === 'base') {
 			await tx
 				.delete(protectedFieldAreas)

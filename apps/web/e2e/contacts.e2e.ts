@@ -579,3 +579,30 @@ test('makes a custom field from an import a base field and protects it again', a
 	await expect(admin.getByRole('status')).toHaveText('Schutz von Typ: Geschützt');
 	await expect(typeForFinance).toBeChecked();
 });
+
+// oxlint-disable-next-line max-statements -- one flow, step by step, as the admin sees it in two tabs
+test('refuses a field that became a base field in another tab', async () => {
+	const stale = await admin.context().newPage();
+	await stale.goto('/admin/contact-settings');
+	// The form buttons are pending until the page is hydrated.
+	await expect(
+		stale.getByRole('form', { name: 'Frist für alte Daten' }).getByRole('button'),
+	).toBeEnabled();
+	const typeForMembers = 'Typ (Partner) für Mitglieder';
+	await expect(
+		stale.getByRole('checkbox', { exact: true, name: typeForMembers }),
+	).not.toBeChecked();
+	await admin.goto('/admin/contact-settings');
+	await admin.getByLabel('Schutz von Typ').click();
+	await admin.getByRole('option', { name: 'Basisfeld' }).click();
+	await expect(admin.getByRole('status')).toHaveText('Schutz von Typ: Basisfeld');
+	await toggleBox(stale, typeForMembers);
+	await expect(stale.getByRole('alert')).toHaveText(
+		'Die Einstellung wurde inzwischen geändert. Die Seite zeigt jetzt den aktuellen Stand.',
+	);
+	// The page shows the current state: the base field has no row any more.
+	await expect(stale.getByRole('checkbox', { exact: true, name: typeForMembers })).toHaveCount(0);
+	await expect(stale.getByLabel('Schutz von Typ')).toContainText('Basisfeld');
+	await expectNoA11yViolations(stale);
+	await stale.close();
+});

@@ -89,7 +89,8 @@ function AreaCheckbox({
 /**
  * One protected field with a checkbox per area. A change is saved at once and shown until the
  * saved state arrives; a refused or failed save falls back to the stored areas. Unticking the
- * last area is refused before anything is sent, and the checkbox stays ticked.
+ * last area is refused before anything is sent, and the checkbox stays ticked. When the field or
+ * an area changed in another tab, the page loads the current state and says so.
  *
  * @param props The props.
  * @param props.announce Announces the result.
@@ -128,14 +129,20 @@ function FieldAreasRow({
 					save({ data: { areaIds: [...next], fieldKey: field.key, kind } }),
 				);
 				if (result === undefined) return;
-				if (result === FAILED || !result.ok) {
-					announce(
-						t(result === FAILED ? 'auth.requestFailed' : 'contactSettings.keepOneArea'),
-						'alert',
-					);
+				if (result === FAILED) {
+					announce(t('auth.requestFailed'), 'alert');
 					return;
 				}
+				if (!result.ok && result.failure === 'noArea') {
+					announce(t('contactSettings.keepOneArea'), 'alert');
+					return;
+				}
+				// A field or area that is gone leaves the table with the current state.
 				await router.invalidate();
+				if (!result.ok) {
+					announce(t('contactSettings.gone'), 'alert');
+					return;
+				}
 				const names = areaNames(next, areas).join(', ');
 				announce(
 					t('contactSettings.fieldAreas', { areas: names, field: fieldName, kind: kindName }),
@@ -265,7 +272,8 @@ function FieldAreasTable({
 
 /**
  * The protection select of one custom field, labelled „Schutz von {name}“. A change is saved at
- * once and shown until the saved state arrives; a failed save falls back to the stored one.
+ * once and shown until the saved state arrives; a failed save falls back to the stored one, and
+ * a field that is gone makes the page load the current state.
  *
  * @param props The props.
  * @param props.announce Announces the result.
@@ -291,8 +299,12 @@ function ProtectionSelect({
 					announce(t('auth.requestFailed'), 'alert');
 					return;
 				}
-				// A protected field gets its row in the table above.
+				// A protected field gets its row in the table above; a gone one leaves the page.
 				await router.invalidate();
+				if (!result.ok) {
+					announce(t('contactSettings.gone'), 'alert');
+					return;
+				}
 				const protection = t(`contactSettings.protection.${key}`);
 				announce(
 					t('contactSettings.protectionChanged', { name: field.name, protection }),

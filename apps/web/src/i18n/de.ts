@@ -80,6 +80,8 @@ export const de = {
 	'contactSettings.fieldsHelp':
 		'Wer in einem angekreuzten Bereich lesen darf, sieht das Feld. Jedes Feld braucht mindestens einen Bereich.',
 	'contactSettings.fieldsTitle': 'Geschützte Felder',
+	'contactSettings.gone':
+		'Die Einstellung wurde inzwischen geändert. Die Seite zeigt jetzt den aktuellen Stand.',
 	'contactSettings.keepOneArea': 'Mindestens ein Bereich muss bleiben.',
 	'contactSettings.kindColumn': 'Kontaktart',
 	'contactSettings.membersArea': 'Mitglieder-Bereich',

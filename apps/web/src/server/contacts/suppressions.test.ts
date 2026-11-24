@@ -8,7 +8,7 @@ import { createTestDb } from '@/server/db/test-db';
 import { ForbiddenError } from '@/server/permissions/principal';
 
 import { getContact, listContacts } from './contacts';
-import { ContactNotFoundError } from './errors';
+import { ContactNotFoundError, UnknownAreaError } from './errors';
 import { getImportState } from './import-state';
 import {
 	auditTarget,
@@ -17,7 +17,6 @@ import {
 	rekeyContactKey,
 	setOptOut,
 	setSuppression,
-	UnknownAreaError,
 } from './suppressions';
 import { insertContact, setUpClub, userWith } from './testing';
 

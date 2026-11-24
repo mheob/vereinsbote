@@ -7,17 +7,9 @@ import type { Principal } from '@/server/permissions/principal';
 
 import { assertCanList, assertCanManage, loadContactAccess } from './access';
 import type { ContactAccess } from './access';
-import { ContactNotFoundError } from './errors';
+import { ContactNotFoundError, UnknownAreaError } from './errors';
 import type { ContactKind } from './fields';
 import { bumpStockVersion, lockImportState } from './import-state';
-
-/** The area of an opt-out does not exist. The message names no contact data. */
-class UnknownAreaError extends Error {
-	public constructor() {
-		super('Unknown area.');
-		this.name = 'UnknownAreaError';
-	}
-}
 
 /** The columns that identify a contact. */
 interface ContactIdentity {
@@ -276,12 +268,4 @@ async function rekeyContactKey(tx: Db, kind: ContactKind, from: string, to: stri
 		.where(and(eq(contactOptOuts.kind, kind), eq(contactOptOuts.contactKey, from)));
 }
 
-export {
-	auditTarget,
-	contactKey,
-	copyContactKey,
-	rekeyContactKey,
-	setOptOut,
-	setSuppression,
-	UnknownAreaError,
-};
+export { auditTarget, contactKey, copyContactKey, rekeyContactKey, setOptOut, setSuppression };

@@ -80,6 +80,8 @@ export const en: Record<keyof typeof de, string> = {
 	'contactSettings.fieldsHelp':
 		'Users who may read in a ticked area see the field. Every field needs at least one area.',
 	'contactSettings.fieldsTitle': 'Protected fields',
+	'contactSettings.gone':
+		'The setting has changed in the meantime. The page now shows the current state.',
 	'contactSettings.keepOneArea': 'At least one area must remain.',
 	'contactSettings.kindColumn': 'Kind of contact',
 	'contactSettings.membersArea': 'Members area',
