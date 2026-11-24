@@ -28,6 +28,26 @@ describe(vercelMigrationStep, () => {
 		expect(vercelMigrationStep({ MIGRATE_ON_PREVIEW: '1', VERCEL: '1' })).toBe('refuse');
 	});
 
+	it('applies the VERCEL=1 rules to the VB_VERCEL_BUILD marker for a known VERCEL_ENV', () => {
+		expect(vercelMigrationStep({ VB_VERCEL_BUILD: '1', VERCEL_ENV: 'production' })).toBe('migrate');
+		expect(vercelMigrationStep({ VB_VERCEL_BUILD: '1', VERCEL_ENV: 'preview' })).toBe('skip');
+		expect(
+			vercelMigrationStep({ MIGRATE_ON_PREVIEW: '1', VB_VERCEL_BUILD: '1', VERCEL_ENV: 'preview' }),
+		).toBe('migrate');
+	});
+
+	it('refuses a marked build without a known VERCEL_ENV', () => {
+		expect(vercelMigrationStep({ VB_VERCEL_BUILD: '1' })).toBe('refuse');
+		expect(vercelMigrationStep({ VB_VERCEL_BUILD: '1', VERCEL_ENV: '' })).toBe('refuse');
+		expect(vercelMigrationStep({ VB_VERCEL_BUILD: '1', VERCEL_ENV: 'staging' })).toBe('refuse');
+		expect(vercelMigrationStep({ MIGRATE_ON_PREVIEW: '1', VB_VERCEL_BUILD: '1' })).toBe('refuse');
+	});
+
+	it('ignores a marker that is not exactly 1', () => {
+		expect(vercelMigrationStep({ VB_VERCEL_BUILD: '0' })).toBe('skip');
+		expect(vercelMigrationStep({ VB_VERCEL_BUILD: 'true' })).toBe('skip');
+	});
+
 	it('keeps the old rules outside Vercel', () => {
 		expect(vercelMigrationStep({})).toBe('skip');
 		expect(vercelMigrationStep({ VERCEL_ENV: 'development' })).toBe('skip');
@@ -80,6 +100,13 @@ describe(runVercelMigrationStep, () => {
 	it('fails a Vercel build without a known VERCEL_ENV with exit code 1', async () => {
 		const step = stepDeps();
 		await expect(runVercelMigrationStep(UNKNOWN_ENV_BUILD, step)).resolves.toBe(1);
+		expect(step.migrate).not.toHaveBeenCalled();
+		expect(step.error).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('VERCEL_ENV'));
+	});
+
+	it('fails a marked build without any Vercel system variable, naming the marker', async () => {
+		const step = stepDeps();
+		await expect(runVercelMigrationStep({ VB_VERCEL_BUILD: '1' }, step)).resolves.toBe(1);
 		expect(step.migrate).not.toHaveBeenCalled();
 		expect(step.error).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('VERCEL_ENV'));
 	});

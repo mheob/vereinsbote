@@ -2,8 +2,8 @@ import { runVercelMigrationStep } from './vercel-migrations';
 
 /*
  * The migration step of the Vercel build (`apps/web/vercel.json`): migrates in production builds
- * and, with `MIGRATE_ON_PREVIEW=1`, in preview builds; fails a Vercel build without a known
- * `VERCEL_ENV` (see `vercelMigrationStep`).
+ * and, with `MIGRATE_ON_PREVIEW=1`, in preview builds; fails a Vercel build (`VERCEL=1` or the marker
+ * `VB_VERCEL_BUILD=1`) without a known `VERCEL_ENV` (see `vercelMigrationStep`).
  */
 
 // oxlint-disable-next-line node/no-top-level-await -- tsx runs this file as an ES module script

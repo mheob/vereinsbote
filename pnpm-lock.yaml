@@ -297,7 +297,7 @@ catalogs:
 overrides:
   vite@*: npm:@voidzero-dev/vite-plus-core@8.3.8000
   vitest@*: 5.1.0
-  esbuild@<0.25.0: ^0.28.2
+  '@esbuild-kit/core-utils>esbuild': ^0.28.2
 
 importers:
 
@@ -3978,7 +3978,7 @@ packages:
       '@rsbuild/core': '*'
       '@rspack/core': '*'
       bun-types-no-globals: '*'
-      esbuild: ^0.28.2
+      esbuild: '*'
       rolldown: '*'
       rollup: '*'
       unloader: '*'

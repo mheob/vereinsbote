@@ -100,7 +100,7 @@ Run them from the repository root.
 - E-mail addresses are stored and compared through `normalizeEmail` (trim and lowercase).
 - Credentials are encrypted with AES-GCM through WebCrypto only, so the code runs on Node and on Workers.
 - **Tick steps** go into `apps/web/src/server/tick/steps.ts` and respect the tick's time budget. A step resumes at the next tick.
-- Migrations run automatically on deploy and must stay compatible with older data. On Vercel they run in production builds only, in preview builds only with `MIGRATE_ON_PREVIEW=1` (`db:migrate:vercel`); a Vercel build (`VERCEL=1`) without a known `VERCEL_ENV` fails instead of skipping them.
+- Migrations run automatically on deploy and must stay compatible with older data. On Vercel they run in production builds only, in preview builds only with `MIGRATE_ON_PREVIEW=1` (`db:migrate:vercel`); a Vercel build (`VERCEL=1` or the marker `VB_VERCEL_BUILD=1` that `apps/web/vercel.json` sets) without a known `VERCEL_ENV` fails instead of skipping them.
 
 ## Testing
 
@@ -125,6 +125,7 @@ Run them from the repository root.
 - Releases use Changesets (`.changeset/`). Only `web` (`apps/web`) is versioned; the root package is not, and nothing goes to npm.
 - **Every user-facing change gets a changeset** (`pnpm changeset`, text in English, `patch` fix, `minor` feature, `major` breaking). Docs, tests, CI and dependency updates need none (`pnpm changeset --empty` if the `pre-push` hook asks).
 - Never edit `apps/web/package.json`'s `version` or `apps/web/CHANGELOG.md` by hand and never run `changeset version` in a branch: the release pull request ("chore(release): version packages", `.github/workflows/release.yml`) does it. `vp fmt` ignores `CHANGELOG.md`.
+- The release pull request needs a code owner's approval before Kodiak merges it; that approval is the release gate. Never open it with the owner's token (the owner's own pull requests bypass review).
 - The `pre-push` hook (`.vite-hooks/pre-push`) runs `changeset status --since=origin/main`; it is skipped when `CI` is set.
 
 ## Commits

@@ -55,8 +55,8 @@ overrides:
   vite@*: "catalog:"
   vitest@*: "catalog:"
   # drizzle-kit's loader (@esbuild-kit/core-utils) pins esbuild 0.18, whose dev server lets any
-  # website read its responses (GHSA-67mh-4wv8-2f99, fixed in 0.25.0). Lifts only that range.
-  esbuild@<0.25.0: "catalog:"
+  # website read its responses (GHSA-67mh-4wv8-2f99, fixed in 0.25.0). Lifts only that package's esbuild.
+  "@esbuild-kit/core-utils>esbuild": "catalog:"
 
 # Supply-chain protection, all supported by pnpm 12:
 # A dependency's install script runs only when `allowBuilds` lists it; any other fails the install.

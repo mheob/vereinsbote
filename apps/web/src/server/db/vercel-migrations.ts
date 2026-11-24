@@ -12,16 +12,20 @@ const KNOWN_VERCEL_ENVS: ReadonlySet<string> = new Set(['development', 'preview'
  * the production database, and every push would run unreviewed migrations against it. Set the
  * flag only where Preview has a database of its own, such as a Neon branch.
  *
- * A build on Vercel (`VERCEL=1`) without a known `VERCEL_ENV` is refused: it cannot tell a
- * production build from a preview, and skipping would leave production on the old schema without
- * a trace. Outside Vercel the rules above apply as they are.
+ * A build on Vercel without a known `VERCEL_ENV` is refused: it cannot tell a production build
+ * from a preview, and skipping would leave production on the old schema without a trace. The
+ * build counts as on Vercel with `VERCEL=1` or with the marker `VB_VERCEL_BUILD=1`, which the
+ * versioned build command (`apps/web/vercel.json`) sets itself: with "Automatically expose System
+ * Environment Variables" off, Vercel sets neither `VERCEL` nor `VERCEL_ENV`. Outside Vercel (no
+ * marker) the rules above apply as they are.
  *
- * @param env The build's environment (`VERCEL` and `VERCEL_ENV` are set by Vercel).
+ * @param env The build's environment (`VERCEL` and `VERCEL_ENV` are set by Vercel, `VB_VERCEL_BUILD` by `vercel.json`).
  * @returns `migrate`, `skip`, or `refuse` for an unknown environment on Vercel.
  */
 function vercelMigrationStep(env: EnvSource): VercelMigrationStep {
 	const vercelEnv = env.VERCEL_ENV;
-	if (env.VERCEL === '1' && (vercelEnv === undefined || !KNOWN_VERCEL_ENVS.has(vercelEnv))) {
+	const onVercel = env.VERCEL === '1' || env.VB_VERCEL_BUILD === '1';
+	if (onVercel && (vercelEnv === undefined || !KNOWN_VERCEL_ENVS.has(vercelEnv))) {
 		return 'refuse';
 	}
 	if (vercelEnv === 'production' || env.MIGRATE_ON_PREVIEW === '1') return 'migrate';

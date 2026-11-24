@@ -43,7 +43,7 @@ Run `pnpm commit` (czg) for a Conventional Commit. The `commit-msg` hook checks 
 
 The `pre-commit` hook runs `vp staged`, which fixes and checks the staged files. The `pre-push` hook runs `pnpm exec changeset status --since=origin/main` and refuses a push of changed packages without a changeset (skipped in CI).
 
-Releases are automatic: after a merge to `main`, the Release workflow opens a pull request "chore(release): version packages" that bumps the version and writes `apps/web/CHANGELOG.md`. Do not edit the version or the changelog by hand. See the [README](README.md#releases).
+Releases are automatic: after a merge to `main`, the Release workflow opens a pull request "chore(release): version packages" that bumps the version and writes `apps/web/CHANGELOG.md`. The code owner's approval of that pull request is the release step. Do not edit the version or the changelog by hand. See the [README](README.md#releases).
 
 ## Pull requests
 
