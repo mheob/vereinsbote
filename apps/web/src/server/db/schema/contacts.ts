@@ -215,7 +215,7 @@ export const contactOptOuts = pgTable(
 		check('contact_opt_outs_scope_check', sql`${table.scope} in ('area', 'occasion')`),
 		check(
 			'contact_opt_outs_target_check',
-			sql`(${table.scope} = 'area') = (${table.areaId} is not null and ${table.occasionId} is null)`,
+			sql`(${table.scope} = 'area' and ${table.areaId} is not null and ${table.occasionId} is null) or (${table.scope} = 'occasion' and ${table.occasionId} is not null and ${table.areaId} is null)`,
 		),
 		uniqueIndex('contact_opt_outs_area_idx')
 			.on(table.kind, table.contactKey, table.areaId)

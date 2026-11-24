@@ -1,5 +1,5 @@
 {
-  "id": "88fb62ab-170f-40ab-b649-b7279c4cf0ed",
+  "id": "62850ea8-4cda-4bf3-ad9f-bf757e9a357e",
   "prevId": "59ce788b-ee8c-47df-a0ac-b4c80f8f4f41",
   "version": "7",
   "dialect": "postgresql",
@@ -786,7 +786,7 @@
         },
         "contact_opt_outs_target_check": {
           "name": "contact_opt_outs_target_check",
-          "value": "(\"contact_opt_outs\".\"scope\" = 'area') = (\"contact_opt_outs\".\"area_id\" is not null and \"contact_opt_outs\".\"occasion_id\" is null)"
+          "value": "(\"contact_opt_outs\".\"scope\" = 'area' and \"contact_opt_outs\".\"area_id\" is not null and \"contact_opt_outs\".\"occasion_id\" is null) or (\"contact_opt_outs\".\"scope\" = 'occasion' and \"contact_opt_outs\".\"occasion_id\" is not null and \"contact_opt_outs\".\"area_id\" is null)"
         }
       },
       "isRLSEnabled": false
@@ -964,18 +964,18 @@
           "notNull": true,
           "default": "now()"
         },
-        "customer_number": {
-          "name": "customer_number",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "custom_values": {
           "name": "custom_values",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true,
           "default": "'{}'::jsonb"
+        },
+        "customer_number": {
+          "name": "customer_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "email": {
           "name": "email",

@@ -9,7 +9,7 @@ CREATE TABLE "contact_opt_outs" (
 	"scope" text NOT NULL,
 	CONSTRAINT "contact_opt_outs_kind_check" CHECK ("contact_opt_outs"."kind" in ('member', 'partner')),
 	CONSTRAINT "contact_opt_outs_scope_check" CHECK ("contact_opt_outs"."scope" in ('area', 'occasion')),
-	CONSTRAINT "contact_opt_outs_target_check" CHECK (("contact_opt_outs"."scope" = 'area') = ("contact_opt_outs"."area_id" is not null and "contact_opt_outs"."occasion_id" is null))
+	CONSTRAINT "contact_opt_outs_target_check" CHECK (("contact_opt_outs"."scope" = 'area' and "contact_opt_outs"."area_id" is not null and "contact_opt_outs"."occasion_id" is null) or ("contact_opt_outs"."scope" = 'occasion' and "contact_opt_outs"."occasion_id" is not null and "contact_opt_outs"."area_id" is null))
 );
 --> statement-breakpoint
 CREATE TABLE "contact_settings" (
@@ -35,8 +35,8 @@ CREATE TABLE "contacts" (
 	"city" text,
 	"contact_key" text GENERATED ALWAYS AS (case when kind = 'member' then 'nr:' || member_number when customer_number is not null then 'nr:' || customer_number else 'email:' || email end) STORED NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"customer_number" text,
 	"custom_values" jsonb DEFAULT '{}'::jsonb NOT NULL,
+	"customer_number" text,
 	"email" text,
 	"entry_date" date,
 	"exit_date" date,
