@@ -1,4 +1,8 @@
 ALTER TABLE "custom_fields" ADD COLUMN "placeholder_key" text;--> statement-breakpoint
+-- Backfill for fields that exist before this migration. The slug intentionally differs from
+-- placeholderKeyFromName (camelCase, all accents): lowercase, only a/o/u umlauts and sharp s
+-- transliterated, other characters removed. The suffix "_<n>" cannot occur in a slug, so a suffixed
+-- key never equals another field's natural key.
 WITH "slugs" AS (
 	SELECT
 		"id",
@@ -28,7 +32,7 @@ WITH "slugs" AS (
 	FROM "bases"
 )
 UPDATE "custom_fields"
-SET "placeholder_key" = CASE WHEN "numbered"."position" = 1 THEN "numbered"."base" ELSE "numbered"."base" || "numbered"."position" END
+SET "placeholder_key" = CASE WHEN "numbered"."position" = 1 THEN "numbered"."base" ELSE "numbered"."base" || '_' || "numbered"."position" END
 FROM "numbered"
 WHERE "custom_fields"."id" = "numbered"."id";--> statement-breakpoint
 ALTER TABLE "custom_fields" ALTER COLUMN "placeholder_key" SET NOT NULL;--> statement-breakpoint

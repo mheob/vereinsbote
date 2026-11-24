@@ -53,19 +53,27 @@ describe(bundledMigrations, () => {
 				('00000000-0000-4000-8000-000000000004', 'partner', 'Größe', 'text', '2026-01-01'),
 				('00000000-0000-4000-8000-000000000005', 'member', '123', 'text', '2026-01-04'),
 				('00000000-0000-4000-8000-000000000006', 'member', '(-)', 'text', '2026-01-05'),
-				('00000000-0000-4000-8000-000000000007', 'member', 'Mitglied seit (alt)', 'date', '2026-01-06')`);
+				('00000000-0000-4000-8000-000000000007', 'member', 'Mitglied seit (alt)', 'date', '2026-01-06'),
+				('00000000-0000-4000-8000-000000000008', 'member', 'a', 'text', '2026-01-07'),
+				('00000000-0000-4000-8000-000000000009', 'member', 'a!', 'text', '2026-01-08'),
+				('00000000-0000-4000-8000-00000000000a', 'member', 'a2', 'text', '2026-01-09'),
+				('00000000-0000-4000-8000-00000000000b', 'member', '(+)', 'text', '2026-01-10')`);
 			await applyMigrations(db, migrations);
 			const { rows } = await client.query<{ kind: string; placeholder_key: string }>(
 				'select kind, placeholder_key from custom_fields order by id',
 			);
 			expect(rows.map(({ kind, placeholder_key }) => `${kind}:${placeholder_key}`)).toStrictEqual([
 				'member:groesse',
-				'member:groesse2',
-				'member:groesse3',
+				'member:groesse_2',
+				'member:groesse_3',
 				'partner:groesse',
 				'member:field123',
 				'member:field',
 				'member:mitgliedseitalt',
+				'member:a',
+				'member:a_2',
+				'member:a2',
+				'member:field_2',
 			]);
 		},
 	);
