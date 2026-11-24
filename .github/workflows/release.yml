@@ -32,27 +32,39 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      # The token of the machine user (not GITHUB_TOKEN), so the pull request the action opens
-      # triggers CI. The credentials stay persisted, the one deliberate exception to
-      # `persist-credentials: false` of the other workflows: this job runs only on `main`, and
-      # `changeset git-tag` looks up existing tags with `git ls-remote`, which must be authenticated
-      # (a private repository or rate-limited anonymous access would otherwise re-create tags).
+      # An installation token of the GitHub App `mheob-helper` (not GITHUB_TOKEN), so the pull
+      # request the action opens triggers CI. It is limited to what the release needs and is
+      # revoked when the job ends.
+      - name: Create the token of the release app
+        id: app-token
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        with:
+          client-id: ${{ vars.BOT_CLIENT_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      # The credentials stay persisted, the one deliberate exception to `persist-credentials: false`
+      # of the other workflows: this job runs only on `main`, and `changeset git-tag` looks up
+      # existing tags with `git ls-remote`, which must be authenticated (a private repository or
+      # rate-limited anonymous access would otherwise re-create tags).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          token: ${{ secrets.MACHINE_USER_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
       - uses: voidzero-dev/setup-vp@cab1ab9eaff52d4857875f4f2c016e36af8f2c76 # v1.22.0
         with:
           node-version-file: .node-version
           cache: true
           run-install: |
             - args: ['--frozen-lockfile']
-      - name: Set the Git identity of the machine user
+      # `changeset git-tag` creates annotated tags, which need a Git identity: the app's bot user.
+      - name: Set the Git identity of the release app
         env:
-          GIT_EMAIL: ${{ secrets.MACHINE_USER_EMAIL }}
-          GIT_NAME: ${{ secrets.MACHINE_USER_NAME }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
-          git config --local user.email "${GIT_EMAIL}"
-          git config --local user.name "${GIT_NAME}"
+          user_id="$(gh api "/users/${APP_SLUG}%5Bbot%5D" --jq .id)"
+          git config --local user.name "${APP_SLUG}[bot]"
+          git config --local user.email "${user_id}+${APP_SLUG}[bot]@users.noreply.github.com"
       # Without changesets it tags the version of every versioned package (`pnpm run release`)
       # and creates a GitHub Release per new tag. With changesets it opens or updates the
       # "version packages" pull request (`pnpm run version-packages`). Nothing goes to npm.
@@ -61,11 +73,11 @@ jobs:
         with:
           commit-message: "chore(release): version packages"
           create-github-releases: true
-          github-token: ${{ secrets.MACHINE_USER_TOKEN }}
+          github-token: ${{ steps.app-token.outputs.token }}
           pr-title: "chore(release): version packages"
           publish-script: pnpm run release
           version-script: pnpm run version-packages
         env:
           # The action only uses the `github-token` input, the changelog generator reads this one
           # (it must be the same token, the action refuses a different one).
-          GITHUB_TOKEN: ${{ secrets.MACHINE_USER_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
