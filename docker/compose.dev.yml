@@ -5,7 +5,8 @@
 # PostgreSQL matches DATABASE_URL in apps/web/.env.example; the end-to-end tests use a database
 # of their own, `vereinsbote_e2e`, since they wipe it on every run. Mailpit catches every mail the
 # app sends through DEV_SMTP_URL=smtp://localhost:1025; its inbox is at http://localhost:8025.
-# All ports are bound to this machine only.
+# SeaweedFS is the S3 storage for images (S3_* in apps/web/.env.example), bucket `vereinsbote`,
+# at http://localhost:8333. All ports are bound to this machine only.
 name: vereinsbote-dev
 
 configs:
@@ -41,6 +42,26 @@ services:
       - "127.0.0.1:1025:1025"
       - "127.0.0.1:8025:8025"
 
+  # S3 storage for the Node build and its tests (MinIO is no longer maintained). The image starts
+  # `weed mini` (master, volume server, filer and S3 gateway in one process), which creates the
+  # bucket on start.
+  # The credentials are fixed test values, like the other values of this file.
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.55@sha256:7ca46aeae2f223b37e5d91593c17ab37738eec6df6ab69b48a0487f7643342b9
+    environment:
+      AWS_ACCESS_KEY_ID: vereinsbote
+      AWS_SECRET_ACCESS_KEY: vereinsbote-dev-secret
+      S3_BUCKET: vereinsbote
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "--tries=1", "http://localhost:9333/cluster/status"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    ports:
+      - "127.0.0.1:8333:8333"
+    volumes:
+      - seaweedfs-data:/data
+
   # Neon's WebSocket proxy, only for the local Cloudflare smoke test (README): the Worker's Neon
   # driver speaks WebSocket, the proxy passes it on to PostgreSQL. Starts with `--profile cloudflare`.
   wsproxy:
@@ -55,3 +76,4 @@ services:
 
 volumes:
   postgres-data:
+  seaweedfs-data:

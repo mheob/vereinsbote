@@ -6,6 +6,8 @@ import { errorLabel } from '@/server/error-label';
 import { tickSteps } from '@/server/tick/steps';
 import { runTick } from '@/server/tick/tick';
 
+import { variablesOf } from './bindings';
+import type { Bindings } from './bindings';
 import { runScheduledTicks } from './cloudflare-scheduled';
 
 /*
@@ -16,23 +18,6 @@ import { runScheduledTicks } from './cloudflare-scheduled';
 /** The part of the Workers `ExecutionContext` the entry uses. */
 interface ExecutionContext {
 	readonly waitUntil: (promise: Promise<unknown>) => void;
-}
-
-/** Workers bindings: the variables and secrets are strings, other bindings are objects. */
-type Bindings = Readonly<Record<string, unknown>>;
-
-/**
- * Keeps the string bindings, the variables and secrets that `parseEnv` reads.
- *
- * @param bindings The Worker's bindings.
- * @returns The variables by name.
- */
-function variablesOf(bindings: Bindings): Record<string, string> {
-	const variables: Record<string, string> = {};
-	for (const [name, value] of Object.entries(bindings)) {
-		if (typeof value === 'string') variables[name] = value;
-	}
-	return variables;
 }
 
 /**

@@ -46,6 +46,19 @@ export default defineConfig({
 				files: ['apps/web/src/routes/**/$*.tsx'],
 				rules: { 'unicorn/filename-case': 'off' },
 			},
+			{
+				// `expectStorageFailures` asserts for the tests that call it, and `describeStorageContract`
+				// registers the cases every storage implementation must pass.
+				files: ['**/*.test.ts'],
+				plugins: ['vitest'],
+				rules: {
+					'vitest/expect-expect': [
+						'error',
+						{ assertFunctionNames: ['expect', 'expectStorageFailures'] },
+					],
+					'vitest/require-hook': ['warn', { allowedFunctionCalls: ['describeStorageContract'] }],
+				},
+			},
 		],
 		rules: {
 			// oxfmt (`sortTailwindcss`) owns the formatting of class lists and joins wrapped lines again.
@@ -58,7 +71,8 @@ export default defineConfig({
 			],
 			// Strict for plain data. The allowed types are opaque or mutable by design and cannot be made
 			// deeply readonly: DOM/platform handles, the Drizzle client, Better Auth's instance, zod's
-			// refinement context, React nodes and the app's service bundles that hold such objects.
+			// refinement context, React nodes, the app's service bundles and the storage clients (the R2
+			// binding, `s3mini`, `@vercel/blob`) that hold such objects.
 			// Names are matched as written, so a parameter typed `Readonly<Env>` is not covered: write `Env`.
 			'typescript/prefer-readonly-parameter-types': [
 				'error',
@@ -74,9 +88,12 @@ export default defineConfig({
 						'Db',
 						'Env',
 						'IsolateServices',
+						'R2BucketLike',
 						'ReactNode',
 						'ReadableStream',
 						'RefinementCtx',
+						'S3ClientLike',
+						'VercelBlobClient',
 					],
 					// Callbacks whose parameter types come from a library (Drizzle builders, hooks, handlers).
 					ignoreInferredTypes: true,

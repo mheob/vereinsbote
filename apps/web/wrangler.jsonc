@@ -7,6 +7,12 @@
 	"compatibility_flags": ["nodejs_compat"],
 	// The tick, every 15 minutes (Spec 6.6).
 	"triggers": { "crons": ["*/15 * * * *"] },
+	// Private image storage. The bucket is created once, in the EU jurisdiction (fixed at creation):
+	// `wrangler r2 bucket create vereinsbote-media --jurisdiction eu`. Images are served by the app
+	// itself, never through a public bucket URL.
+	"r2_buckets": [
+		{ "binding": "MEDIA_BUCKET", "bucket_name": "vereinsbote-media", "jurisdiction": "eu" },
+	],
 	// The settings of apps/web/.env.example are secrets of the Worker, never part of this file:
 	// `wrangler secret put DATABASE_URL` (likewise APP_URL, APP_SECRET, CRON_SECRET and the optional
 	// ones). Deploy with `vp run --filter web deploy:cloudflare` (DATABASE_URL in the shell): it

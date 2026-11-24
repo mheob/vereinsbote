@@ -19,6 +19,7 @@
 		"@neondatabase/serverless": "catalog:",
 		"@tanstack/react-router": "catalog:",
 		"@tanstack/react-start": "catalog:",
+		"@vercel/blob": "catalog:",
 		"better-auth": "catalog:",
 		"drizzle-orm": "catalog:",
 		"fflate": "catalog:",
@@ -29,6 +30,7 @@
 		"react-aria-components": "catalog:",
 		"react-dom": "catalog:",
 		"read-excel-file": "catalog:",
+		"s3mini": "catalog:",
 		"zod": "catalog:"
 	},
 	"devDependencies": {

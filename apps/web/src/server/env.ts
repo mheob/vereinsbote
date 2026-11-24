@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import type { S3Config } from './storage/s3';
+
 const SECRET_BYTES = 32;
 const MIN_CRON_SECRET_LENGTH = 32;
 const MIN_SETUP_TOKEN_LENGTH = 24;
@@ -21,12 +23,26 @@ const VARIABLE_ORDER = [
 	'DEV_NEON_WS_PROXY',
 	'HEARTBEAT_URL',
 	'TICK_INTERVAL_MS',
+	'S3_ENDPOINT',
+	'S3_REGION',
+	'S3_BUCKET',
+	'S3_ACCESS_KEY_ID',
+	'S3_SECRET_ACCESS_KEY',
+	'BLOB_READ_WRITE_TOKEN',
 ] as const;
 
 const MS_LOGIN_VARIABLES = [
 	'MS_LOGIN_CLIENT_ID',
 	'MS_LOGIN_CLIENT_SECRET',
 	'MS_LOGIN_TENANT_ID',
+] as const;
+
+const S3_VARIABLES = [
+	'S3_ENDPOINT',
+	'S3_REGION',
+	'S3_BUCKET',
+	'S3_ACCESS_KEY_ID',
+	'S3_SECRET_ACCESS_KEY',
 ] as const;
 
 const parseUrl = (value: string): URL | null => {
@@ -63,6 +79,12 @@ const toAppUrl = (value: string, ctx: z.RefinementCtx): URL => {
 
 const isHttpsUrl = (value: string): boolean => parseUrl(value)?.protocol === 'https:';
 
+// S3 traffic carries the credentials' signatures and the images: https, or http to this machine.
+const isS3Endpoint = (value: string): boolean => {
+	const url = parseUrl(value);
+	return url !== null && isAllowedScheme(url);
+};
+
 const isValidTickInterval = (value: string): boolean =>
 	Number.isSafeInteger(Number(value)) && Number(value) >= MIN_TICK_INTERVAL_MS;
 
@@ -79,10 +101,12 @@ const trimmedValues = (
 	return result;
 };
 
-// Every variable has its own rule; the cross-variable MS_LOGIN_* rule lives in `missingMsLogin`.
+// Every variable has its own rule; the all-or-none rules of MS_LOGIN_* and S3_* live in `missingFromGroup`.
 const schema = z.object({
 	APP_SECRET: z.string().transform(toSecretBytes),
 	APP_URL: z.string().transform(toAppUrl),
+	// The Vercel Blob store's read-write token; the Vercel build reads it.
+	BLOB_READ_WRITE_TOKEN: z.string().optional(),
 	CRON_SECRET: z.string().min(MIN_CRON_SECRET_LENGTH),
 	DATABASE_URL: z.string().regex(/^postgres(?:ql)?:\/\//u),
 	// A local Neon WebSocket proxy as host[:port][/path], without scheme or query.
@@ -97,16 +121,27 @@ const schema = z.object({
 	// The tenant ID (a GUID) of the club's Microsoft Entra tenant. The aliases `common`,
 	// `organizations` and `consumers` would let any Microsoft account sign in, so they are refused.
 	MS_LOGIN_TENANT_ID: z.guid().optional(),
+	// S3 storage for images (Node/Docker): all five or none, see `missingS3`.
+	S3_ACCESS_KEY_ID: z.string().optional(),
+	S3_BUCKET: z
+		.string()
+		.regex(/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/u)
+		.optional(),
+	S3_ENDPOINT: z.string().refine(isS3Endpoint).optional(),
+	S3_REGION: z.string().optional(),
+	S3_SECRET_ACCESS_KEY: z.string().optional(),
 	SETUP_TOKEN: z.string().min(MIN_SETUP_TOKEN_LENGTH).optional(),
 	TICK_INTERVAL_MS: z.string().regex(/^\d+$/u).refine(isValidTickInterval).optional(),
 });
 
-// MS_LOGIN_*: all three or none. Returns the variables that are missing when only some are set.
-const missingMsLogin = (
+// A group of variables is all or nothing. Returns the variables that are missing when only some
+// are set.
+const missingFromGroup = (
 	source: Readonly<Record<string, string | undefined>>,
+	group: readonly string[],
 ): readonly string[] => {
-	const missing = MS_LOGIN_VARIABLES.filter((name) => source[name] === undefined);
-	return missing.length === MS_LOGIN_VARIABLES.length ? [] : missing;
+	const missing = group.filter((name) => source[name] === undefined);
+	return missing.length === group.length ? [] : missing;
 };
 
 /**
@@ -125,9 +160,25 @@ const misplacedNeonProxy = (
 	return local ? [] : ['DEV_NEON_WS_PROXY'];
 };
 
+const toS3Config = (data: z.output<typeof schema>): S3Config | null => {
+	const { S3_ACCESS_KEY_ID: accessKeyId, S3_BUCKET: bucket, S3_ENDPOINT: endpoint } = data;
+	const { S3_REGION: region, S3_SECRET_ACCESS_KEY: secretAccessKey } = data;
+	if (
+		accessKeyId === undefined ||
+		bucket === undefined ||
+		endpoint === undefined ||
+		region === undefined ||
+		secretAccessKey === undefined
+	)
+		return null;
+	return { accessKeyId, bucket, endpoint: new URL(endpoint), region, secretAccessKey };
+};
+
 export interface Env {
 	appSecret: Uint8Array; // exactly 32 bytes
 	appUrl: URL;
+	/** The Vercel Blob store's token, for the Vercel build. */
+	blobToken: string | null;
 	cronSecret: string;
 	databaseUrl: string;
 	/** A local Neon WebSocket proxy (`host:port/path`) for the `neon` driver, development only. */
@@ -135,6 +186,8 @@ export interface Env {
 	devSmtpUrl: string | null;
 	heartbeatUrl: string | null;
 	microsoftLogin: { clientId: string; clientSecret: string; tenantId: string } | null;
+	/** The S3 bucket for images (Node/Docker), or null when `S3_*` is not set. */
+	s3: S3Config | null;
 	setupToken: string | null;
 	tickIntervalMs: number;
 }
@@ -153,7 +206,11 @@ export class EnvError extends Error {
 export function parseEnv(source: Readonly<Record<string, string | undefined>>): Env {
 	const values = trimmedValues(source);
 	const result = schema.safeParse(values);
-	const offending = new Set<string>([...missingMsLogin(values), ...misplacedNeonProxy(values)]);
+	const offending = new Set<string>([
+		...missingFromGroup(values, MS_LOGIN_VARIABLES),
+		...missingFromGroup(values, S3_VARIABLES),
+		...misplacedNeonProxy(values),
+	]);
 	if (!result.success) {
 		for (const name of Object.keys(z.flattenError(result.error).fieldErrors)) offending.add(name);
 	}
@@ -166,6 +223,7 @@ export function parseEnv(source: Readonly<Record<string, string | undefined>>): 
 	return {
 		appSecret: data.APP_SECRET,
 		appUrl: data.APP_URL,
+		blobToken: data.BLOB_READ_WRITE_TOKEN ?? null,
 		cronSecret: data.CRON_SECRET,
 		databaseUrl: data.DATABASE_URL,
 		devNeonWsProxy: data.DEV_NEON_WS_PROXY ?? null,
@@ -175,6 +233,7 @@ export function parseEnv(source: Readonly<Record<string, string | undefined>>): 
 			clientId !== undefined && clientSecret !== undefined && tenantId !== undefined
 				? { clientId, clientSecret, tenantId }
 				: null,
+		s3: toS3Config(data),
 		setupToken: data.SETUP_TOKEN ?? null,
 		tickIntervalMs:
 			data.TICK_INTERVAL_MS === undefined
