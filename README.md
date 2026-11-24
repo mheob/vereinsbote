@@ -209,7 +209,7 @@ Versions, the changelog, git tags and GitHub Releases come from [Changesets](htt
   - The owner's own pull requests bypass the review (see "Contributing and merging"). That is why the release pull request must never be opened with the owner's token.
 - **Release app:** the workflow creates a short-lived installation token of the GitHub App `mheob-helper` with [`actions/create-github-app-token`](https://github.com/actions/create-github-app-token), limited to `contents: write` and `pull-requests: write` and revoked when the job ends. A `GITHUB_TOKEN` would not trigger CI on the release pull request. Its commits and tags carry the app's bot user (`mheob-helper[bot]`) as Git identity.
   - Setup by the owner: install the app on the repository with the repository permissions Contents and Pull requests (read and write), then create (Settings, Secrets and variables, Actions) the variable `BOT_CLIENT_ID` (the app's client ID) and the secret `BOT_PRIVATE_KEY` (a private key of the app).
-- The workflow is the only one with a write token (`contents: write`, `pull-requests: write`) and with persisted checkout credentials (`changeset git-tag` checks existing tags with an authenticated `git ls-remote`); it runs only on `main`, never code from pull requests.
+- Its `GITHUB_TOKEN` is read-only (`permissions: contents: read`) like in every other workflow; only the app token writes. The workflow is the only one with persisted checkout credentials (`changeset git-tag` checks existing tags with an authenticated `git ls-remote`); it runs only on `main`, never code from pull requests.
 
 ## Supply-chain security
 
@@ -217,7 +217,7 @@ Versions, the changelog, git tags and GitHub Releases come from [Changesets](htt
   - GitHub Actions are pinned to the commit SHA of their release (`uses: owner/action@<sha> # vX.Y.Z`).
   - Container images are pinned by digest (`image:tag@sha256:…`) in the Dockerfile, in both Compose files and in the CI service containers.
 - **CI:**
-  - The CI workflow runs with a read-only token (`permissions: contents: read`) and `persist-credentials: false`, without `pull_request_target`. The release workflow runs only on `main` and needs write access (see [Releases](#releases)).
+  - The CI workflow runs with a read-only token (`permissions: contents: read`) and `persist-credentials: false`, without `pull_request_target`. The release workflow runs only on `main` and writes with the token of the release app (see [Releases](#releases)).
 - **pnpm (`pnpm-workspace.yaml`):**
   - It installs only versions that are at least a day old (`minimumReleaseAge`).
   - It refuses versions published with less trust evidence than their predecessors (`trustPolicy: no-downgrade`).
