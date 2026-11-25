@@ -86,6 +86,7 @@ Was das Design dem Builder überlässt (Design 23), hier festgelegt:
 17. **Mailquelle auf dem Server:** `previewSource`/`mailLayoutOf` ziehen aus `components/editor/preview-source.ts` nach `mail/templates/mail-source.ts` (browser-sicher); Editor und Versand nutzen dieselbe Funktion.
 18. **Einmal-Schlüssel des Ablaufs:** Der Browser erzeugt beim Öffnen des Ablaufs eine UUID; `waves.request_id` ist unique.
 19. **E2E:** Projekt `sending` (hängt von `templates` ab), Datei `apps/web/e2e/sending.e2e.ts`; Läufe der Zeitsteuerung per `POST /api/tick` mit `CRON_SECRET` aus `e2e/env.ts` (Helfer `runTick` in `e2e/helpers/tick.ts`).
+20. **Reihenfolge der Tick-Schritte** (Spec 7: Versand, Rückläufer, Fristen, Warnungen; Teilplan 5 setzt die Datumsregeln vor `outbox`): `pruneAuthRecords`, `outbox`, `graphBounces`, `attachmentCleanup`, `staleImportWarning`, `sendingWarnings`. Jeder Task, der einen Schritt hinzufügt, setzt ihn an diese Stelle.
 
 ## Review Focus
 
@@ -415,7 +416,7 @@ export class ConnectionNotFoundError, ConnectionChangedError, ConnectionInUseErr
 
 **Regeln:**
 - Alles nur Admin. Zugangsdaten verlassen den Server nie; Formulare zeigen „gespeichert“ und ein leeres Feld (leer = unverändert).
-- Ein Absender lässt sich nicht löschen, solange ein Anlass ihn nutzt (ab Task 12) oder Einträge `planned`, `sending` oder `uncertain` an ihm hängen; gesendete Einträge behalten ihre Daten (`sender_id` wird `null`, Task 7).
+- Ein Absender lässt sich nicht löschen, solange ein Anlass ihn nutzt (ab Task 12) oder (ab Task 7) Einträge `planned`, `sending` oder `uncertain` an ihm hängen; gesendete Einträge behalten ihre Daten (`sender_id` wird `null`, Task 7).
 - Graph-Absender: `perMinute` Standard 30. Resend-Absender erben Drosselung und Limit der Anbindung (Design 6.2).
 - Neue Zugangsdaten setzen `disturbed_since` zurück, wenn der Selbsttest das Token bekommt.
 - Selbsttest (Design 6.1): Token → Testmail an `principal`-Adresse (Systemmail-Art `regular`, Betreff aus i18n) → Beschränkungstest mit `probeMailbox` (vorbelegt mit der Adresse des Admins). Ergebnis an der Anbindung speichern; Protokoll `sender.self_tested` mit Ergebnis ohne Adressen.
@@ -454,7 +455,7 @@ it('runs the self test and stores the restriction result', …)  // gegen fetch-
 - Create:
   - Schema in `apps/web/src/server/db/schema/sending.ts` (Ergänzung: `outbox_entries`, `send_quota_days`)
   - `apps/web/src/server/sending/{quota,outbox,outbox-step}.ts`
-- Modify: `apps/web/src/server/tick/{tick,steps}.ts` (`storage` im `TickContext`, Schritt `outbox`), `apps/web/src/routes/api/tick.ts`, `apps/web/src/platform/{node-server,cloudflare-scheduled,cloudflare-worker}.ts`, Migration (erzeugt)
+- Modify: `apps/web/src/server/tick/{tick,steps}.ts` (`storage` im `TickContext`, Schritt `outbox`), `apps/web/src/server/sending/senders.ts` (`deleteSender` lehnt bei offenen Einträgen ab: `SenderInUseError('entries')`), `apps/web/src/routes/api/tick.ts`, `apps/web/src/platform/{node-server,cloudflare-scheduled,cloudflare-worker}.ts`, Migration (erzeugt)
 - Test: `apps/web/src/server/sending/{quota,outbox,outbox-step}.test.ts`, `apps/web/src/server/sending/outbox.postgres.test.ts`, `apps/web/src/server/tick/tick.test.ts` (Ergänzung)
 
 **Interfaces:**
@@ -871,7 +872,7 @@ it('removes attachments without a wave after one day', …)
 ### Task 15: Welle anlegen
 
 **Files:**
-- Create: Schema `apps/web/src/server/db/schema/waves.ts` (`waves`, `wave_contacts`), `apps/web/src/server/contacts/filters.ts`, `apps/web/src/server/waves/{recipients,merge,waves,errors,failures}.ts`
+- Create: Schema `apps/web/src/server/db/schema/waves.ts` (`waves`, `wave_contacts`), Schema `apps/web/src/server/db/schema/bounces.ts` (nur `contact_bounces`; Task 19 ergänzt die übrigen Tabellen), `apps/web/src/server/bounces/bounces.ts` (nur `isEmailInvalid`), `apps/web/src/server/contacts/filters.ts`, `apps/web/src/server/waves/{recipients,merge,waves,errors,failures}.ts`
 - Modify: `apps/web/src/server/contacts/contacts.ts` (nutzt `filters.ts`), Schema `outbox_entries.wave_id → waves cascade`, `attachments.wave_id → waves cascade`, `apps/web/src/functions/waves.ts`, `apps/web/src/server/audit/audit.ts`, Migration (erzeugt)
 - Test: `apps/web/src/server/waves/{recipients,merge,waves}.test.ts`, `apps/web/src/server/waves/waves.postgres.test.ts`
 
@@ -888,6 +889,9 @@ export function resolveRecipients(db: Db, actor: Principal, occasion: Readonly<O
 // server/waves/merge.ts (rein)
 export interface PlannedMail { readonly address: string; readonly contacts: readonly ContactRecord[] }   // contacts[0] füllt die Mail
 export function planMails(kind: OccasionKind, contacts: readonly ContactRecord[]): PlannedMail[]        // personal: je Kontakt; circular: je Adresse, Reihenfolge Design 11.2
+// server/bounces/bounces.ts (nur dieses Stück; Task 19 ergänzt)
+export function isEmailInvalid(db: Db, contact: Pick<ContactRecord, 'kind' | 'contactKey' | 'email'>): Promise<boolean>
+// Schema contact_bounces: (kind, contact_key, email) Primärschlüssel, source, created_at, entry_id null
 // server/waves/waves.ts
 export interface WaveSummaryInput { occasionId: string; selection: RecipientSelection; attachmentIds: readonly string[] }
 export interface WaveSummary { mails: number; merged: number; excluded: Record<ExclusionReason, number>; attachmentsBytes: number;
@@ -1081,8 +1085,8 @@ it('describes the page without names or addresses', …)
 ### Task 19: Rückläufer
 
 **Files:**
-- Create: Schema `apps/web/src/server/db/schema/bounces.ts` (`contact_bounces`, `processed_reports`, `webhook_events`), `apps/web/src/server/bounces/{bounces,graph-step,resend-webhook-handler}.ts`, `apps/web/src/routes/api/webhooks/resend.$connectionId.ts`
-- Modify: `apps/web/src/server/tick/steps.ts` (`graphBounces`), `apps/web/src/server/contacts/{mailable,contacts}.ts` (Markierung im Kontakt und in der Liste), `apps/web/src/server/waves/recipients.ts` (`invalidEmail`), `apps/web/src/server/audit/audit.ts` (`'contact.bounce_cleared'`), Migration (erzeugt)
+- Create: `apps/web/src/server/bounces/{graph-step,resend-webhook-handler}.ts`, `apps/web/src/routes/api/webhooks/resend.$connectionId.ts`
+- Modify: Schema `apps/web/src/server/db/schema/bounces.ts` (Ergänzung: `processed_reports`, `webhook_events`; `contact_bounces` stammt aus Task 15), `apps/web/src/server/bounces/bounces.ts` (Ergänzung), `apps/web/src/server/tick/steps.ts` (`graphBounces`), `apps/web/src/server/contacts/{mailable,contacts}.ts` (Markierung im Kontakt und in der Liste), `apps/web/src/server/audit/audit.ts` (`'contact.bounce_cleared'`), Migration (erzeugt)
 - Test: `apps/web/src/server/bounces/{bounces,graph-step,resend-webhook-handler}.test.ts`
 
 **Interfaces:**
