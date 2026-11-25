@@ -73,7 +73,7 @@ const NON_ASCII = /[^\u0020-\u007E]/u;
 const SINCE = /receivedDateTime ge (?<since>\S+)/u;
 
 class BodyTooLargeError extends Error {
-	constructor() {
+	public constructor() {
 		super('fake.bodyTooLarge');
 		this.name = 'BodyTooLargeError';
 	}
