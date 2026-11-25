@@ -550,6 +550,30 @@ test('a block in a column opens its form beside the columns form', async () => {
 	await expectNoA11yViolations(eva, [PREVIEW_FRAME]);
 });
 
+// oxlint-disable-next-line max-statements -- one flow, step by step, as the editor sees it
+test('a field whose editor does not load shows the error at the field and loads again', async () => {
+	// The chunk of the one-line fields fails, as on a broken connection or after a deploy.
+	const chunk = /\/assets\/inline-field-[\w-]+\.js$/u;
+	await eva.route(chunk, async (route) => route.abort('connectionfailed'));
+	await openEditor(eva, 'Sommerfest');
+	await eva.getByRole('button', { name: 'Einstellungen' }).press('Enter');
+	const preheader = eva.getByRole('group', { name: 'Vorschautext' });
+	await expect(preheader.getByRole('alert')).toHaveText(
+		'Das Feld konnte nicht geladen werden. Prüfe die Verbindung und lade es erneut; hilft das nicht, lade die Seite neu.',
+	);
+	// Only the field fails, not the editor around it.
+	await expect(
+		eva.getByRole('heading', { exact: true, level: 1, name: 'Sommerfest' }),
+	).toBeVisible();
+	await expect(eva.getByRole('button', { name: 'Speichern' })).toBeEnabled();
+	await expectNoA11yViolations(eva, [PREVIEW_FRAME]);
+
+	await eva.unroute(chunk);
+	await preheader.getByRole('button', { name: 'Feld erneut laden' }).press('Enter');
+	await expect(eva.getByRole('textbox', { name: 'Vorschautext' })).toBeEditable();
+	await expect(preheader).toHaveCount(0);
+});
+
 // oxlint-disable-next-line max-statements -- one flow, step by step, as the editor sees it in two tabs
 test('two tabs: the second save is refused', async () => {
 	await openEditor(eva, 'Sommerfest');
@@ -696,6 +720,13 @@ const DIRTY_MAIL = [
 	'</body></html>',
 ].join('');
 
+/** HTML as Word saves it, in Windows-1252 (the test writes it as Latin-1, which is the same here). */
+const WORD_HTML = [
+	'<html><head>',
+	'<meta http-equiv=Content-Type content="text/html; charset=windows-1252">',
+	'</head><body><p>Grüße vom Sommerfest, Straße und Café inklusive</p></body></html>',
+].join('');
+
 /**
  * Chooses a file in the import: the hidden file input of React Aria's file trigger.
  *
@@ -735,6 +766,14 @@ test('an editor imports html with a script and sees it removed', async () => {
 		name: 'zu-gross.html',
 	});
 	await expect(eva.getByText('Das HTML ist zu groß (höchstens 500 KB).')).toBeVisible();
+
+	// Word and older Outlook versions save HTML in Windows-1252: the umlauts stay umlauts.
+	await eva.locator('input[type="file"]').setInputFiles({
+		buffer: Buffer.from(WORD_HTML, 'latin1'),
+		mimeType: 'text/html',
+		name: 'word.htm',
+	});
+	await expect(eva.getByLabel('HTML', { exact: true })).toHaveValue(WORD_HTML);
 
 	await chooseHtmlFile(eva, { name: 'rundbrief.html', text: DIRTY_MAIL });
 	await expect(eva.getByRole('button', { name: 'Übernehmen' })).toBeDisabled();

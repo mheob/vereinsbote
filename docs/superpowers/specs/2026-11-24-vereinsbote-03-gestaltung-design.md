@@ -383,7 +383,7 @@ Eine Einstellung pro Instanz, verwaltet vom Admin unter `/admin/brand`.
 - Server-Routen `/media/$file` und `/preview-frame`.
 - Navigation: „Vorlagen“ und „Bilder“ für alle mit Bereichsrecht; „CD“ und „Layouts“ in der Admin-Navigation.
 
-**Aktivitätsprotokoll:** Vorlage angelegt/geändert/dupliziert/gelöscht (ID, Bereich), Bild hochgeladen/gelöscht (ID, Bereich), CD geändert, Layout importiert/geändert/gelöscht (ID). Keine Inhalte, keine Kontaktdaten.
+**Aktivitätsprotokoll:** Vorlage angelegt/geändert/dupliziert/gelöscht (ID, Bereich), Bild hochgeladen/gelöscht (ID, Bereich), Bild beim Duplizieren in einen anderen Bereich kopiert (ID, Bereich, Quellbild, Vorlage), CD geändert, Layout importiert/geändert/gelöscht (ID). Keine Inhalte, keine Kontaktdaten.
 
 **Datenschutz:**
 

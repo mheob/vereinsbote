@@ -4,7 +4,7 @@ import { E2E_SETUP_TOKEN, E2E_URL } from './env';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { saveAdminSession } from './helpers/admin-session';
 import { latestLink } from './helpers/mailpit';
-import { expect, test } from './helpers/test';
+import { cspViolationsReported, expect, test } from './helpers/test';
 
 const HTTP_NOT_FOUND = 404;
 const HTTP_OK = 200;
@@ -192,18 +192,17 @@ test('fails a test on a CSP violation in a context it opened', async ({ browser 
 	try {
 		const page = await context.newPage();
 		await page.goto('/login');
-		// The violation is reported before the image fails to load.
-		const failed = await page.evaluate(async (source) => {
+		// The test waits for the violation, not for the image: Chromium rejects `decode()` before
+		// it fires the event.
+		await page.evaluate(async (source) => {
+			const violation = Promise.withResolvers<SecurityPolicyViolationEvent>();
+			document.addEventListener('securitypolicyviolation', violation.resolve, { once: true });
 			const image = new Image();
 			image.src = source;
-			try {
-				await image.decode();
-				return false;
-			} catch {
-				return true;
-			}
+			await violation.promise;
 		}, FOREIGN_IMAGE);
-		expect(failed).toBe(true);
+		// And for its report: closed with the context before it arrives, it would not count.
+		await cspViolationsReported(page);
 	} finally {
 		await context.close();
 	}

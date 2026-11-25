@@ -30,6 +30,7 @@ import { MAX_IMPORT_BYTES } from '@/server/html-import/limits';
 import { ImportFindings } from './import-findings';
 import { findingGroups, refusalMessages } from './messages';
 import type { ImportTarget } from './messages';
+import { decodeHtmlBytes } from './read-html-file';
 
 /** What is imported and where it goes; the server decides from it what the HTML may use. */
 type ImportSpec =
@@ -110,7 +111,8 @@ function ImportPreview({
  * and says what it removed, what it warns about and what it refuses. „Prüfen“ stores nothing; a
  * preview with the sample contact shows the cleaned HTML. „Übernehmen“ hands the cleaned HTML to
  * the page and is active only for HTML that passed without refusals and was not edited since.
- * The browser refuses more than 500 KB before it sends anything.
+ * The browser refuses more than 500 KB before it sends anything. A file is read in the encoding it
+ * declares, else as UTF-8 or, when it is no valid UTF-8, as Windows-1252 (`read-html-file.ts`).
  *
  * @param props The props.
  * @param props.spec What is imported and where it goes.
@@ -168,7 +170,8 @@ export function HtmlImportForm({
 					return;
 				}
 				try {
-					const text = await file.text();
+					// Not `file.text()`: that reads UTF-8 only, and Word saves HTML in Windows-1252.
+					const text = decodeHtmlBytes(new Uint8Array(await file.arrayBuffer()));
 					changeSource(text);
 					setFileName(file.name);
 					announce(t('htmlImport.fileChosen', { name: file.name }), 'status');

@@ -268,6 +268,9 @@ export const en: Record<keyof typeof de, string> = {
 	'editor.dividerHint': 'A divider has no settings.',
 	'editor.duplicate': 'Duplicate',
 	'editor.fallback': 'Fallback text',
+	'editor.fieldLoadFailed':
+		'The field could not be loaded. Check the connection and load it again; if that does not help, reload the page.',
+	'editor.fieldLoadRetry': 'Load the field again',
 	'editor.findings': 'Accessibility notes',
 	'editor.findingsHelp': 'The notes do not prevent saving. Each one leads to its block.',
 	'editor.headingText': 'Text',

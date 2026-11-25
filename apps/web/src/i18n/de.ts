@@ -270,6 +270,9 @@ export const de = {
 	'editor.dividerHint': 'Ein Trenner hat nichts einzustellen.',
 	'editor.duplicate': 'Duplizieren',
 	'editor.fallback': 'Ersatztext',
+	'editor.fieldLoadFailed':
+		'Das Feld konnte nicht geladen werden. Prüfe die Verbindung und lade es erneut; hilft das nicht, lade die Seite neu.',
+	'editor.fieldLoadRetry': 'Feld erneut laden',
 	'editor.findings': 'Hinweise zur Barrierefreiheit',
 	'editor.findingsHelp':
 		'Die Hinweise verhindern das Speichern nicht. Jeder führt zu seinem Baustein.',

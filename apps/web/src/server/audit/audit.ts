@@ -13,6 +13,7 @@ type AuditAction =
 	| 'layout.created'
 	| 'layout.deleted'
 	| 'layout.updated'
+	| 'media.copied'
 	| 'media.deleted'
 	| 'media.uploaded'
 	| 'import.members'

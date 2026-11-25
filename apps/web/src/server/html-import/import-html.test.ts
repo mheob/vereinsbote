@@ -44,6 +44,21 @@ describe(importHtml, () => {
 		expect(importHtml(first.html, TEMPLATE, ORIGIN)).toMatchObject({ html: first.html, ok: true });
 	});
 
+	it('declares UTF-8, the encoding the HTML is stored and sent in, whatever its file declared', () => {
+		const word = [
+			'<html><head>',
+			'<meta charset="windows-1252">',
+			'<meta http-equiv=Content-Type content="text/html; charset=windows-1252">',
+			'<meta name="viewport" content="width=device-width">',
+			'</head><body><p>Grüße</p></body></html>',
+		].join('');
+		const html = htmlOf(importHtml(word, TEMPLATE, ORIGIN));
+		expect(html).not.toContain('windows-1252');
+		expect(html).toContain("<meta charset='utf-8'>");
+		expect(html).toContain("<meta http-equiv='Content-Type' content='text/html; charset=utf-8'>");
+		expect(html).toContain("<meta name='viewport' content='width=device-width'>");
+	});
+
 	it('turns a fragment into a document', () => {
 		const result = importHtml('<p>Hallo {{salutation}}</p>', TEMPLATE, ORIGIN);
 		expect(htmlOf(result)).toBe(

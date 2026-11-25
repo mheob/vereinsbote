@@ -459,6 +459,22 @@ function keepMeta(element: Element, context: CleanContext): boolean {
 }
 
 /**
+ * Has a meta element that names an encoding name UTF-8. The HTML is stored as text and sent as
+ * UTF-8, whatever encoding its file had: the browser decoded the file (`read-html-file.ts`), so
+ * a `windows-1252` from Word would now be wrong.
+ *
+ * @param element A meta element that stays.
+ */
+function declareUtf8(element: Element): void {
+	const { properties } = element;
+	// oxlint-disable-next-line unicorn/text-encoding-identifier-case -- the label as HTML writes it
+	if (properties.charSet !== undefined) properties.charSet = 'utf-8';
+	if (propertyText(properties.httpEquiv).trim().toLowerCase() === 'content-type') {
+		properties.content = 'text/html; charset=utf-8';
+	}
+}
+
+/**
  * Whether an element goes with everything inside it: scripts, forms, frames and the like (with
  * a finding), and elements with a namespace such as Outlook's XML (without).
  *
@@ -483,7 +499,10 @@ function isRemoved(element: Element, context: CleanContext): boolean {
 function cleanElement(element: Element, context: CleanContext): boolean {
 	const { tagName } = element;
 	if (isRemoved(element, context)) return false;
-	if (tagName === 'meta' && !keepMeta(element, context)) return false;
+	if (tagName === 'meta') {
+		if (!keepMeta(element, context)) return false;
+		declareUtf8(element);
+	}
 	if (tagName === 'style') return cleanStyleElement(element, context);
 	element.properties = cleanProperties(element, context);
 	element.children = cleanNodes(element.children, placeOf(element), context);
