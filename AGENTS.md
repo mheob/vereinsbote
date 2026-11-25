@@ -147,7 +147,7 @@ Run them from the repository root.
 - Each database test starts its own PGlite instance, which is slow on CI runners with coverage; the test and hook timeouts are therefore 30 s (`apps/web/vite.config.ts`). Do not lower them.
 - PGlite runs one statement at a time, so it cannot show races. Tests that need real concurrency are `*.postgres.test.ts`, run against PostgreSQL when `TEST_POSTGRES_URL` is set (CI sets it), create and drop a database of their own, and are skipped otherwise (`describe.skipIf`, with the reason in the title).
 - E2E tests are Playwright files named `*.e2e.ts` in `apps/web/e2e/`. They run against the Node build on port 3100 with the fixed values in `apps/web/e2e/env.ts`.
-- Every E2E file belongs to a Playwright project of its own in `apps/web/playwright.config.ts` (`fundament`, `contacts`); a file without one does not run. A file that builds on another file's data names that project in `dependencies`, as `contacts` does with `fundament`.
+- Every E2E file belongs to a Playwright project of its own in `apps/web/playwright.config.ts` (`fundament`, `contacts`, `design`); a file without one does not run. A file that builds on another file's data names that project in `dependencies`, as `contacts` and `design` do with `fundament`.
 - **Test data is always invented** (made-up names, addresses at `example.org` or a `.test`/`.example` domain). A club's real exports never go into the repository, not even shortened. Import files for tests are built in the test: XLSX with `write-excel-file`, CSV as text (e.g. encoded as Windows-1252 in the test); no binary fixtures.
 
 ## Security and supply chain
