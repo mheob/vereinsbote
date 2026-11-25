@@ -689,6 +689,24 @@ describe(duplicateTemplate, () => {
 		]);
 	});
 
+	it('logs each copied image with its source, like an upload', async () => {
+		const c = await club();
+		const { id, imageId } = await templateWithImage(c);
+		const copy = await duplicateTemplate(c.db, c.storage, c.editor, id, c.eventsAreaId, 'Kopie');
+		const copiedImage = onlyImageOf(await getTemplate(c.db, c.editor, copy.id));
+		await expect(auditOf(c.db, 'media.copied')).resolves.toStrictEqual([
+			{
+				details: {
+					areaId: c.eventsAreaId,
+					purpose: 'library',
+					sourceMediaId: imageId,
+					templateId: copy.id,
+				},
+				target: `media:${copiedImage}`,
+			},
+		]);
+	});
+
 	it('shares the images within the area', async () => {
 		const c = await club();
 		const { id, imageId } = await templateWithImage(c);
@@ -696,6 +714,8 @@ describe(duplicateTemplate, () => {
 		const record = await getTemplate(c.db, c.editor, copy.id);
 		expect(imagesOf(record)).toStrictEqual([imageId]);
 		await expect(mediaIds(c.db)).resolves.toStrictEqual([{ id: imageId }]);
+		// Nothing was copied, so nothing is logged as copied.
+		await expect(auditOf(c.db, 'media.copied')).resolves.toStrictEqual([]);
 	});
 
 	it('needs read in the source area and edit in the target area', async () => {

@@ -674,6 +674,33 @@ async function insertImageCopies(
 }
 
 /**
+ * Logs each copied image like an upload into the target area's library, with the image it was
+ * copied from and the template copy that shows it.
+ *
+ * @param tx The transaction.
+ * @param context Who wrote into which area.
+ * @param copy The copied images and the template copy.
+ * @param copy.copies The copy of each image.
+ * @param copy.templateId The template copy.
+ */
+async function logImageCopies(
+	tx: Db,
+	context: WriteContext,
+	copy: Readonly<{ copies: ImageCopies; templateId: string }>,
+): Promise<void> {
+	const { copies, templateId } = copy;
+	for (const [sourceMediaId, copyId] of copies) {
+		// oxlint-disable-next-line no-await-in-loop -- a transaction runs one statement at a time
+		await writeAudit(tx, {
+			action: 'media.copied',
+			actorUserId: context.actor.userId,
+			details: { areaId: context.areaId, purpose: 'library', sourceMediaId, templateId },
+			target: `media:${copyId}`,
+		});
+	}
+}
+
+/**
  * The copy of a template under a new name, checked against the target area. Its images count as
  * the target's, since they come along; the transaction checks again with the real rows.
  *
@@ -704,7 +731,8 @@ function checkedCopy(
 }
 
 /**
- * Stores the copy of a template in the target area, with the rows of its copied images.
+ * Stores the copy of a template in the target area, with the rows of its copied images, and logs
+ * the copy and each copied image.
  *
  * @param tx The transaction.
  * @param context Who writes into which area.
@@ -730,6 +758,7 @@ async function insertCopy(
 		details: { areaId: context.areaId, sourceTemplateId: copy.sourceId },
 		templateId: id,
 	});
+	await logImageCopies(tx, context, { copies: copy.copies, templateId: id });
 	return { id };
 }
 
