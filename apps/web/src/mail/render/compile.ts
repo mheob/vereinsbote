@@ -28,7 +28,7 @@ import { mediaPath } from '@/server/media/ids';
 import type { ImageType } from '@/server/media/ids';
 
 import type { ResolvePlaceholder } from './inline-text';
-import { slotMarker, splitParts } from './parts';
+import { referencesMarker, slotMarker, splitParts } from './parts';
 import type { Part } from './parts';
 import { BlockContent, BlockRows } from './render-blocks';
 import type { BlockContext } from './render-blocks';
@@ -167,6 +167,17 @@ function countContent(refs: readonly Readonly<PlaceholderRef>[]): number {
 }
 
 /**
+ * Parses the HTML of a template or a layout. A character reference to a marker character counts
+ * as broken syntax: stripping cannot reach it, and decoding the HTML would make it a marker.
+ *
+ * @param html The HTML.
+ * @returns The segments, or null when the HTML is refused.
+ */
+function htmlSegmentsOf(html: string): Segments | null {
+	return referencesMarker(html) ? null : segmentsOf(html);
+}
+
+/**
  * Strips, parses and validates a body.
  *
  * @param body The body of the source.
@@ -174,10 +185,10 @@ function countContent(refs: readonly Readonly<PlaceholderRef>[]): number {
  */
 function prepareBody(body: MailBody): PreparedBody | Failure {
 	if (body.kind === 'html') {
-		const segments = segmentsOf(body.html);
+		const segments = htmlSegmentsOf(body.html);
 		return segments === null ? fail('syntax') : { kind: 'html', segments };
 	}
-	const layout = body.layout.kind === 'html' ? segmentsOf(body.layout.html) : null;
+	const layout = body.layout.kind === 'html' ? htmlSegmentsOf(body.layout.html) : null;
 	if (body.layout.kind === 'html' && layout === null) return fail('syntax');
 	const blocks = blockListSchema.safeParse(stripDeep(body.blocks));
 	return blocks.success ? { blocks: blocks.data, kind: 'blocks', layout } : fail('blocks');

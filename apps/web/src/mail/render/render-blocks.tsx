@@ -170,7 +170,7 @@ function BlockRow({ area, block, context }: BlockRowProps): ReactNode {
 			return (
 				<Row padding={padding(area.gutter)}>
 					<Text color={theme.text} fontFamily={theme.font} spaceAfter={0}>
-						{resolve(block.ref)}
+						{`${resolve(block.ref)}${block.suffix}`}
 					</Text>
 				</Row>
 			);

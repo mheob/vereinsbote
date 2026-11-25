@@ -218,6 +218,47 @@ describe(compileMail, () => {
 		expect(fixedText(mail.html)).toContain('alt="Bild 0"');
 	});
 
+	it.each([
+		['hex in text', '<p>Hallo {{contact.firstName}} &#xE000;0&#xE001;</p>'],
+		['hex in a link', '<p><a href="https://x.example/&#xE000;0&#xE001;">Link</a></p>'],
+		['upper-case hex with leading zeros', '<p>&#X0000e000;0&#x0E001;</p>'],
+		['decimal in text', '<p>&#57344;0&#57345;</p>'],
+		[
+			'decimal in a link without semicolons',
+			'<p><a href="https://x.example/&#0057344 0&#57345">L</a></p>',
+		],
+	])('refuses character references to marker characters in HTML (%s)', async (_name, html) => {
+		const template = source([], { body: { html, kind: 'html' }, subject: 'S {{contact.email}}' });
+		const layout = source([GREETING], {
+			body: {
+				blocks: [GREETING],
+				kind: 'blocks',
+				layout: { html: `${html}{{content}}`, kind: 'html' },
+			},
+		});
+		await expect(compile(template)).resolves.toStrictEqual({ invalid: 'syntax', ok: false });
+		await expect(compile(layout)).resolves.toStrictEqual({ invalid: 'syntax', ok: false });
+	});
+
+	it('keeps other character references in HTML', async () => {
+		const html = '<p>&amp;#xE000; &#xE002; &#xe000b; &#57346;</p>';
+		const mail = await filled(source([], { body: { html, kind: 'html' } }), ANNA);
+		expect(mail.html).toBe(html);
+		expect(mail.text).not.toMatch(MARKERS);
+	});
+
+	it('ends a placeholder line with its suffix, escaped and without forged markers', async () => {
+		const line: Block = {
+			id: 'line',
+			ref: { fallback: null, key: 'salutation' },
+			suffix: `,&<${FORGED}`,
+			type: 'placeholderLine',
+		};
+		const mail = await filled(source([line]), new Map([...ANNA, ['salutation', 'Liebe Anna']]));
+		expect(mail.html).toContain('>Liebe Anna,&amp;&lt;0</p>');
+		expect(mail.text).toContain('Liebe Anna,&<0');
+	});
+
 	it('escapes values in HTML but not in plain text', async () => {
 		const mail = await filled(source([GREETING]), new Map([['contact.firstName', `Anna <b>&"'`]]));
 		expect(mail.html).toContain('Hallo Anna &lt;b&gt;&amp;&quot;&#39;');

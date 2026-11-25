@@ -57,6 +57,8 @@ interface PlaceholderLineBlock {
 	readonly id: string;
 	readonly type: 'placeholderLine';
 	readonly ref: Readonly<PlaceholderRef>;
+	/** Plain text right after the value, e.g. the comma of a salutation; may be empty. */
+	readonly suffix: string;
 }
 
 /** A block that may stand in a column: every block but two columns. */
@@ -85,6 +87,7 @@ const MAX_TEMPLATE_JSON_BYTES = 262_144;
 
 const MAX_ID_LENGTH = 64;
 const MAX_ALT_LENGTH = 500;
+const MAX_SUFFIX_LENGTH = 10;
 const MEDIA_ID = /^[\w-]{22}$/u;
 
 const id = z.string().min(1).max(MAX_ID_LENGTH);
@@ -116,7 +119,12 @@ const columnBlockSchema = z.discriminatedUnion('type', [
 	}),
 	z.strictObject({ id, type: z.literal('divider') }),
 	z.strictObject({ id, size: z.enum(['small', 'medium', 'large']), type: z.literal('spacer') }),
-	z.strictObject({ id, ref: placeholderRefSchema, type: z.literal('placeholderLine') }),
+	z.strictObject({
+		id,
+		ref: placeholderRefSchema,
+		suffix: z.string().max(MAX_SUFFIX_LENGTH),
+		type: z.literal('placeholderLine'),
+	}),
 ]);
 
 const columnListSchema = z.array(columnBlockSchema).max(MAX_BLOCKS);

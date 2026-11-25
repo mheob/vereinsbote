@@ -32,7 +32,7 @@ exports[`the rendered mails > render the Sie form for a firm > html 1`] = `
 </tr>
 <tr>
 <td align="left" style="padding:0 20px 16px">
-<p style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0;mso-line-height-rule:exactly">Sehr geehrte Damen und Herren</p>
+<p style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0;mso-line-height-rule:exactly">Sehr geehrte Damen und Herren,</p>
 </td>
 </tr>
 <tr>
@@ -170,7 +170,7 @@ exports[`the rendered mails > render the Sie form for a firm > html 1`] = `
 exports[`the rendered mails > render the Sie form for a firm > text 1`] = `
 "Einladung zum Sommerfest
 
-Sehr geehrte Damen und Herren
+Sehr geehrte Damen und Herren,
 
 Wir laden herzlich zu unserem Sommerfest ein. Es gibt Kuchen, Musik und ein Turnier für alle. Mehr dazu steht auf der Seite zum Sommerfest https://example.org/sommerfest.
 
@@ -557,7 +557,7 @@ exports[`the rendered mails > render the full brand with logos and five footer l
 </tr>
 <tr>
 <td align="left" style="padding:0 20px 16px">
-<p style="color:#111827;font-family:Verdana, Geneva, sans-serif;font-size:16px;line-height:24px;margin:0;mso-line-height-rule:exactly">Liebe Anna</p>
+<p style="color:#111827;font-family:Verdana, Geneva, sans-serif;font-size:16px;line-height:24px;margin:0;mso-line-height-rule:exactly">Liebe Anna,</p>
 </td>
 </tr>
 <tr>
@@ -755,7 +755,7 @@ exports[`the rendered mails > render the full brand with logos and five footer l
 exports[`the rendered mails > render the full brand with logos and five footer links, three as icons > text 1`] = `
 "Einladung zum Sommerfest
 
-Liebe Anna
+Liebe Anna,
 
 Wir laden herzlich zu unserem Sommerfest ein. Es gibt Kuchen, Musik und ein Turnier für alle. Mehr dazu steht auf der Seite zum Sommerfest https://example.org/sommerfest.
 
@@ -1027,7 +1027,7 @@ exports[`the rendered mails > render the placeholderLine sample-salutation block
 </tr>
 <tr>
 <td align="left" style="padding:0 20px 16px">
-<p style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0;mso-line-height-rule:exactly">Liebe Anna</p>
+<p style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0;mso-line-height-rule:exactly">Liebe Anna,</p>
 </td>
 </tr>
 <tr>
@@ -1060,7 +1060,7 @@ exports[`the rendered mails > render the placeholderLine sample-salutation block
 `;
 
 exports[`the rendered mails > render the placeholderLine sample-salutation block alone > text 1`] = `
-"Liebe Anna
+"Liebe Anna,
 
 Verein"
 `;
@@ -1097,7 +1097,7 @@ exports[`the rendered mails > render the sample blocks in the default brand > ht
 </tr>
 <tr>
 <td align="left" style="padding:0 20px 16px">
-<p style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0;mso-line-height-rule:exactly">Liebe Anna</p>
+<p style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0;mso-line-height-rule:exactly">Liebe Anna,</p>
 </td>
 </tr>
 <tr>
@@ -1235,7 +1235,7 @@ exports[`the rendered mails > render the sample blocks in the default brand > ht
 exports[`the rendered mails > render the sample blocks in the default brand > text 1`] = `
 "Einladung zum Sommerfest
 
-Liebe Anna
+Liebe Anna,
 
 Wir laden herzlich zu unserem Sommerfest ein. Es gibt Kuchen, Musik und ein Turnier für alle. Mehr dazu steht auf der Seite zum Sommerfest https://example.org/sommerfest.
 

@@ -12,6 +12,14 @@ type Part =
 const MARKER_START = '\uE000';
 const MARKER_END = '\uE001';
 const MARKER = /\uE000(?<index>\d+)\uE001/gu;
+/** The code points of the two marker characters. */
+const MARKER_CODE_POINTS: ReadonlySet<number> = new Set(
+	[MARKER_START, MARKER_END].flatMap((marker) => marker.codePointAt(0) ?? []),
+);
+/** A numeric character reference, with or without `;`. HTML has no named one for a marker. */
+const NUMERIC_REFERENCE = /&#(?:x(?<hex>[\da-f]+)|(?<decimal>\d+))/giu;
+const HEX_RADIX = 16;
+const DECIMAL_RADIX = 10;
 
 /**
  * The marker of a slot.
@@ -41,5 +49,24 @@ function splitParts(text: string): Part[] {
 	return parts;
 }
 
-export { slotMarker, splitParts };
+/**
+ * Whether HTML has a character reference to a marker character. Decoding HTML (the plain text
+ * is made from it) would turn such a reference into a marker, so the compiler refuses it.
+ *
+ * @param html The HTML of a template or a layout.
+ * @returns True when a reference such as `&#xE000;` or `&#57345` stands for `U+E000` or `U+E001`.
+ */
+function referencesMarker(html: string): boolean {
+	for (const match of html.matchAll(NUMERIC_REFERENCE)) {
+		const { decimal, hex } = match.groups ?? {};
+		const codePoint =
+			hex === undefined
+				? Number.parseInt(decimal ?? '', DECIMAL_RADIX)
+				: Number.parseInt(hex, HEX_RADIX);
+		if (MARKER_CODE_POINTS.has(codePoint)) return true;
+	}
+	return false;
+}
+
+export { referencesMarker, slotMarker, splitParts };
 export type { Part };

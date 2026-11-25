@@ -26,6 +26,13 @@ const image = (id: string, overrides: Readonly<Record<string, unknown>> = {}): u
 
 const parse = (value: unknown): boolean => blockListSchema.safeParse(value).success;
 
+const salutationLine = (suffix: unknown): Record<string, unknown> => ({
+	id: 'p',
+	ref: { fallback: null, key: 'salutation' },
+	suffix,
+	type: 'placeholderLine',
+});
+
 const placeholder = (key: string, fallback: string | null = null): unknown => ({
 	attrs: { fallback, key },
 	type: 'placeholder',
@@ -52,7 +59,7 @@ describe('the block list schema', () => {
 			divider('d'),
 			{ id: 's', size: 'large', type: 'spacer' },
 			{ id: 'c', left: [divider('l')], right: [image('r', { mediaId: null })], type: 'columns' },
-			{ id: 'p', ref: { fallback: '', key: 'salutation' }, type: 'placeholderLine' },
+			{ id: 'p', ref: { fallback: '', key: 'salutation' }, suffix: ',', type: 'placeholderLine' },
 		];
 		expect(parse(blocks)).toBe(true);
 	});
@@ -68,6 +75,14 @@ describe('the block list schema', () => {
 			type: 'columns',
 		};
 		expect(parse([columns])).toBe(false);
+	});
+
+	it('takes a placeholder line with a suffix of at most 10 characters', () => {
+		const accepted = ['', ',', '0123456789'].map((suffix) => parse([salutationLine(suffix)]));
+		const refused = ['01234567890', 1].map((suffix) => parse([salutationLine(suffix)]));
+		const { suffix: _suffix, ...withoutSuffix } = salutationLine(',');
+		expect([...accepted, ...refused]).toStrictEqual([true, true, true, false, false]);
+		expect(parse([withoutSuffix])).toBe(false);
 	});
 
 	it('refuses columns in columns', () => {
@@ -129,7 +144,7 @@ describe(collectPlaceholderRefs, () => {
 	it('finds the placeholders of every block in order, also in columns', () => {
 		const blocks = blockListSchema.parse([
 			{ content: [placeholder('brand.name')], id: 'h', level: 1, type: 'heading' },
-			{ id: 'p', ref: { fallback: null, key: 'salutation' }, type: 'placeholderLine' },
+			{ id: 'p', ref: { fallback: null, key: 'salutation' }, suffix: '', type: 'placeholderLine' },
 			{
 				id: 'c',
 				left: [

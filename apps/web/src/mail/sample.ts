@@ -153,7 +153,12 @@ const CLOSING: TextDoc = {
 
 const SAMPLE_BLOCKS: readonly Block[] = [
 	{ content: [text('Einladung zum Sommerfest')], id: 'sample-heading', level: 1, type: 'heading' },
-	{ id: 'sample-salutation', ref: { fallback: null, key: 'salutation' }, type: 'placeholderLine' },
+	{
+		id: 'sample-salutation',
+		ref: { fallback: null, key: 'salutation' },
+		suffix: ',',
+		type: 'placeholderLine',
+	},
 	{ doc: INVITATION, id: 'sample-text', type: 'text' },
 	{
 		alt: 'Das Vereinsheim im Sommer',

@@ -222,17 +222,24 @@ describe('the rendered mails', () => {
 		const salutations = await Promise.all(
 			(['female', 'male', 'diverse', 'organization'] as const).map(async (kind) => {
 				const mail = await renderSample(
-					[{ id: 'line', ref: { fallback: null, key: 'salutation' }, type: 'placeholderLine' }],
+					[
+						{
+							id: 'line',
+							ref: { fallback: null, key: 'salutation' },
+							suffix: ',',
+							type: 'placeholderLine',
+						},
+					],
 					{ contact: SAMPLE_CONTACTS[kind] },
 				);
 				return mail.text.split('\n')[0];
 			}),
 		);
 		expect(salutations).toStrictEqual([
-			'Liebe Anna',
-			'Lieber Bernd',
-			'Hallo Kim',
-			'Sehr geehrte Damen und Herren',
+			'Liebe Anna,',
+			'Lieber Bernd,',
+			'Hallo Kim,',
+			'Sehr geehrte Damen und Herren,',
 		]);
 	});
 });
