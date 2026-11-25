@@ -120,7 +120,7 @@ Die ersten Zielvereine hosten ihre Websites bereits auf **Vercel oder Cloudflare
   - Felder: Typ, Mitgliedsnummer (bei Mitgliedern der Schlüssel für den Import), Kundennummer (bei Partnern, optional), Firma, Geschlecht, Vorname, Nachname, E-Mail, Geburtsdatum, Eintrittsdatum, Austrittsdatum, Adresse, Gruppen/Abteilungen (Mitglieder, aus dem Import), Schlagworte (nur Partner, in der App vergeben), frei definierbare Zusatzfelder aus der Import-Zuordnung. *(Teilplan 2: „Geschlecht“ ersetzt „Anrede“; Kontakte haben keine Sprache, Mails an Kontakte sind deutsch. Details: `2026-11-24-vereinsbote-02-kontakte-design.md`.)*
   - Jedes Feld hat eine Schutzstufe: **Basis** (Name, Firma, E-Mail, Typ, Geschlecht, Gruppen, Schlagworte) oder **geschützt** (z. B. Geburtsdatum, Eintrittsdatum, Austrittsdatum, Adresse). Geschützte Felder sind pro Kontaktart (Mitglied, Partner) einem oder mehreren Bereichen zugeordnet.
 - **Bereich:** vom Verein selbst angelegt, z. B. „Mitglieder“, „Finanzen“, „Veranstaltungen“. Ein Bereich bündelt Anlässe und ist die Grundlage für Rechte.
-- **Anlass:** gehört zu genau einem Bereich. Ein Anlass besteht aus Vorlage, Auslöser, Empfängern, Anhängen und Absender.
+- **Anlass:** gehört zu genau einem Bereich. Ein Anlass besteht aus Vorlage, Auslöser, Empfängern, Anhängen und Absender. *(Teilplan 4: Ein Anlass hat eine Art – „persönlich“ (eine Mail pro Kontakt, Vorrang beim Tageslimit) oder „Rundschreiben“ (eine Mail pro Adresse, nachrangig) – und die Einstellung „Abmeldelink“. Anlässe sind auf Dauer angelegt, jede Veranstaltung ist eine neue Welle. Empfänger und Anhänge gehören zur Welle. Details: `2026-11-25-vereinsbote-04-versand-design.md`.)*
 - **Auslöser:**
   - Datumsregel: ein Datumsfeld plus eine Regel, z. B. „Alter ∈ {50, 60, 70, 75, 80, 85, …}“ oder „Jahre seit Eintritt ∈ {10, 25, 40, 50, …}“. Die Werte konfiguriert der Verein.
   - oder manuell.
@@ -135,11 +135,12 @@ Die ersten Zielvereine hosten ihre Websites bereits auf **Vercel oder Cloudflare
   - Importierte HTML-Layouts gelten global oder für einen einzelnen Anlass. *(Teilplan 3: global oder für eine einzelne Vorlage.)*
 - **Inhalt:** Liste von Bausteinen aus dem Klick-Editor, eingesetzt in den Inhaltsbereich des Layouts. Alternativ ist eine vollständige importierte HTML-Vorlage nur mit Platzhaltern möglich.
 - **Vorlage** *(Teilplan 3)*: eigenständig, gehört zu genau einem Bereich; Name, Betreff, Vorschautext, Briefanrede-Form, Inhalt und Layout-Wahl. Ein Anlass verweist auf eine Vorlage; mehrere Anlässe dürfen eine Vorlage teilen. Bilder liegen in einer Bildersammlung pro Bereich. Details: `2026-11-24-vereinsbote-03-gestaltung-design.md`.
-- **Absender:** Postfachadresse, Anzeigename, Antwortadresse und Anbindung (Graph oder Resend). Mehrere Absender sind möglich, jeder Anlass wählt einen.
+- **Absender:** Postfachadresse, Anzeigename, Antwortadresse und Anbindung (Graph oder Resend). Mehrere Absender sind möglich, jeder Anlass wählt einen. *(Teilplan 4: Die Zugangsdaten liegen an einer eigenen Anbindung, die sich mehrere Absender teilen. Absender werden pro Bereich freigegeben; ein Anlass wählt nur freigegebene. Ein Absender ist der Absender für Systemmails.)*
 - **Versandwelle:** ein Lauf eines Anlasses mit N Empfängern.
 - **Postausgangs-Eintrag:** eine Mail an einen Empfänger.
   - Statusfolge: geplant → in Versand → gesendet, bzw. → zurückgewiesen (Rückläufer) oder → fehlgeschlagen.
   - Dazu: Anzahl der Versuche und letzte Fehlermeldung.
+  - *(Teilplan 4: zusätzlich „übersprungen“ (vor dem Versand nicht mehr anschreibbar), „abgebrochen“ (Welle gestoppt) und „unklar“ (Lauf brach mitten im Senden ab; wird nicht automatisch erneut gesendet). Statt einer Fehlermeldung wird ein Fehlercode gespeichert.)*
 - **Widerspruch:** Mitgliedsnummer bzw. bei Partnern die Kundennummer (falls keine vorhanden: die E-Mail) plus Anlass bzw. Bereich. Wird getrennt gespeichert und **überlebt jeden Import**.
 - **[Claude] Sperre:** „Keine Mails mehr“ für einen Kontakt, in der App gesetzt, z. B. wenn ein Todesfall zwischen zwei Exporten bekannt wird. Wird wie ein Widerspruch getrennt gespeichert und überlebt jeden Import.
 - **Benutzer und Rollen:** Pro Bereich eine Stufe (Lesen, Bearbeiten, Versenden). Dazu die Admin-Rolle.
@@ -221,7 +222,7 @@ Ein Assistent führt durch die Einrichtung:
 5. Testmail an sich selbst schicken.
 6. Versenden, sofort oder zu einem geplanten Zeitpunkt. Vorher erscheint ein Bestätigungsdialog mit der Empfängerzahl. **[Claude]** „Sofort“ verschickt das erste Paket direkt aus der Anfrage heraus. Der Rest folgt über den Postausgang.
 
-**[Claude] Doppelte Adressen:** Bei Mails an eine Gruppe (z. B. Einladungen) geht pro E-Mail-Adresse nur eine Mail raus, auch wenn sich mehrere Kontakte eine Adresse teilen (z. B. Familien). Persönliche Anlässe wie Geburtstage gehen weiterhin pro Person.
+**[Claude] Doppelte Adressen:** Bei Mails an eine Gruppe (z. B. Einladungen) geht pro E-Mail-Adresse nur eine Mail raus, auch wenn sich mehrere Kontakte eine Adresse teilen (z. B. Familien). Persönliche Anlässe wie Geburtstage gehen weiterhin pro Person. *(Teilplan 4: gesteuert über die Art des Anlasses; die Mail trägt die Werte des ersten Kontakts der Adresse. Die Testmail trägt die Werte des Kontakts in der Vorschau. Anhänge: PDF, JPEG, PNG, höchstens 4 MB pro Datei und 20 MB pro Mail, über Graph rund 3 MB pro Mail.)*
 
 **Rechnungen**
 
@@ -310,6 +311,7 @@ Ein Assistent führt durch die Einrichtung:
 - **Versand:**
   - Mails werden im Ordner „Gesendet“ gespeichert.
   - Anhänge über 3 MB laufen über eine Upload-Session.
+  - *(Teilplan 4: Die Rechte bleiben `Mail.Send` und `Mail.Read`. Eine Upload-Session bräuchte `Mail.ReadWrite`; sie entfällt. Jede Mail geht als ein MIME-Aufruf (nur so lassen sich `List-Unsubscribe` und eine eigene Message-ID setzen), Anhänge sind über Graph auf rund 3 MB pro Mail begrenzt. Systemmails gehen ohne Ablage in „Gesendet“, damit Anmeldelinks nicht im Postfach liegen.)*
 - **Ablauf des Secrets:**
   - Die App kennt das Ablaufdatum des Secrets.
   - Sie warnt 30 Tage vorher in der Oberfläche und per Mail an die Admins.
@@ -318,6 +320,7 @@ Ein Assistent führt durch die Einrichtung:
   - Sie ordnet sie über die Message-ID der Original-Mail zu und setzt den Status.
   - Der Kontakt wird mit „E-Mail ungültig“ markiert, und der Bereich bekommt einen Hinweis.
   - **[Claude]** Die App liest nur, sie verschiebt oder löscht nichts im Postfach. Welche Berichte schon verarbeitet sind, merkt sie sich in der Datenbank.
+  - *(Teilplan 4: Nur harte Rückläufer markieren den Kontakt mit „E-Mail ungültig“; die Markierung hängt an Kontaktschlüssel und Adresse.)*
 
 **Resend**
 
@@ -330,6 +333,7 @@ Ein Assistent führt durch die Einrichtung:
 - Optional pro Anlass, nie bei Rechnungen.
 - Die Mail enthält einen Abmeldelink und den Header `List-Unsubscribe`.
 - Der Link führt zu einer öffentlichen Seite mit signiertem Token und erzeugt einen Widerspruch.
+- *(Teilplan 4: Die Seite bietet „nur dieser Anlass“ (vorausgewählt) oder „alle Mails aus diesem Bereich“; die Ein-Klick-Abmeldung des Mailprogramms (`List-Unsubscribe-Post`) gilt nur für den Anlass.)*
 
 ### 6.7 Rollen und Anmeldung
 
@@ -344,7 +348,7 @@ Ein Assistent führt durch die Einrichtung:
 - **[Claude] Import-Rechte:**
   - Den Mitglieder-Import darf, wer Bearbeiten in dem Bereich hat, dem die geschützten Mitgliederfelder zugeordnet sind (Standard: „Mitglieder“).
   - Den Partner-Import darf, wer Bearbeiten im Partner-Bereich hat (Standard: „Finanzen“).
-- **Die Admin-Rolle** verwaltet CD, Layouts, Absender, Bereiche und Benutzer. Mitgliederdaten sieht sie nur mit zusätzlichen Bereichsrechten. **[Claude]** Der Einrichtungsassistent gibt dem ersten Admin Bearbeiten im Bereich „Mitglieder“, damit der erste Import möglich ist. Das Recht lässt sich danach entziehen.
+- **Die Admin-Rolle** verwaltet CD, Layouts, Absender (*Teilplan 4: und gibt sie pro Bereich frei*), Bereiche und Benutzer. Mitgliederdaten sieht sie nur mit zusätzlichen Bereichsrechten. **[Claude]** Der Einrichtungsassistent gibt dem ersten Admin Bearbeiten im Bereich „Mitglieder“, damit der erste Import möglich ist. Das Recht lässt sich danach entziehen.
 
 **Anmeldung**
 

@@ -15,7 +15,7 @@ Die Spec umfasst mehrere eigenständige Teilsysteme. Sie wird deshalb in acht Te
 | 1 | Fundament | Monorepo, App-Gerüst, Zweisprachigkeit (de/en), Datenbank, Verschlüsselung, Anmeldung ohne Passwort, Bereiche und Stufen, Ersteinrichtung, Benutzerverwaltung, Zeitsteuerung, Builds für Vercel/Cloudflare/Docker, CI, E2E | 3, 6.1, 6.7, 6.8 (Verschlüsselung), 6.10 (Heartbeat), 7, 8 (Lizenz, Migrationen) | – |
 | 2 | Kontakte und Import | Kontaktmodell mit Schutzstufen und Feldrechten, Mitglieder-Import (CSV/XLSX, Zuordnung, Filter, Austrittsdatum, Komplett-Ersetzen, Sicherheitsabfrage), Partner-Import und -Pflege, Widerspruch, Sperre, Warnung bei alten Daten | 5, 6.2, 6.7 | 1 |
 | 3 | Gestaltung und Rendering | Speicher-Schnittstelle (R2, Vercel Blob, S3), CD, Standard-Layout, Bausteinmodell, Rendering mit React Email, Platzhalter (inkl. Briefanrede und Maskierung), Barrierefreiheits-Prüfungen, Klick-Editor, Vorschau, Bildverarbeitung, HTML-Import. Ein Design, zwei PRs: 3a (CSP, Speicher, CD, Rendering) und 3b (Vorlagen, Editor, Import) | 6.5, 7 (Dateien) | 1, 2 |
-| 4 | Versand | Absender, Versand-Schnittstelle, Anbindungen für Graph und Resend, Postausgang (Drosselung, Tageslimit, Vorrang, Wiederholung, Selbst-Anstoß), manueller Versand mit Testmail, Entfernen doppelter Adressen, Abmelden, Rückläufer, Warnung vor Secret-Ablauf, Systemmails über den echten Absender | 6.4, 6.6 | 1–3 |
+| 4 | Versand | Absender, Versand-Schnittstelle, Anbindungen für Graph und Resend, Postausgang (Drosselung, Tageslimit, Vorrang, Wiederholung, Selbst-Anstoß), manueller Versand mit Testmail, Entfernen doppelter Adressen, Abmelden, Rückläufer, Warnung vor Secret-Ablauf, Systemmails über den echten Absender. Ein Design, zwei PRs: 4a (Anbindungen, Absender, Postausgang, Systemmails) und 4b (Anlass, manueller Versand mit allgemeinen Anhängen, Abmelden, Rückläufer, Versandübersicht) | 6.4, 6.6 | 1–3 |
 | 5 | Automatische Anlässe | Datumsregeln, Geburtstage und Jubiläen, Vorschau-Mail, Warn-Mails, Idempotenz, Nachholen, Dashboard | 6.3, 6.10 | 1–4 |
 | 6 | Rechnungen und Einladungen | PDF-Upload, XRechnung (UBL/CII) und ZUGFeRD, Empfängervorschlag, .ics | 6.4 | 1–4 |
 | 7 | Datenschutz-Funktionen | Löschfristen, Auskunfts-Export, Inhalte der Doku-Vorlagen | 6.8 | 1–6 |
@@ -57,6 +57,13 @@ Die Details stehen in Teilplan 1 unter „Global Constraints“ und „Task 1“
   - Teilplan 5: Platzhalter `occasion.*` (Alter, Jahre der Mitgliedschaft) in der Platzhalter-Registry ergänzen; Startvorlagen „Geburtstag“ und „Jubiläum“.
   - Teilplan 6: Platzhalter `invoice.*`; Startvorlage „Rechnung“.
   - Teilplan 7: Bilder und ersetzte Logos, die keine Vorlage und kein CD mehr nutzt, die aber verschickte Mails noch zeigen: Aufbewahrung und Löschfrist.
+
+- **Aus Teilplan 4** (Design `2026-11-25-vereinsbote-04-versand-design.md`, verbindlich für die genannten Teilpläne):
+  - Teilplan 4 setzt die Punkte für Teilplan 4 aus Teilplan 1 und 3 um (Design, Abschnitt 20); sie werden als erledigt markiert, sobald 4a bzw. 4b gemergt ist.
+  - Teilplan 5: Die Datumsregel ist der zweite Auslöser eines Anlasses; Geburtstage und Jubiläen sind Anlässe der Art „persönlich“. Das Dashboard zeigt Einträge „unklar“ und „fehlgeschlagen“ sowie Rückläufer; Kontakte mit „E-Mail ungültig“ erscheinen in „bitte anders gratulieren“.
+  - Teilplan 6: Die Rechnung erzwingt „Abmeldelink aus“ und nutzt die allgemeinen Anhänge (über Graph rund 3 MB pro Mail).
+  - Teilplan 7: Löschfristen für Postausgang, Anhänge sowie verarbeitete Rückläufer- und Webhook-IDs.
+  - Teilplan 8: Anleitung zu RBAC for Applications (nur `Mail.Send` und `Mail.Read`), Ablaufdatum des Secrets, Resend-Key mit „Sending access“ und Webhook. Vor der Veröffentlichung einmal gegen einen echten Tenant und ein echtes Resend-Konto prüfen (bisher nur gegen Nachbau-Server getestet): behält Exchange die eigene Message-ID, wie sehen NDRs aus, kommen `List-Unsubscribe` und Ein-Klick-Abmeldung an.
 
 - **Nacharbeit aus Teilplan 2** (zurückgestellte Funde der Task-Reviews und des Abschluss-Reviews, nicht blockierend; aufgreifen, wenn ein Teilplan die Stelle ohnehin berührt, spätestens vor der Veröffentlichung):
   - **Leistung:**
