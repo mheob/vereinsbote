@@ -239,7 +239,7 @@ Contacts are the club's members and partners (`/contacts`). Everyone with at lea
 
 ## CI
 
-`.github/workflows/ci.yml` runs on every push and every pull request:
+`.github/workflows/ci.yml` runs on every push and every pull request. The one exception is a push to `changesets-ghcommit-temp/**`: the release workflow points that temporary branch at the `main` commit before it writes the version commit onto it, so a run there would be cancelled within seconds and its cancelled checks would show on the `main` commit.
 
 - `check`: `vp check`, `pnpm check:catalog`, `pnpm check:vite-plus`, `pnpm cve` (dependency advisories) and, on pull requests, commitlint over all commits of the pull request
 - `test`: `vp test --coverage`, with a PostgreSQL and a SeaweedFS service container (trust authentication, so the workflow holds no password) and `TEST_POSTGRES_URL` and `TEST_S3_URL`, so the concurrency and storage tests run as well; then the SonarQube Cloud scan (see [Security scanning](#security-scanning))
