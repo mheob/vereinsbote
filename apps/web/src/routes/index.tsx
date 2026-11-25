@@ -14,14 +14,19 @@ import { useT } from '@/i18n/use-t';
  * of the client bundle.
  */
 const loadHome = createServerFn({ method: 'GET' }).handler(async () => {
-	const [{ requireRequestPrincipal }, { listAreas }] = await Promise.all([
+	const [{ requireRequestPrincipal }, { listAreas }, { getBrand }] = await Promise.all([
 		import('@/platform/request-principal'),
 		import('@/server/areas/areas'),
+		import('@/server/brand/brand'),
 	]);
 	const { context, principal } = await requireRequestPrincipal();
 	const areas = await listAreas(context.db, principal);
+	// Admins are offered to set the brand up until it was saved once (design 7).
+	const brand = principal.isAdmin ? await getBrand(context.db) : null;
+	const brandSetup = brand !== null && !brand.configured;
 	return {
 		areas: areas.flatMap(({ id, level, name }) => (level === null ? [] : [{ id, level, name }])),
+		brandSetup,
 	};
 });
 
@@ -30,7 +35,7 @@ export const Route = createFileRoute('/')({
 	// oxlint-disable-next-line func-name-matching -- see above
 	component: function HomePage(): ReactNode {
 		const t = useT();
-		const { areas } = useLoaderData({ from: '/' });
+		const { areas, brandSetup } = useLoaderData({ from: '/' });
 		// Before the first member import the page says so, to readers of the members area and to
 		// admins (design 11), with the link to the import for those who may import. The notice
 		// comes with the page frame (`loadFrameInfo`).
@@ -49,6 +54,16 @@ export const Route = createFileRoute('/')({
 						))}
 					</ul>
 				)}
+				{brandSetup ? (
+					<div className="flex flex-col gap-2">
+						<p>{t('home.setupBrandText')}</p>
+						<p>
+							<Link className={linkClass} to="/admin/brand">
+								{t('home.setupBrand')}
+							</Link>
+						</p>
+					</div>
+				) : null}
 				{notice?.kind === 'firstImport' ? (
 					<div className="flex flex-col gap-2">
 						<p>{t('home.firstImport')}</p>

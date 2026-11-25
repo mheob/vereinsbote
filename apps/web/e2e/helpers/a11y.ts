@@ -19,13 +19,14 @@ const LIVE_ANNOUNCER = '[data-live-announcer]';
  * lists each rule with the elements that break it.
  *
  * @param page The page to check.
+ * @param exclude Selectors of parts to leave out, e.g. a frame that shows a user's own design
+ * (the weak colours of a mail are not a defect of the app).
  */
 // oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Playwright's page is a handle on the browser, mutable by design
-async function expectNoA11yViolations(page: Page): Promise<void> {
-	const { violations } = await new AxeBuilder({ page })
-		.withTags(WCAG_TAGS)
-		.exclude(LIVE_ANNOUNCER)
-		.analyze();
+async function expectNoA11yViolations(page: Page, exclude: readonly string[] = []): Promise<void> {
+	const builder = new AxeBuilder({ page }).withTags(WCAG_TAGS).exclude(LIVE_ANNOUNCER);
+	for (const selector of exclude) builder.exclude(selector);
+	const { violations } = await builder.analyze();
 	const found = violations.map(({ id, nodes }) => ({
 		elements: nodes.map(({ html }) => html),
 		rule: id,

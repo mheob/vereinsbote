@@ -17,6 +17,7 @@ import { Route as PreviewFrameRouteImport } from './routes/preview-frame'
 import { Route as SetupRouteImport } from './routes/setup'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AdminAreasRouteImport } from './routes/admin/areas'
+import { Route as AdminBrandRouteImport } from './routes/admin/brand'
 import { Route as AdminContactSettingsRouteImport } from './routes/admin/contact-settings'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
@@ -67,6 +68,11 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
 const AdminAreasRoute = AdminAreasRouteImport.update({
   id: '/areas',
   path: '/areas',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminBrandRoute = AdminBrandRouteImport.update({
+  id: '/brand',
+  path: '/brand',
   getParentRoute: () => AdminRouteRoute,
 } as any)
 const AdminContactSettingsRoute = AdminContactSettingsRouteImport.update({
@@ -133,6 +139,7 @@ export interface FileRoutesByFullPath {
   '/preview-frame': typeof PreviewFrameRoute
   '/setup': typeof SetupRoute
   '/admin/areas': typeof AdminAreasRoute
+  '/admin/brand': typeof AdminBrandRoute
   '/admin/contact-settings': typeof AdminContactSettingsRoute
   '/admin/users': typeof AdminUsersRoute
   '/api/health': typeof ApiHealthRoute
@@ -152,6 +159,7 @@ export interface FileRoutesByTo {
   '/preview-frame': typeof PreviewFrameRoute
   '/setup': typeof SetupRoute
   '/admin/areas': typeof AdminAreasRoute
+  '/admin/brand': typeof AdminBrandRoute
   '/admin/contact-settings': typeof AdminContactSettingsRoute
   '/admin/users': typeof AdminUsersRoute
   '/api/health': typeof ApiHealthRoute
@@ -174,6 +182,7 @@ export interface FileRoutesById {
   '/preview-frame': typeof PreviewFrameRoute
   '/setup': typeof SetupRoute
   '/admin/areas': typeof AdminAreasRoute
+  '/admin/brand': typeof AdminBrandRoute
   '/admin/contact-settings': typeof AdminContactSettingsRoute
   '/admin/users': typeof AdminUsersRoute
   '/api/health': typeof ApiHealthRoute
@@ -197,6 +206,7 @@ export interface FileRouteTypes {
     | '/preview-frame'
     | '/setup'
     | '/admin/areas'
+    | '/admin/brand'
     | '/admin/contact-settings'
     | '/admin/users'
     | '/api/health'
@@ -216,6 +226,7 @@ export interface FileRouteTypes {
     | '/preview-frame'
     | '/setup'
     | '/admin/areas'
+    | '/admin/brand'
     | '/admin/contact-settings'
     | '/admin/users'
     | '/api/health'
@@ -237,6 +248,7 @@ export interface FileRouteTypes {
     | '/preview-frame'
     | '/setup'
     | '/admin/areas'
+    | '/admin/brand'
     | '/admin/contact-settings'
     | '/admin/users'
     | '/api/health'
@@ -322,6 +334,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminAreasRouteImport
       parentRoute: typeof AdminRouteRoute
     }
+    '/admin/brand': {
+      id: '/admin/brand'
+      path: '/brand'
+      fullPath: '/admin/brand'
+      preLoaderRoute: typeof AdminBrandRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
     '/admin/contact-settings': {
       id: '/admin/contact-settings'
       path: '/contact-settings'
@@ -404,6 +423,7 @@ declare module '@tanstack/react-router' {
 
 interface AdminRouteRouteChildren {
   AdminAreasRoute: typeof AdminAreasRoute
+  AdminBrandRoute: typeof AdminBrandRoute
   AdminContactSettingsRoute: typeof AdminContactSettingsRoute
   AdminUsersRoute: typeof AdminUsersRoute
   AdminIndexRoute: typeof AdminIndexRoute
@@ -411,6 +431,7 @@ interface AdminRouteRouteChildren {
 
 const AdminRouteRouteChildren: AdminRouteRouteChildren = {
   AdminAreasRoute: AdminAreasRoute,
+  AdminBrandRoute: AdminBrandRoute,
   AdminContactSettingsRoute: AdminContactSettingsRoute,
   AdminUsersRoute: AdminUsersRoute,
   AdminIndexRoute: AdminIndexRoute,
