@@ -20,8 +20,8 @@ interface FilledMail {
 type FillResult = { ok: true; mail: FilledMail } | { ok: false; missing: string[] };
 
 /**
- * The value of each slot: the recipient's value, else the fallback (`''` included). An empty
- * value counts as missing.
+ * The value of each slot: the recipient's value, else the fallback (`''` included). A value that
+ * is empty once the markers are stripped (`U+E000`, `U+E001` and spaces only) counts as missing.
  *
  * @param compiled The compiled mail.
  * @param values The values per placeholder key.
@@ -33,8 +33,9 @@ function slotValues(
 ): { ok: true; values: string[] } | { ok: false; missing: string[] } {
 	const missing = new Set<string>();
 	const resolved = compiled.slots.map((slot) => {
-		const value = values.get(slot.key);
-		if (value !== undefined && value.trim() !== '') return stripMarkers(value);
+		const raw = values.get(slot.key);
+		const value = raw === undefined ? '' : stripMarkers(raw);
+		if (value.trim() !== '') return value;
 		if (slot.fallback === null) missing.add(slot.key);
 		return slot.fallback ?? '';
 	});

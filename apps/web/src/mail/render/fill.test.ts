@@ -111,6 +111,19 @@ describe(fillMail, () => {
 		expect(mail.subject).toBe('Für');
 	});
 
+	it('treats a value of markers and spaces only as missing, never as an empty value', () => {
+		const onlyMarkers = new Map([['contact.firstName', ' \uE000\uE001 ']]);
+		expect(fillMail(compiled, onlyMarkers)).toStrictEqual({
+			missing: ['contact.firstName'],
+			ok: false,
+		});
+		const withFallback = new Map([
+			['contact.city', '\uE000\uE001'],
+			['contact.firstName', 'Anna'],
+		]);
+		expect(filled(compiled, withFallback).preheader).toBe('Musterstadt');
+	});
+
 	it('reports all missing keys once, sorted', () => {
 		const many: CompiledMail = {
 			html: [
