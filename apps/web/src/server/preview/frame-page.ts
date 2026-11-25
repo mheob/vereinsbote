@@ -1,7 +1,8 @@
 /*
  * The page inside the preview's sandboxed iframe (`/preview-frame`). It is empty until the parent
  * window sends the mail's HTML, then shows it. It accepts a message only from the parent window at
- * the app's origin, and it never runs a script of the mail: the frame's Content Security Policy
+ * the app's origin, and its links lead nowhere (clicks are cancelled, a meta refresh is dropped), so
+ * the frame never navigates away. It never runs a script of the mail: the frame's Content Security Policy
  * allows only the one script below (by its nonce), and HTML put in by the DOM never runs scripts.
  */
 
@@ -33,11 +34,16 @@ function scriptLiteral(value: string): string {
 function previewFramePage(nonce: string, appOrigin: string): string {
 	const script = `(function () {
 	var origin = ${scriptLiteral(appOrigin)};
+	document.addEventListener("click", function (event) {
+		var target = event.target;
+		if (target && typeof target.closest === "function" && target.closest("a[href], area[href]")) event.preventDefault();
+	}, true);
 	window.addEventListener("message", function (event) {
 		if (event.source !== window.parent || event.origin !== origin) return;
 		var data = event.data;
 		if (data === null || typeof data !== "object" || data.type !== ${scriptLiteral(MESSAGE)} || typeof data.html !== "string") return;
 		var parsed = new DOMParser().parseFromString(data.html, "text/html");
+		parsed.querySelectorAll('meta[http-equiv="refresh" i]').forEach(function (meta) { meta.remove(); });
 		document.documentElement.replaceChildren(document.adoptNode(parsed.head), document.adoptNode(parsed.body));
 	});
 	window.parent.postMessage({ type: ${scriptLiteral(READY)} }, origin);
