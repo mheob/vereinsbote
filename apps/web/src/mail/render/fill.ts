@@ -1,9 +1,10 @@
-import { cleanHeaderText, escapeHtml, stripMarkers } from '@/mail/escape';
 /*
  * Fills a compiled mail for one recipient. Values go in once, in their context: escaped in HTML,
  * as they are in plain text, on one line in the subject and the preview text. A value is never
  * read for placeholders or markers again.
  */
+
+import { cleanHeaderText, escapeHtml, stripMarkers } from '@/mail/escape';
 import { compareCodePoints } from '@/server/compare-code-points';
 
 import type { CompiledMail } from './compile';
