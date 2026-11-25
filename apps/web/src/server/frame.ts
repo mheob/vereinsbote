@@ -16,6 +16,8 @@ interface FrameInfo {
 		contacts: boolean;
 		importMembers: boolean;
 		importPartners: boolean;
+		/** Templates and image library: `read` in any area (the admin role alone gives none). */
+		templates: boolean;
 	}>;
 	/** Only for readers of the members area and for admins. */
 	readonly notice: FrameNotice | null;
@@ -37,6 +39,7 @@ async function loadFrameInfo(db: Db, principal: Principal, now: Date): Promise<F
 		contacts: access.canList,
 		importMembers: access.canManage.member,
 		importPartners: access.canManage.partner,
+		templates: principal.areas.size > 0,
 	};
 	const { membersAreaId } = await getContactSettings(db);
 	const readsMembers = membersAreaId !== null && canAccessArea(principal, membersAreaId, 'read');

@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteRouteImport } from './routes/admin/route'
 import { Route as ContactsRouteRouteImport } from './routes/contacts/route'
+import { Route as ImagesRouteImport } from './routes/images'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as PreviewFrameRouteImport } from './routes/preview-frame'
 import { Route as SetupRouteImport } from './routes/setup'
@@ -43,6 +44,11 @@ const AdminRouteRoute = AdminRouteRouteImport.update({
 const ContactsRouteRoute = ContactsRouteRouteImport.update({
   id: '/contacts',
   path: '/contacts',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ImagesRoute = ImagesRouteImport.update({
+  id: '/images',
+  path: '/images',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -135,6 +141,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteRouteWithChildren
   '/contacts': typeof ContactsRouteRouteWithChildren
+  '/images': typeof ImagesRoute
   '/login': typeof LoginRoute
   '/preview-frame': typeof PreviewFrameRoute
   '/setup': typeof SetupRoute
@@ -155,6 +162,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/images': typeof ImagesRoute
   '/login': typeof LoginRoute
   '/preview-frame': typeof PreviewFrameRoute
   '/setup': typeof SetupRoute
@@ -178,6 +186,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteRouteWithChildren
   '/contacts': typeof ContactsRouteRouteWithChildren
+  '/images': typeof ImagesRoute
   '/login': typeof LoginRoute
   '/preview-frame': typeof PreviewFrameRoute
   '/setup': typeof SetupRoute
@@ -202,6 +211,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/contacts'
+    | '/images'
     | '/login'
     | '/preview-frame'
     | '/setup'
@@ -222,6 +232,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/images'
     | '/login'
     | '/preview-frame'
     | '/setup'
@@ -244,6 +255,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/contacts'
+    | '/images'
     | '/login'
     | '/preview-frame'
     | '/setup'
@@ -267,6 +279,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRouteRoute: typeof AdminRouteRouteWithChildren
   ContactsRouteRoute: typeof ContactsRouteRouteWithChildren
+  ImagesRoute: typeof ImagesRoute
   LoginRoute: typeof LoginRoute
   PreviewFrameRoute: typeof PreviewFrameRoute
   SetupRoute: typeof SetupRoute
@@ -297,6 +310,13 @@ declare module '@tanstack/react-router' {
       path: '/contacts'
       fullPath: '/contacts'
       preLoaderRoute: typeof ContactsRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/images': {
+      id: '/images'
+      path: '/images'
+      fullPath: '/images'
+      preLoaderRoute: typeof ImagesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -465,6 +485,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRouteRoute: AdminRouteRouteWithChildren,
   ContactsRouteRoute: ContactsRouteRouteWithChildren,
+  ImagesRoute: ImagesRoute,
   LoginRoute: LoginRoute,
   PreviewFrameRoute: PreviewFrameRoute,
   SetupRoute: SetupRoute,

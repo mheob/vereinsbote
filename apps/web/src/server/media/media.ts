@@ -263,5 +263,5 @@ function mediaResponse(
 	return new Response(null, { headers });
 }
 
-export { InvalidImageError, mediaResponse, openMedia, storeImage, uploadImageResult };
+export { InvalidImageError, mediaResponse, openMedia, storeImage, toRecord, uploadImageResult };
 export type { MediaPurpose, MediaRecord, UploadImageResult };

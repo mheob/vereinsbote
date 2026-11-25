@@ -60,6 +60,13 @@ export function MainNav({ nav }: Readonly<{ nav: FrameInfo['nav'] }>): ReactNode
 						</Link>
 					</li>
 				) : null}
+				{nav.templates ? (
+					<li>
+						<Link className={linkClass} to="/images">
+							{t('nav.images')}
+						</Link>
+					</li>
+				) : null}
 				{nav.admin ? (
 					<li>
 						<Link activeOptions={NEVER_CURRENT} className={linkClass} to="/admin">

@@ -15,16 +15,34 @@ describe(loadFrameInfo, () => {
 		const { admin, partnersAreaId } = await setUpClub(db);
 		const editor = await userWith(db, { [partnersAreaId]: 'edit' });
 		await expect(loadFrameInfo(db, editor, NOW)).resolves.toMatchObject({
-			nav: { admin: false, contacts: true, importMembers: false, importPartners: true },
+			nav: {
+				admin: false,
+				contacts: true,
+				importMembers: false,
+				importPartners: true,
+				templates: true,
+			},
 		});
 		const outsider = await userWith(db, {});
 		await expect(loadFrameInfo(db, outsider, NOW)).resolves.toStrictEqual({
-			nav: { admin: false, contacts: false, importMembers: false, importPartners: false },
+			nav: {
+				admin: false,
+				contacts: false,
+				importMembers: false,
+				importPartners: false,
+				templates: false,
+			},
 			notice: null,
 		});
 		// The setup gave the admin `edit` in the members area.
 		await expect(loadFrameInfo(db, admin, NOW)).resolves.toMatchObject({
-			nav: { admin: true, contacts: true, importMembers: true, importPartners: false },
+			nav: {
+				admin: true,
+				contacts: true,
+				importMembers: true,
+				importPartners: false,
+				templates: true,
+			},
 		});
 	});
 
@@ -55,7 +73,13 @@ describe(loadFrameInfo, () => {
 		await recordConfirmedImport(db, 'member', { at, mapping: null });
 		const reader = await userWith(db, { [membersAreaId]: 'read' });
 		await expect(loadFrameInfo(db, reader, NOW)).resolves.toStrictEqual({
-			nav: { admin: false, contacts: true, importMembers: false, importPartners: false },
+			nav: {
+				admin: false,
+				contacts: true,
+				importMembers: false,
+				importPartners: false,
+				templates: true,
+			},
 			notice: { canImport: false, kind: 'stale', lastImportAt: at.toISOString(), weeks: 8 },
 		});
 		const fresh = await loadFrameInfo(db, reader, new Date(at.getTime() + DAY_MS));
