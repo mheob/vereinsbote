@@ -42,9 +42,11 @@ const HTTP_OK = 200;
 const HTTP_MULTIPLE_CHOICES = 300;
 const HTTP_UNAUTHORIZED = 401;
 const HTTP_FORBIDDEN = 403;
+const HTTP_REQUEST_TIMEOUT = 408;
+const HTTP_TOO_EARLY = 425;
 const HTTP_TOO_MANY = 429;
 // Request timeout and too early: sending again is safe with the idempotency key.
-const RETRYABLE_STATUS: ReadonlySet<number> = new Set([408, 425]);
+const RETRYABLE_STATUS: ReadonlySet<number> = new Set([HTTP_REQUEST_TIMEOUT, HTTP_TOO_EARLY]);
 const HTTP_SERVER_ERROR = 500;
 const BASE64_CHUNK = 0x60_00;
 const TRAILING_SLASHES = /\/+$/u;
