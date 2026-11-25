@@ -1,4 +1,4 @@
-import { startTransition, useCallback, useEffect, useMemo, useState } from 'react';
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
 	Button,
@@ -45,22 +45,33 @@ function PickerBody({
 	const { failed, page, reload } = useLibrary(null);
 	const [announcement, announce] = useAnnouncer();
 	const [selected, setSelected] = useState<string | null>(null);
+	// The image just uploaded, until the reloaded library lists it: it can be chosen at once.
+	const [uploaded, setUploaded] = useState<Readonly<MediaRecord> | null>(null);
+	const announceCount = useRef(false);
 	useEffect(() => {
 		startTransition(async () => reload(areaId));
 	}, [areaId, reload]);
 	const images = page?.areaId === areaId ? page.images : NO_IMAGES;
+	// After an upload the count is the one of the reloaded library, not a guess.
+	useEffect(() => {
+		if (!announceCount.current || page?.areaId !== areaId) return;
+		if (!page.images.some(({ id }) => id === uploaded?.id)) return;
+		announceCount.current = false;
+		announce(t('images.loaded', { count: page.images.length }), 'status');
+	}, [announce, areaId, page, t, uploaded]);
 	const area = page?.areas.find(({ id }) => id === areaId);
 	const onSelectionChange = useCallback((keys: Selection) => {
 		const [first] = keys === 'all' ? [] : [...keys];
-		setSelected(typeof first === 'string' ? first : null);
+		if (typeof first === 'string') setSelected(first);
 	}, []);
 	const onUploaded = useCallback(
-		(uploaded: Readonly<MediaRecord>) => {
-			setSelected(uploaded.id);
-			announce(t('images.loaded', { count: images.length + 1 }), 'status');
+		(record: Readonly<MediaRecord>) => {
+			setSelected(record.id);
+			setUploaded(record);
+			announceCount.current = true;
 			startTransition(async () => reload(areaId));
 		},
-		[announce, areaId, images.length, reload, t],
+		[areaId, reload],
 	);
 	const target = useMemo(() => ({ areaId, purpose: 'library' as const }), [areaId]);
 	const selectedKeys = useMemo(() => (selected === null ? [] : [selected]), [selected]);
@@ -69,9 +80,11 @@ function PickerBody({
 		[page, t],
 	);
 	const choose = useCallback(() => {
-		const image = images.find(({ id }) => id === selected);
+		const image =
+			images.find(({ id }) => id === selected) ??
+			(uploaded?.id === selected ? uploaded : undefined);
 		if (image !== undefined) onSelect(image);
-	}, [images, onSelect, selected]);
+	}, [images, onSelect, selected, uploaded]);
 	return (
 		<Dialog className="flex max-h-[85vh] flex-col gap-4 overflow-y-auto outline-none">
 			<Heading className="text-xl font-bold" slot="title">
@@ -95,6 +108,7 @@ function PickerBody({
 			<GridList
 				aria-label={t('imagePicker.listLabel')}
 				className={imageGridClass}
+				disallowEmptySelection
 				onSelectionChange={onSelectionChange}
 				renderEmptyState={emptyState}
 				selectedKeys={selectedKeys}
