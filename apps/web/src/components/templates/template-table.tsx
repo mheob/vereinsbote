@@ -39,11 +39,13 @@ function TemplateLink({ id, name }: Readonly<{ id: string; name: string }>): Rea
 }
 
 /**
- * The actions on a template for who edits its area: „Bearbeiten“ (the template's page),
- * „Duplizieren“ and „Löschen“. Duplicating opens the copy; deleting announces and reloads the list.
+ * The actions on a template: „Duplizieren“ for who edits at least one area (the template's own
+ * area needs only `read`, Design 9), and „Bearbeiten“ and „Löschen“ for who edits its area.
+ * Duplicating opens the copy; deleting announces and reloads the list.
  *
  * @param props The props.
  * @param props.announce Announces results in the page's live region.
+ * @param props.canEdit Whether the user may edit the template's area.
  * @param props.editableAreas The areas the user may edit, for the copy.
  * @param props.item The template.
  * @param props.onRemoved Called after the template is gone.
@@ -51,11 +53,13 @@ function TemplateLink({ id, name }: Readonly<{ id: string; name: string }>): Rea
  */
 function TemplateActions({
 	announce,
+	canEdit,
 	editableAreas,
 	item,
 	onRemoved,
 }: Readonly<{
 	announce: Announce;
+	canEdit: boolean;
 	editableAreas: readonly TemplateArea[];
 	item: ListedTemplate;
 	onRemoved: (item: ListedTemplate, result: RemovedTemplate) => void;
@@ -90,14 +94,16 @@ function TemplateActions({
 	);
 	return (
 		<div className="flex flex-wrap items-center gap-3">
-			<Link
-				aria-label={t('templates.editAria', { name: item.name })}
-				className={linkClass}
-				params={params}
-				to="/templates/$templateId"
-			>
-				{t('templates.edit')}
-			</Link>
+			{canEdit ? (
+				<Link
+					aria-label={t('templates.editAria', { name: item.name })}
+					className={linkClass}
+					params={params}
+					to="/templates/$templateId"
+				>
+					{t('templates.edit')}
+				</Link>
+			) : null}
 			<DuplicateDialog
 				announce={announce}
 				areas={editableAreas}
@@ -106,19 +112,22 @@ function TemplateActions({
 				onGone={reload}
 				source={source}
 			/>
-			<DeleteTemplateDialog
-				announce={announce}
-				label={t('templates.deleteAria', { name: item.name })}
-				onRemoved={removed}
-				template={item}
-			/>
+			{canEdit ? (
+				<DeleteTemplateDialog
+					announce={announce}
+					label={t('templates.deleteAria', { name: item.name })}
+					onRemoved={removed}
+					template={item}
+				/>
+			) : null}
 		</div>
 	);
 }
 
 /**
  * The templates as a table: name (the link to the template), area, type (blocks or HTML) and the
- * day of the last change; whoever edits a template's area also gets its actions.
+ * day of the last change; whoever edits an area also gets the actions (copying from any readable
+ * area, changing and deleting in the areas they edit).
  *
  * @param props The props.
  * @param props.announce Announces results in the page's live region.
@@ -181,14 +190,13 @@ export function TemplateTable({
 								<Cell className={cellClass}>{formatClubDate(item.updatedAt, locale)}</Cell>
 								{showActions ? (
 									<Cell className={cellClass}>
-										{area?.canEdit === true ? (
-											<TemplateActions
-												announce={announce}
-												editableAreas={editableAreas}
-												item={item}
-												onRemoved={onRemoved}
-											/>
-										) : null}
+										<TemplateActions
+											announce={announce}
+											canEdit={area?.canEdit === true}
+											editableAreas={editableAreas}
+											item={item}
+											onRemoved={onRemoved}
+										/>
 									</Cell>
 								) : null}
 							</Row>
