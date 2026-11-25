@@ -37,6 +37,7 @@ const SETTINGS: GraphSettings = {
 const WEBHOOK_SECRET = `whsec_${btoa('fake-webhook-secret-bytes')}`;
 const HTTP_FORBIDDEN = 403;
 const HTTP_OK = 200;
+const HTTP_TOO_LARGE = 413;
 const HTTP_NO_CONTENT = 204;
 const FUTURE_MS = 10_000;
 const LIMIT = 50;
@@ -263,6 +264,29 @@ describe('fake providers', () => {
 			),
 		);
 		expect(events).toMatchObject([{ emailId: 'email-1', hard: true, type: 'bounce' }]);
+	});
+
+	it('answers 413 for a body above 1 MiB', async () => {
+		const { url } = await start();
+		const response = await control(url, '/senders', { mailboxes: ['x'.repeat(2_000_000)] });
+		expect(response.status).toBe(HTTP_TOO_LARGE);
+	});
+
+	it('records the sendMail path the same way for mime and json', async () => {
+		const { url } = await start();
+		const transport = createGraphTransport(SETTINGS, MAILBOX, graphDeps(url));
+		await transport.send(mail());
+		await transport.send(mail({ kind: 'system' }));
+		const all = await recorded(url);
+		const paths = all.filter((entry) => entry.path.endsWith('/sendMail'));
+		expect(new Set(paths.map((entry) => entry.path)).size).toBe(1);
+	});
+
+	it('delivers once when two resend calls with one key run at the same time', async () => {
+		const { delivered, url } = await start();
+		const transport = resendTransport(url);
+		await Promise.all([transport.send(mail()), transport.send(mail())]);
+		expect(delivered).toHaveLength(1);
 	});
 
 	it('forgets everything on reset', async () => {

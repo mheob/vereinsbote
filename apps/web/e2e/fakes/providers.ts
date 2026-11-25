@@ -57,6 +57,9 @@ const HTTP_UNAUTHORIZED = 401;
 const HTTP_FORBIDDEN = 403;
 const HTTP_NOT_FOUND = 404;
 const HTTP_UNAVAILABLE = 503;
+const MAX_BODY_CHARS = 1_048_576;
+const HTTP_TOO_LARGE = 413;
+const LOOPBACK = '127.0.0.1';
 const SNIPPET_LENGTH = 255;
 const DEFAULT_TOP = 50;
 const HEADER_END = /\r?\n\r?\n/u;
@@ -69,10 +72,20 @@ const TOKEN_ROUTE = /^\/login\/[^/]+\/oauth2\/v2\.0\/token$/u;
 const NON_ASCII = /[^\u0020-\u007E]/u;
 const SINCE = /receivedDateTime ge (?<since>\S+)/u;
 
+class BodyTooLargeError extends Error {
+	constructor() {
+		super('fake.bodyTooLarge');
+		this.name = 'BodyTooLargeError';
+	}
+}
+
 async function readBody(request: IncomingMessage): Promise<string> {
 	request.setEncoding('utf8');
 	let body = '';
-	for await (const chunk of request) body += String(chunk);
+	for await (const chunk of request) {
+		body += String(chunk);
+		if (body.length > MAX_BODY_CHARS) throw new BodyTooLargeError();
+	}
 	return body;
 }
 
@@ -318,15 +331,16 @@ async function startFakeProviders(
 	async function graphSendMail(
 		request: IncomingMessage,
 		response: ServerResponse,
-		mailbox: string,
+		target: Readonly<{ mailbox: string; path: string }>,
 	): Promise<void> {
+		const { mailbox, path } = target;
 		const raw = await readBody(request);
 		const isJson = (request.headers['content-type'] ?? '').includes('application/json');
 		if (isJson) {
 			const payload = parseJson(raw);
 			requests.push({
 				method: 'POST',
-				path: `/graph/v1.0/users/${mailbox}/sendMail`,
+				path,
 				savedToSentItems: payload.saveToSentItems !== false,
 			});
 			if (await deliverMime(graphJsonMime(mailbox, payload), response)) {
@@ -334,7 +348,7 @@ async function startFakeProviders(
 			}
 			return;
 		}
-		requests.push({ method: 'POST', path: `/graph/v1.0/users/${mailbox}/sendMail` });
+		requests.push({ method: 'POST', path });
 		const mime = Buffer.from(raw.trim(), 'base64').toString('utf8');
 		if (await deliverMime(mime, response)) send(response, HTTP_ACCEPTED);
 	}
@@ -368,7 +382,7 @@ async function startFakeProviders(
 			return true;
 		}
 		if (request.method === 'POST' && rest === 'sendMail') {
-			await graphSendMail(request, response, mailbox);
+			await graphSendMail(request, response, { mailbox, path: url.pathname });
 			return true;
 		}
 		if (request.method !== 'GET') return false;
@@ -406,8 +420,12 @@ async function startFakeProviders(
 			return true;
 		}
 		const id = randomUUID();
-		if (!(await deliverMime(resendMime(parseJson(raw)), response))) return true;
+		// Stored before the delivery, so a concurrent duplicate finds it.
 		if (typeof key === 'string') idempotent.set(key, id);
+		if (!(await deliverMime(resendMime(parseJson(raw)), response))) {
+			if (typeof key === 'string') idempotent.delete(key);
+			return true;
+		}
 		send(response, HTTP_OK, { id });
 		return true;
 	}
@@ -485,8 +503,9 @@ async function startFakeProviders(
 				? await control(request, response, url)
 				: (await graph(request, response, url)) || (await resend(request, response, url));
 			if (!handled) send(response, HTTP_NOT_FOUND, { error: 'fake.notFound' });
-		} catch {
-			if (!response.headersSent) send(response, HTTP_UNAVAILABLE, { error: 'fake.failed' });
+		} catch (error) {
+			const status = error instanceof BodyTooLargeError ? HTTP_TOO_LARGE : HTTP_UNAVAILABLE;
+			if (!response.headersSent) send(response, status, { error: 'fake.failed' });
 		}
 	}
 
@@ -494,7 +513,7 @@ async function startFakeProviders(
 		// oxlint-disable-next-line no-void -- `handle` catches everything; a listener must return nothing
 		void handle(request, response);
 	});
-	server.listen(options.port);
+	server.listen(options.port, LOOPBACK);
 	await once(server, 'listening');
 	const address = server.address();
 	const port = typeof address === 'object' && address !== null ? address.port : options.port;
