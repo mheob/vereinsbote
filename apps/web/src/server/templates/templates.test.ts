@@ -302,6 +302,7 @@ describe('templates by area rights', () => {
 				id,
 				name: 'Sommerfest',
 				updatedAt: record.updatedAt,
+				version: 1,
 			},
 		]);
 	});

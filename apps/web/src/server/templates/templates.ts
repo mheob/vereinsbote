@@ -58,6 +58,8 @@ interface TemplateSummary {
 	readonly name: string;
 	readonly bodyKind: 'blocks' | 'html';
 	readonly updatedAt: Date;
+	/** Sent back with a deletion, so a template saved since the list loaded is not deleted unseen. */
+	readonly version: number;
 }
 
 /** Who writes into which area, and what the area allows. */
@@ -350,6 +352,7 @@ async function listTemplates(db: Db, actor: Principal): Promise<TemplateSummary[
 			id: templates.id,
 			name: templates.name,
 			updatedAt: templates.updatedAt,
+			version: templates.version,
 		})
 		.from(templates)
 		.where(inArray(templates.areaId, areaIds))

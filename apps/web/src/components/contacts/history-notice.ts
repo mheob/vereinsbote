@@ -1,11 +1,11 @@
 /*
  * Notices a page leaves for the page it navigates to: in the state of the new history entry,
- * never in the URL (design 13), e.g. the name of a deleted partner for the contact list. The keys
- * are declared on the router's `HistoryState` (`router.tsx`).
+ * never in the URL (design 13), e.g. the name of a deleted partner for the contact list or of a
+ * copied template for its page. The keys are declared on the router's `HistoryState` (`router.tsx`).
  */
 
 /** A notice in the history state. */
-type HistoryNoticeKey = 'deletedContact' | 'partnerSaved';
+type HistoryNoticeKey = 'deletedContact' | 'partnerSaved' | 'templateNotice';
 
 /** The part of `window.history` a notice needs. */
 interface NoticeHistory {

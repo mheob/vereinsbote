@@ -16,6 +16,7 @@ import { Route as ImagesRouteImport } from './routes/images'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as PreviewFrameRouteImport } from './routes/preview-frame'
 import { Route as SetupRouteImport } from './routes/setup'
+import { Route as TemplatesRouteRouteImport } from './routes/templates/route'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AdminAreasRouteImport } from './routes/admin/areas'
 import { Route as AdminBrandRouteImport } from './routes/admin/brand'
@@ -27,6 +28,9 @@ import { Route as ContactsIndexRouteImport } from './routes/contacts/index'
 import { Route as ContactsContactIdRouteImport } from './routes/contacts/$contactId'
 import { Route as ContactsNewRouteImport } from './routes/contacts/new'
 import { Route as MediaFileRouteImport } from './routes/media/$file'
+import { Route as TemplatesIndexRouteImport } from './routes/templates/index'
+import { Route as TemplatesTemplateIdRouteImport } from './routes/templates/$templateId'
+import { Route as TemplatesNewRouteImport } from './routes/templates/new'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ContactsImportMembersRouteImport } from './routes/contacts/import/members'
 import { Route as ContactsImportPartnersRouteImport } from './routes/contacts/import/partners'
@@ -64,6 +68,11 @@ const PreviewFrameRoute = PreviewFrameRouteImport.update({
 const SetupRoute = SetupRouteImport.update({
   id: '/setup',
   path: '/setup',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TemplatesRouteRoute = TemplatesRouteRouteImport.update({
+  id: '/templates',
+  path: '/templates',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminIndexRoute = AdminIndexRouteImport.update({
@@ -121,6 +130,21 @@ const MediaFileRoute = MediaFileRouteImport.update({
   path: '/media/$file',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TemplatesIndexRoute = TemplatesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => TemplatesRouteRoute,
+} as any)
+const TemplatesTemplateIdRoute = TemplatesTemplateIdRouteImport.update({
+  id: '/$templateId',
+  path: '/$templateId',
+  getParentRoute: () => TemplatesRouteRoute,
+} as any)
+const TemplatesNewRoute = TemplatesNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => TemplatesRouteRoute,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -141,6 +165,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteRouteWithChildren
   '/contacts': typeof ContactsRouteRouteWithChildren
+  '/templates': typeof TemplatesRouteRouteWithChildren
   '/images': typeof ImagesRoute
   '/login': typeof LoginRoute
   '/preview-frame': typeof PreviewFrameRoute
@@ -154,8 +179,11 @@ export interface FileRoutesByFullPath {
   '/contacts/$contactId': typeof ContactsContactIdRoute
   '/contacts/new': typeof ContactsNewRoute
   '/media/$file': typeof MediaFileRoute
+  '/templates/$templateId': typeof TemplatesTemplateIdRoute
+  '/templates/new': typeof TemplatesNewRoute
   '/admin/': typeof AdminIndexRoute
   '/contacts/': typeof ContactsIndexRoute
+  '/templates/': typeof TemplatesIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/contacts/import/members': typeof ContactsImportMembersRoute
   '/contacts/import/partners': typeof ContactsImportPartnersRoute
@@ -175,8 +203,11 @@ export interface FileRoutesByTo {
   '/contacts/$contactId': typeof ContactsContactIdRoute
   '/contacts/new': typeof ContactsNewRoute
   '/media/$file': typeof MediaFileRoute
+  '/templates/$templateId': typeof TemplatesTemplateIdRoute
+  '/templates/new': typeof TemplatesNewRoute
   '/admin': typeof AdminIndexRoute
   '/contacts': typeof ContactsIndexRoute
+  '/templates': typeof TemplatesIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/contacts/import/members': typeof ContactsImportMembersRoute
   '/contacts/import/partners': typeof ContactsImportPartnersRoute
@@ -186,6 +217,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteRouteWithChildren
   '/contacts': typeof ContactsRouteRouteWithChildren
+  '/templates': typeof TemplatesRouteRouteWithChildren
   '/images': typeof ImagesRoute
   '/login': typeof LoginRoute
   '/preview-frame': typeof PreviewFrameRoute
@@ -199,8 +231,11 @@ export interface FileRoutesById {
   '/contacts/$contactId': typeof ContactsContactIdRoute
   '/contacts/new': typeof ContactsNewRoute
   '/media/$file': typeof MediaFileRoute
+  '/templates/$templateId': typeof TemplatesTemplateIdRoute
+  '/templates/new': typeof TemplatesNewRoute
   '/admin/': typeof AdminIndexRoute
   '/contacts/': typeof ContactsIndexRoute
+  '/templates/': typeof TemplatesIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/contacts/import/members': typeof ContactsImportMembersRoute
   '/contacts/import/partners': typeof ContactsImportPartnersRoute
@@ -211,6 +246,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/contacts'
+    | '/templates'
     | '/images'
     | '/login'
     | '/preview-frame'
@@ -224,8 +260,11 @@ export interface FileRouteTypes {
     | '/contacts/$contactId'
     | '/contacts/new'
     | '/media/$file'
+    | '/templates/$templateId'
+    | '/templates/new'
     | '/admin/'
     | '/contacts/'
+    | '/templates/'
     | '/api/auth/$'
     | '/contacts/import/members'
     | '/contacts/import/partners'
@@ -245,8 +284,11 @@ export interface FileRouteTypes {
     | '/contacts/$contactId'
     | '/contacts/new'
     | '/media/$file'
+    | '/templates/$templateId'
+    | '/templates/new'
     | '/admin'
     | '/contacts'
+    | '/templates'
     | '/api/auth/$'
     | '/contacts/import/members'
     | '/contacts/import/partners'
@@ -255,6 +297,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/contacts'
+    | '/templates'
     | '/images'
     | '/login'
     | '/preview-frame'
@@ -268,8 +311,11 @@ export interface FileRouteTypes {
     | '/contacts/$contactId'
     | '/contacts/new'
     | '/media/$file'
+    | '/templates/$templateId'
+    | '/templates/new'
     | '/admin/'
     | '/contacts/'
+    | '/templates/'
     | '/api/auth/$'
     | '/contacts/import/members'
     | '/contacts/import/partners'
@@ -279,6 +325,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRouteRoute: typeof AdminRouteRouteWithChildren
   ContactsRouteRoute: typeof ContactsRouteRouteWithChildren
+  TemplatesRouteRoute: typeof TemplatesRouteRouteWithChildren
   ImagesRoute: typeof ImagesRoute
   LoginRoute: typeof LoginRoute
   PreviewFrameRoute: typeof PreviewFrameRoute
@@ -338,6 +385,13 @@ declare module '@tanstack/react-router' {
       path: '/setup'
       fullPath: '/setup'
       preLoaderRoute: typeof SetupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/templates': {
+      id: '/templates'
+      path: '/templates'
+      fullPath: '/templates'
+      preLoaderRoute: typeof TemplatesRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/': {
@@ -417,6 +471,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MediaFileRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/templates/': {
+      id: '/templates/'
+      path: '/'
+      fullPath: '/templates/'
+      preLoaderRoute: typeof TemplatesIndexRouteImport
+      parentRoute: typeof TemplatesRouteRoute
+    }
+    '/templates/$templateId': {
+      id: '/templates/$templateId'
+      path: '/$templateId'
+      fullPath: '/templates/$templateId'
+      preLoaderRoute: typeof TemplatesTemplateIdRouteImport
+      parentRoute: typeof TemplatesRouteRoute
+    }
+    '/templates/new': {
+      id: '/templates/new'
+      path: '/new'
+      fullPath: '/templates/new'
+      preLoaderRoute: typeof TemplatesNewRouteImport
+      parentRoute: typeof TemplatesRouteRoute
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -481,10 +556,27 @@ const ContactsRouteRouteWithChildren = ContactsRouteRoute._addFileChildren(
   ContactsRouteRouteChildren,
 )
 
+interface TemplatesRouteRouteChildren {
+  TemplatesTemplateIdRoute: typeof TemplatesTemplateIdRoute
+  TemplatesNewRoute: typeof TemplatesNewRoute
+  TemplatesIndexRoute: typeof TemplatesIndexRoute
+}
+
+const TemplatesRouteRouteChildren: TemplatesRouteRouteChildren = {
+  TemplatesTemplateIdRoute: TemplatesTemplateIdRoute,
+  TemplatesNewRoute: TemplatesNewRoute,
+  TemplatesIndexRoute: TemplatesIndexRoute,
+}
+
+const TemplatesRouteRouteWithChildren = TemplatesRouteRoute._addFileChildren(
+  TemplatesRouteRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRouteRoute: AdminRouteRouteWithChildren,
   ContactsRouteRoute: ContactsRouteRouteWithChildren,
+  TemplatesRouteRoute: TemplatesRouteRouteWithChildren,
   ImagesRoute: ImagesRoute,
   LoginRoute: LoginRoute,
   PreviewFrameRoute: PreviewFrameRoute,

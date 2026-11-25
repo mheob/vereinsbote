@@ -8,7 +8,7 @@ import type { TemplateBody, TemplateInput } from '@/mail/templates/template-sche
 import { templatePlaceholders } from '@/server/templates/allowed-placeholders';
 import { checkTemplateForSave } from '@/server/templates/save-checks';
 
-import { STARTER_IDS, starterTemplate } from './starters';
+import { emptyTemplate, STARTER_IDS, starterTemplate } from './starters';
 import type { StarterId } from './starters';
 
 /** What every area allows: base fields, brand values and the salutation, no protected field. */
@@ -82,5 +82,25 @@ describe(starterTemplate, () => {
 	it('gives every caller its own copy', () => {
 		expect(starterTemplate('invitation')).not.toBe(starterTemplate('invitation'));
 		expect(starterTemplate('invitation')).toStrictEqual(starterTemplate('invitation'));
+	});
+});
+
+describe(emptyTemplate, () => {
+	it('has no blocks, uses the standard layout and passes the save checks', () => {
+		const empty = emptyTemplate({ name: 'Rundbrief', subject: 'Neues vom Verein' });
+		expect(empty).toMatchObject({
+			body: { blocks: [], kind: 'blocks', layout: { kind: 'standard' } },
+			name: 'Rundbrief',
+			preheader: '',
+			salutationForm: 'du',
+			subject: 'Neues vom Verein',
+		});
+		expect(templateInputSchema.safeParse(empty).success).toBe(true);
+		expect(checkTemplateForSave(empty, ANY_AREA, new Set())).toStrictEqual([]);
+	});
+
+	it('gives every call its own salutation texts', () => {
+		const names = { name: 'A', subject: 'B' };
+		expect(emptyTemplate(names).salutationTexts).not.toBe(emptyTemplate(names).salutationTexts);
 	});
 });
