@@ -65,7 +65,7 @@ Die Details stehen in Teilplan 1 unter „Global Constraints“ und „Task 1“
     - Kontakt-Einstellungen werden pro Dokument doppelt gelesen (Rahmen und Warnschritt).
     - Das Partnerformular erst bei „Bearbeiten“ laden statt bei jedem Aufruf der Detailseite.
     - `keepLeadingZeros` legt für jede Zelle eine Attribut-Map an (10 000 × 200 Zellen ≈ 2,5 s); zuerst das `s`-Attribut prüfen.
-    - Die Lesebibliotheken (`papaparse`, `read-excel-file`, `fflate`) landen als nie ausgeführter Code in den Server-Bundles (≈ 250 KB). Eine Client-only-Grenze um das Einlesen ziehen, falls das wächst.
+    - ~~Die Lesebibliotheken (`papaparse`, `read-excel-file`, `fflate`) landen als nie ausgeführter Code in den Server-Bundles (≈ 250 KB). Eine Client-only-Grenze um das Einlesen ziehen, falls das wächst.~~ Erledigt in Teilplan 3b (Task 18): dynamischer `import()` hinter `import.meta.env.SSR`, Bundle-Check in `ci.yml` (auch für Tiptap).
   - **Robustheit und Bedienung:**
     - Gruppen auf eigenen Zeilen einer Zelle verschmelzen, weil die Bereinigung Zeilenumbrüche vor dem Aufteilen zu Leerzeichen macht.
     - Unsichtbare Formatzeichen (`\p{Cf}`, z. B. U+200B, U+FEFF) bei der Bereinigung entfernen, damit Nummern als Schlüssel nicht unsichtbar abweichen.
