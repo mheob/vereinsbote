@@ -1,4 +1,5 @@
 import type { Locale } from '@/i18n/locale';
+import { MAX_IMAGE_WIDTH } from '@/server/media/limits';
 
 /** The quality of a re-encoded JPEG. */
 const JPEG_QUALITY = 0.85;
@@ -25,6 +26,26 @@ function fitWidth(
 	};
 }
 
+/** The width an SVG logo is drawn at: twice the 240 px box of the header logo (sharp on HiDPI). */
+const SVG_RASTER_WIDTH = 480;
+
+/**
+ * The size an SVG is drawn at. A vector scales without loss, so its intrinsic size (from `width`
+ * and `height`, or 300 px wide in the proportions of a `viewBox` alone) only gives the
+ * proportions and a lower bound: a smaller logo is drawn at 480 px, a wider one keeps its width
+ * up to 1200 px.
+ *
+ * @param size The intrinsic size of the SVG in pixels.
+ * @returns The size to draw at; the height is at least 1.
+ */
+function svgRasterSize(size: Readonly<{ width: number; height: number }>): {
+	width: number;
+	height: number;
+} {
+	const width = Math.min(Math.max(size.width, SVG_RASTER_WIDTH), MAX_IMAGE_WIDTH);
+	return { height: Math.max(1, Math.round((size.height * width) / size.width)), width };
+}
+
 /**
  * Chooses the format of the re-encoded image: PNG keeps transparency, JPEG is smaller for photos.
  *
@@ -49,4 +70,4 @@ function formatBytes(bytes: number, locale: Locale): string {
 	return `${number.format(bytes / MEBIBYTE)} MB`;
 }
 
-export { JPEG_QUALITY, chooseOutputType, fitWidth, formatBytes };
+export { JPEG_QUALITY, chooseOutputType, fitWidth, formatBytes, svgRasterSize };

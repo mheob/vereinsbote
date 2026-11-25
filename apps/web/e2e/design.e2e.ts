@@ -29,6 +29,9 @@ test.afterAll(async () => {
 });
 
 const HTTP_OK = 200;
+/** Where a PNG keeps its size: in the IHDR chunk right after the signature. */
+const PNG_WIDTH_OFFSET = 16;
+const PNG_HEIGHT_OFFSET = 20;
 
 /** A logo as the author of a club might have it: an SVG, built here as text. */
 const LOGO_SVG =
@@ -145,10 +148,16 @@ test('an admin sets up the brand', async () => {
 	await expect(admin.getByRole('heading', { name: 'Deine Bereiche' })).toBeVisible();
 	await expect(admin.getByRole('link', { name: 'CD einrichten' })).toHaveCount(0);
 
-	// The logo is served as a PNG, and the page shows what was saved.
+	// The logo is served as a PNG, drawn at twice the width of the header logo (the SVG says 240 px),
+	// and the page shows what was saved.
 	const media = await admin.request.get(logoPath);
 	expect(media.status()).toBe(HTTP_OK);
 	expect(media.headers()['content-type']).toBe('image/png');
+	const png = await media.body();
+	expect({
+		height: png.readUInt32BE(PNG_HEIGHT_OFFSET),
+		width: png.readUInt32BE(PNG_WIDTH_OFFSET),
+	}).toStrictEqual({ height: 192, width: 480 });
 	await admin.goto('/admin/brand');
 	await expect(admin.getByLabel('Vereinsname')).toHaveValue('Sportverein Beispiel');
 	await expect(admin.getByLabel('Textfarbe')).toHaveValue('#777777');

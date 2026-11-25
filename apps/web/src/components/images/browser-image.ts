@@ -1,4 +1,4 @@
-import { fitWidth } from './image-size';
+import { fitWidth, svgRasterSize } from './image-size';
 import type { DecodedImage, ImageDeps, OutputType } from './process-image';
 
 /* oxlint-disable typescript/prefer-readonly-parameter-types -- DOM objects (canvas, bitmap, image) are mutable handles by design */
@@ -141,7 +141,9 @@ async function loadImageElement(url: string): Promise<HTMLImageElement | null> {
 
 /**
  * Loads an SVG through an `<img>` (the CSP's `img-src blob:` allows it); the canvas draws it
- * later. Its size is the intrinsic one, so an SVG without size is no usable image.
+ * later, at the size of `svgRasterSize`: at least 480 px wide in the proportions of its intrinsic
+ * size, so a logo with a small or no `width` is not drawn tiny. An SVG without size is no usable
+ * image.
  *
  * @param file The SVG.
  * @returns The loaded image, or null.
@@ -156,7 +158,10 @@ async function loadSvg(file: Blob): Promise<Loaded | null> {
 		release();
 		return null;
 	}
-	const { naturalHeight: height, naturalWidth: width } = image;
+	const { height, width } = svgRasterSize({
+		height: image.naturalHeight,
+		width: image.naturalWidth,
+	});
 	return {
 		animated: false,
 		height,
