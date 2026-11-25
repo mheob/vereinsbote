@@ -224,6 +224,15 @@ describe(compileMail, () => {
 		['upper-case hex with leading zeros', '<p>&#X0000e000;0&#x0E001;</p>'],
 		['decimal in text', '<p>&#57344;0&#57345;</p>'],
 		[
+			'a marker inside a hex reference in text',
+			'<p>Hallo {{contact.firstName}} &#x\uE000E000;0&#x\uE001E001;</p>',
+		],
+		['a marker between & and # in text', '<p>&\uE000#xE000;0&\uE001#57345;</p>'],
+		[
+			'a marker inside a decimal reference in a link',
+			'<p><a href="https://x.example/&#57\uE001344;0&#\uE00057345;">L</a></p>',
+		],
+		[
 			'decimal in a link without semicolons',
 			'<p><a href="https://x.example/&#0057344 0&#57345">L</a></p>',
 		],

@@ -136,14 +136,24 @@ function stripDeep(value: unknown): unknown {
 }
 
 /**
+ * Parses a text with placeholder syntax that has no marker characters any more.
+ *
+ * @param stripped The text after `stripMarkers`.
+ * @returns The segments, or null when the syntax is broken.
+ */
+function parseStripped(stripped: string): Segments | null {
+	const parsed = parsePlaceholders(stripped);
+	return parsed.ok ? parsed.segments : null;
+}
+
+/**
  * Parses a text with placeholder syntax after removing the marker characters.
  *
  * @param text The text.
  * @returns The segments, or null when the syntax is broken.
  */
 function segmentsOf(text: string): Segments | null {
-	const parsed = parsePlaceholders(stripMarkers(text));
-	return parsed.ok ? parsed.segments : null;
+	return parseStripped(stripMarkers(text));
 }
 
 /**
@@ -168,13 +178,16 @@ function countContent(refs: readonly Readonly<PlaceholderRef>[]): number {
 
 /**
  * Parses the HTML of a template or a layout. A character reference to a marker character counts
- * as broken syntax: stripping cannot reach it, and decoding the HTML would make it a marker.
+ * as broken syntax: stripping cannot reach it, and decoding the HTML would make it a marker. The
+ * check runs on the stripped HTML, because stripping can join the pieces of such a reference
+ * (`&#x` U+E000 `E000;` becomes `&#xE000;`), and exactly the checked text is parsed.
  *
  * @param html The HTML.
  * @returns The segments, or null when the HTML is refused.
  */
 function htmlSegmentsOf(html: string): Segments | null {
-	return referencesMarker(html) ? null : segmentsOf(html);
+	const stripped = stripMarkers(html);
+	return referencesMarker(stripped) ? null : parseStripped(stripped);
 }
 
 /**
