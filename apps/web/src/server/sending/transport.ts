@@ -28,7 +28,11 @@ interface OutgoingMail {
 	readonly idempotencyKey: string | null;
 }
 
-type SendFailureClass = 'transient' | 'rejected' | 'unauthorized' | 'quota';
+/**
+ * `uncertain`: the request went out and the outcome is unknown (a time-out, a network error or a
+ * server error after sending); the mail may be on its way and is never resent automatically.
+ */
+type SendFailureClass = 'transient' | 'rejected' | 'unauthorized' | 'quota' | 'uncertain';
 
 type SendResult =
 	| { ok: true; providerId: string | null }

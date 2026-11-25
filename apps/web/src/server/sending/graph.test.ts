@@ -261,7 +261,7 @@ describe('graph transport send', () => {
 		expect(result).toMatchObject({ failure: 'transient', retryAfterMs: 9000 });
 	});
 
-	it('treats network errors and timeouts as transient', async () => {
+	it('treats a network error of the token request as transient', async () => {
 		const result = await createGraphTransport(SETTINGS, MAILBOX, DOWN).send(mail());
 
 		expect(result).toStrictEqual({
@@ -270,6 +270,64 @@ describe('graph transport send', () => {
 			ok: false,
 			retryAfterMs: null,
 		});
+	});
+
+	it('marks a network error or time-out of sendMail as uncertain', async () => {
+		const { deps } = setup(() => {
+			throw new TypeError(`fetch failed ${SECRET}`);
+		});
+
+		const result = await createGraphTransport(SETTINGS, MAILBOX, deps).send(mail());
+
+		expect(result).toStrictEqual({
+			code: 'graph.network',
+			failure: 'uncertain',
+			ok: false,
+			retryAfterMs: null,
+		});
+	});
+
+	it.each([500, 502, 504])(
+		'marks %i of sendMail as uncertain without a retry time',
+		async (status) => {
+			const { deps } = setup(() => json(status, {}, '5'));
+
+			const result = await createGraphTransport(SETTINGS, MAILBOX, deps).send(mail());
+
+			expect(result).toStrictEqual({
+				code: 'graph.server',
+				failure: 'uncertain',
+				ok: false,
+				retryAfterMs: null,
+			});
+		},
+	);
+
+	it.each([408, 429, 503])('keeps %i of sendMail transient', async (status) => {
+		const { deps } = setup(() => json(status, {}));
+
+		const result = await createGraphTransport(SETTINGS, MAILBOX, deps).send(mail());
+
+		expect(result).toMatchObject({ failure: 'transient', ok: false });
+	});
+
+	it('reuses a token without expires_in for a default lifetime', async () => {
+		const { deps, requests } = setup(accepted, () => json(200, { access_token: TOKEN }));
+		const transport = createGraphTransport(SETTINGS, MAILBOX, deps);
+
+		await transport.send(mail());
+		await transport.send(mail());
+
+		expect(requests.filter((request) => request.url.includes('/oauth2/'))).toHaveLength(1);
+	});
+
+	it('shares one token request between concurrent sends', async () => {
+		const { deps, requests } = setup(accepted);
+		const transport = createGraphTransport(SETTINGS, MAILBOX, deps);
+
+		await Promise.all([transport.send(mail()), transport.send(mail())]);
+
+		expect(requests.filter((request) => request.url.includes('/oauth2/'))).toHaveLength(1);
 	});
 
 	it('passes a time-out signal to every call', async () => {
@@ -307,6 +365,8 @@ describe(classifyGraphResponse, () => {
 		[403, 'unauthorized'],
 		[429, 'transient'],
 		[503, 'transient'],
+		[408, 'transient'],
+		[502, 'uncertain'],
 		[400, 'rejected'],
 	] as const)('classifies %i', (status, failure) => {
 		expect(classifyGraphResponse(status, {}, NONE, NOW)).toMatchObject({ failure, ok: false });
@@ -316,6 +376,7 @@ describe(classifyGraphResponse, () => {
 		[401, {}, 'graph.unauthorized'],
 		[429, {}, 'graph.throttled'],
 		[500, {}, 'graph.server'],
+		[408, {}, 'graph.network'],
 		[404, {}, 'graph.mailbox'],
 		[413, {}, 'graph.tooLarge'],
 		[400, { error: { code: 'ErrorInvalidRecipients' } }, 'graph.recipient'],
@@ -440,6 +501,7 @@ describe('graph transport fetchBounces', () => {
 		expect(request.url).toContain('REPORT.IPM.Note.NDR');
 		expect(request.url).toContain('2026-11-25T08%3A00%3A00.000Z');
 		expect(request.headers.get('authorization')).toBe(`Bearer ${TOKEN}`);
+		expect(request.headers.get('prefer')).toBe('outlook.body-content-type="text"');
 	});
 
 	it('asks for everything without a date', () => {

@@ -52,7 +52,6 @@ type TokenResult =
 
 interface Session {
 	readonly token: () => Promise<TokenResult>;
-	readonly call: (url: string, init: CallInit) => Promise<Response | null>;
 }
 
 type Prepared =
@@ -83,6 +82,15 @@ const HTTP_NOT_FOUND = 404;
 const HTTP_TOO_LARGE = 413;
 const HTTP_THROTTLED = 429;
 const HTTP_SERVER_ERROR = 500;
+const HTTP_REQUEST_TIMEOUT = 408;
+const HTTP_UNAVAILABLE = 503;
+const WAIT_CODES = new Map([
+	[HTTP_REQUEST_TIMEOUT, 'graph.network'],
+	[HTTP_THROTTLED, 'graph.throttled'],
+	[HTTP_UNAVAILABLE, 'graph.server'],
+]);
+const WAIT_AND_RETRY = new Set(WAIT_CODES.keys());
+const DEFAULT_TOKEN_SECONDS = 300;
 const BASE64_CHUNK = 0x60_00;
 
 const encoder = new TextEncoder();
@@ -126,6 +134,12 @@ function graphEndpoints(env: Pick<Env, 'devProvidersUrl'>): GraphEndpoints {
 	return { graph: `${base}/graph/v1.0`, login: `${base}/login` };
 }
 
+// Graph did not accept the mail (429, 503, 408): sending it again is safe.
+function waitAndRetry(status: number, headers: Headers, now: Date): Failure {
+	const code = WAIT_CODES.get(status) ?? 'graph.server';
+	return fail('transient', code, retryAfterMs(headers, now));
+}
+
 function classifyClientError(status: number, body: unknown): Failure {
 	if (status === HTTP_NOT_FOUND) return fail('unauthorized', 'graph.mailbox');
 	if (status === HTTP_TOO_LARGE) return fail('rejected', 'graph.tooLarge');
@@ -135,7 +149,8 @@ function classifyClientError(status: number, body: unknown): Failure {
 }
 
 /**
- * Classifies the answer of `sendMail`.
+ * Classifies the answer of `sendMail`. A 5xx other than 503 is `uncertain`: the request went out
+ * and Graph may still have sent the mail, so it is never resent automatically.
  *
  * @param status The HTTP status.
  * @param body The parsed JSON body (any shape; only `error.code` is read).
@@ -154,10 +169,8 @@ function classifyGraphResponse(
 	if (status === HTTP_UNAUTHORIZED || status === HTTP_FORBIDDEN) {
 		return fail('unauthorized', 'graph.unauthorized');
 	}
-	if (status === HTTP_THROTTLED || status >= HTTP_SERVER_ERROR) {
-		const code = status === HTTP_THROTTLED ? 'graph.throttled' : 'graph.server';
-		return fail('transient', code, retryAfterMs(headers, now));
-	}
+	if (WAIT_AND_RETRY.has(status)) return waitAndRetry(status, headers, now);
+	if (status >= HTTP_SERVER_ERROR) return fail('uncertain', 'graph.server');
 	return classifyClientError(status, body);
 }
 
@@ -258,15 +271,21 @@ async function callWithTimeout(
 	}
 }
 
+// Releases the connection of a response whose body nobody reads.
+async function drain(response: Response): Promise<void> {
+	try {
+		await response.body?.cancel();
+	} catch {
+		// The body is already gone; nothing to release.
+	}
+}
+
 function tokenFailure(response: Response, now: Date): TokenResult {
 	const { status } = response;
-	const transient = status === HTTP_THROTTLED || status >= HTTP_SERVER_ERROR;
-	const result = transient
-		? classifyGraphResponse(status, null, response.headers, now)
-		: fail('unauthorized', 'graph.unauthorized');
-	return result.ok
-		? { failure: fail('unauthorized', 'graph.unauthorized'), ok: false }
-		: { failure: result, ok: false };
+	if (status === HTTP_THROTTLED || status >= HTTP_SERVER_ERROR) {
+		return { failure: waitAndRetry(status, response.headers, now), ok: false };
+	}
+	return { failure: fail('unauthorized', 'graph.unauthorized'), ok: false };
 }
 
 async function requestToken(
@@ -291,26 +310,36 @@ async function requestToken(
 	if (!response.ok) return tokenFailure(response, deps.now());
 	const parsed = tokenSchema.safeParse(await readJson(response));
 	if (!parsed.success) return { failure: fail('transient', 'graph.server'), ok: false };
-	const lifetimeMs = (parsed.data.expires_in ?? 0) * MS_PER_SECOND - TOKEN_MARGIN_MS;
+	const lifetimeMs =
+		(parsed.data.expires_in ?? DEFAULT_TOKEN_SECONDS) * MS_PER_SECOND - TOKEN_MARGIN_MS;
 	return { lifetimeMs, ok: true, value: parsed.data.access_token };
 }
 
 function createSession(settings: GraphSettings, deps: GraphDeps): Session {
 	let cached: { readonly value: string; readonly expiresAt: number } | null = null;
+	let pending: Promise<TokenResult> | null = null;
+
+	async function fetchToken(): Promise<TokenResult> {
+		try {
+			const result = await requestToken(settings, deps);
+			if (result.ok) {
+				const lifetime = result.lifetimeMs ?? 0;
+				cached = { expiresAt: deps.now().getTime() + lifetime, value: result.value };
+			}
+			return result;
+		} finally {
+			pending = null;
+		}
+	}
+
 	return {
-		call: async (url, init) => callWithTimeout(deps, url, init),
 		token: async () => {
 			if (cached !== null && deps.now().getTime() < cached.expiresAt) {
 				return { ok: true, value: cached.value };
 			}
-			const result = await requestToken(settings, deps);
-			if (result.ok) {
-				cached = {
-					expiresAt: deps.now().getTime() + (result.lifetimeMs ?? 0),
-					value: result.value,
-				};
-			}
-			return result;
+			// Concurrent sends share one token request.
+			pending ??= fetchToken();
+			return pending;
 		},
 	};
 }
@@ -394,25 +423,35 @@ function createGraphTransport(
 		if ('failure' in prepared) return prepared.failure;
 		const token = await session.token();
 		if (!token.ok) return token.failure;
-		const response = await session.call(`${base}/sendMail`, {
+		const response = await callWithTimeout(deps, `${base}/sendMail`, {
 			body: prepared.body,
 			headers: { authorization: `Bearer ${token.value}`, 'content-type': prepared.contentType },
 			method: 'POST',
 		});
-		if (response === null) return fail('transient', 'graph.network');
+		// The request was issued: after a time-out or a network error the mail may be on its way.
+		if (response === null) return fail('uncertain', 'graph.network');
+		if (response.ok) await drain(response);
 		const body = response.ok ? null : await readJson(response);
 		return classifyGraphResponse(response.status, body, response.headers, deps.now());
 	}
 
+	/*
+	 * `receivedDateTime ge since` returns the reports of the boundary second again: the caller
+	 * (Task 19) dedups by report id. Dates have second precision, so a caller must pick a limit
+	 * well above any burst of reports within one second, or the cursor cannot move past it.
+	 */
 	async function fetchBounces(
 		since: Date | null,
 		limit: number,
 	): Promise<{ reports: BounceReport[]; until: Date | null }> {
 		const token = await session.token();
 		if (!token.ok) throw new Error(token.failure.code);
-		const response = await session.call(inboxBouncesUrl(base, since, limit), {
+		const response = await callWithTimeout(deps, inboxBouncesUrl(base, since, limit), {
 			body: null,
-			headers: { authorization: `Bearer ${token.value}` },
+			headers: {
+				authorization: `Bearer ${token.value}`,
+				prefer: 'outlook.body-content-type="text"',
+			},
 			method: 'GET',
 		});
 		if (response === null) throw new Error('graph.network');
@@ -450,7 +489,8 @@ async function checkMailboxRestriction(
 	const session = createSession(settings, deps);
 	const token = await session.token();
 	if (!token.ok) return 'unknown';
-	const response = await session.call(
+	const response = await callWithTimeout(
+		deps,
 		`${mailboxUrl(deps.endpoints, probeMailbox)}/messages?$top=1`,
 		{
 			body: null,
@@ -458,6 +498,7 @@ async function checkMailboxRestriction(
 			method: 'GET',
 		},
 	);
+	if (response !== null) await drain(response);
 	if (response?.status === HTTP_FORBIDDEN) return 'restricted';
 	return response?.status === HTTP_OK ? 'readable' : 'unknown';
 }
