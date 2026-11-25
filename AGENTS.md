@@ -66,6 +66,7 @@ Run them from the repository root.
 | Unit tests incl. the PostgreSQL concurrency tests | `TEST_POSTGRES_URL=postgres://vereinsbote:vereinsbote@localhost:5432/vereinsbote vp test` (dev services running) |
 | Unit tests incl. the S3 storage test (SeaweedFS) | `TEST_S3_URL=http://vereinsbote:vereinsbote-dev-secret@localhost:8333/vereinsbote vp test` (dev services running); both variables can be set together |
 | Update mail snapshots | `vp test -u`, only after a deliberate change of the layout, and read the diff of `apps/web/src/mail/render/__snapshots__` |
+| Fake Graph and Resend server, http://localhost:3200 (accepted mail goes to Mailpit; the e2e run starts it itself) | `vp run --filter web dev:providers` (`DEV_PROVIDERS_URL=http://localhost:3200`) |
 | Send the sample mails to Mailpit | `vp run --filter web mail:sample` (`DEV_SMTP_URL`, `APP_URL`; relay to real mailboxes: README) |
 | Rebuild the social icons | `vp run --filter web icons:social` (by hand, when the set changes) |
 | One test file | `vp test run apps/web/src/i18n/translate.test.ts` |

@@ -47,14 +47,22 @@ export default defineConfig({
 		locale: 'de-DE',
 		trace: 'retain-on-failure',
 	},
-	webServer: {
-		command: 'vp run build:node && node dist/node/server/index.mjs',
-		env: E2E_SERVER_ENV,
-		reuseExistingServer: false,
-		// The command builds first; a cold CI runner needs more than the default minute.
-		timeout: 180_000,
-		// The server answers once it has migrated the database and reaches it.
-		url: `${E2E_URL}/api/health`,
-	},
+	webServer: [
+		{
+			command: 'vp run build:node && node dist/node/server/index.mjs',
+			env: E2E_SERVER_ENV,
+			reuseExistingServer: false,
+			// The command builds first; a cold CI runner needs more than the default minute.
+			timeout: 180_000,
+			// The server answers once it has migrated the database and reaches it.
+			url: `${E2E_URL}/api/health`,
+		},
+		{
+			// The fake Graph and Resend of the sending tests; it delivers accepted mail to Mailpit.
+			command: 'node e2e/fakes/providers.ts',
+			reuseExistingServer: false,
+			url: 'http://localhost:3200/__control/requests',
+		},
+	],
 	workers: 1,
 });
