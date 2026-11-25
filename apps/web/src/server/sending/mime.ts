@@ -248,4 +248,10 @@ function graphRequestBytes(mail: Readonly<OutgoingMail>, date: Date): number {
 	return toBase64(encoder.encode(buildMime(mail, date))).length;
 }
 
-export { buildMime, GRAPH_REQUEST_LIMIT_BYTES, graphRequestBytes, MimeAddressError };
+export {
+	address as assertMailAddress,
+	buildMime,
+	GRAPH_REQUEST_LIMIT_BYTES,
+	graphRequestBytes,
+	MimeAddressError,
+};
