@@ -122,6 +122,22 @@ describe('checking HTML for an import', () => {
 		);
 	});
 
+	it('saves what it accepts: an HTML mail of about 300 KB, above the 256 KB of the click editor', async () => {
+		const { areaId, db, editor } = await club();
+		const html = `<html><body>${'<p>Hallo Welt, ein Absatz.</p>'.repeat(11_000)}</body></html>`;
+		const checked = await check(db, editor, { areaId, html, target: 'template' });
+		expect(checked).toMatchObject({ ok: true });
+		const { id } = await createTemplate(db, editor, areaId, {
+			body: { html: cleanedHtml(checked), kind: 'html' },
+			name: 'Gross',
+			preheader: '',
+			salutationForm: 'du',
+			salutationTexts: DEFAULT_SALUTATIONS.du,
+			subject: 'Betreff',
+		});
+		expect(id).toHaveLength(36);
+	});
+
 	it('refuses placeholders the area does not see, in a template and in its own layout', async () => {
 		const { areaId, db, editor } = await club();
 		const refused = {

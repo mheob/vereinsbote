@@ -41,7 +41,7 @@ const PROPERTY_VALUE = /^(?<property>[a-z][a-z-]*): ?(?<value>[a-z][a-z-]*)$/u;
 const FUNCTION = /^[a-z][a-z-]*\(\)$/u;
 /** Words behind the name in a title (`min-width property`). */
 const TITLE_SUFFIX = / (?:css )?propert(?:y|ies)$/u;
-const SEPARATOR = /\s*(?:,|&)\s*/u;
+const SEPARATOR = /[,&]/u;
 
 /**
  * Whether the newest test of classic Outlook for Windows says "not supported".
@@ -72,7 +72,12 @@ function sortedUnique(values: Iterable<string>): string[] {
  * @returns The tokens, lower case.
  */
 function tokensOf(title: string): string[] {
-	return title.trim().toLowerCase().replace(TITLE_SUFFIX, '').split(SEPARATOR);
+	return title
+		.trim()
+		.toLowerCase()
+		.replace(TITLE_SUFFIX, '')
+		.split(SEPARATOR)
+		.map((token) => token.trim());
 }
 
 /**

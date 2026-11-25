@@ -308,10 +308,26 @@ function unique(problems: readonly SaveProblem[]): SaveProblem[] {
 }
 
 /**
+ * The size of a template as JSON without its HTML: the limit of the click editor (Design 13)
+ * counts blocks and settings. An imported HTML mail and an own layout are bounded by the import
+ * (`MAX_IMPORT_BYTES`, Design 16), so whatever the check accepts can be saved.
+ *
+ * @param input The template.
+ * @returns The bytes.
+ */
+function blocksBytes(input: TemplateInput): number {
+	const { body } = input;
+	if (body.kind === 'html')
+		return encoder.encode(JSON.stringify({ ...input, body: null })).byteLength;
+	const layout = body.layout.kind === 'own' ? { html: '', kind: 'own' } : body.layout;
+	return encoder.encode(JSON.stringify({ ...input, body: { ...body, layout } })).byteLength;
+}
+
+/**
  * Checks a template and cleans its HTML: the problems that keep it from being stored, and the
  * template as it is stored (the HTML of an import or an own layout cleaned by the HTML import, the
- * input itself when there are problems or no HTML). A template above 256 KB as JSON is refused as
- * a whole, without looking further.
+ * input itself when there are problems or no HTML). A block template above 256 KB as JSON (its HTML
+ * not counted) is refused as a whole, without looking further.
  *
  * @param input The template.
  * @param allowed The placeholders of its area (`allowedTemplatePlaceholders`).
@@ -326,7 +342,7 @@ function prepareTemplateForSave(
 	areaMediaIds: ReadonlySet<string>,
 	appOrigin: string,
 ): { input: TemplateInput; problems: SaveProblem[] } {
-	if (encoder.encode(JSON.stringify(input)).byteLength > MAX_TEMPLATE_JSON_BYTES) {
+	if (blocksBytes(input) > MAX_TEMPLATE_JSON_BYTES) {
 		return { input, problems: [{ kind: 'tooBig' }] };
 	}
 	const checked = checkBody(input.body, allowed, areaMediaIds, appOrigin);

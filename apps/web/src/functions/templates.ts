@@ -5,6 +5,11 @@ import { z } from 'zod';
 import { fromForm } from '@/functions/from-form';
 import type { Brand } from '@/mail/brand/brand-schema';
 import { STARTER_IDS } from '@/mail/starters/starters';
+import {
+	MAX_REQUEST_HTML,
+	salutationWithinBounds,
+	templateWithinBounds,
+} from '@/mail/templates/request-bounds';
 import { salutationTextsSchema, templateInputSchema } from '@/mail/templates/template-schema';
 import { MAX_SEARCH_LENGTH } from '@/server/contacts/list-query';
 import type { ImportFinding, ImportRefusal } from '@/server/html-import/import-html';
@@ -100,12 +105,11 @@ const searchRequest = z.object({
 });
 const valuesRequest = z.object({
 	contactId: z.uuid(),
-	salutation: salutationTextsSchema,
+	salutation: salutationTextsSchema.refine(salutationWithinBounds),
 	templateId: z.uuid(),
 });
 /** The most a form of an import carries as HTML before the server counts its bytes (500 KB). */
-const MAX_HTML_CHARACTERS = 4_000_000;
-const htmlField = z.string().max(MAX_HTML_CHARACTERS);
+const htmlField = z.string().max(MAX_REQUEST_HTML);
 const checkImportRequest = z.discriminatedUnion('target', [
 	z.object({ html: htmlField, target: z.literal('globalLayout') }),
 	z
@@ -131,7 +135,7 @@ const replaceHtmlRequest = z.object({
 
 const saveRequest = z.object({
 	id: z.uuid(),
-	input: templateInputSchema,
+	input: templateInputSchema.refine(templateWithinBounds),
 	version: z.int().min(1),
 });
 

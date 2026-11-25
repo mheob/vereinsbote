@@ -420,6 +420,21 @@ describe(checkTemplateForSave, () => {
 		expect(checkTemplateForSave(input, EVENTS, AREA_IMAGES)).toStrictEqual([{ kind: 'tooBig' }]);
 	});
 
+	it('applies the 256 KB limit to blocks, not to HTML', () => {
+		// About 300 KB of HTML: above the click editor's limit, below the import's 500 KB.
+		const html = `<html><body>${'<p>Hallo Welt, ein Absatz.</p>'.repeat(11_000)}</body></html>`;
+		expect(html.length).toBeGreaterThan(MAX_TEMPLATE_JSON_BYTES);
+		const body = { html, kind: 'html' } as const;
+		expect(checkTemplateForSave(withBody(body), EVENTS, AREA_IMAGES)).toStrictEqual([]);
+		const own = { html: `${html}<div>{{content}}</div>`, kind: 'own' } as const;
+		const withOwnLayout = withBody({
+			blocks: [heading('h', [text('x')])],
+			kind: 'blocks',
+			layout: own,
+		});
+		expect(checkTemplateForSave(withOwnLayout, EVENTS, AREA_IMAGES)).toStrictEqual([]);
+	});
+
 	it('accepts the default salutation texts of both forms', () => {
 		const sie: TemplateInput = {
 			...VALID,
