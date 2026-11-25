@@ -39,6 +39,15 @@ describe('images of the app', () => {
 		expect(html).not.toContain(ORIGIN);
 	});
 
+	it('with a query or a fragment are written as the canonical path', () => {
+		const html = htmlOf(
+			run(
+				`<img src="/media/${AREA_IMAGE}.png?x=1" alt=""><img src="/media/${AREA_IMAGE}.png#y" alt="">`,
+			),
+		);
+		expect(html.match(new RegExp(`src='/media/${AREA_IMAGE}\\.png'`, 'gu'))).toHaveLength(2);
+	});
+
 	it('in an Outlook conditional comment count as well', () => {
 		const result = run(
 			`<!--[if mso]><img src="/media/${AREA_IMAGE}.png" alt=""><![endif]--><p>x</p>`,
@@ -73,7 +82,6 @@ describe('images of the app', () => {
 	it.each([
 		['a name that is no image id', '/media/logo.png'],
 		['a path below media', `/media/x/${AREA_IMAGE}.png`],
-		['a query', `/media/${AREA_IMAGE}.png?x=1`],
 		['a protocol-relative address', `//evil.example/media/${AREA_IMAGE}.png`],
 	])('are dropped for %s', (_name, src) => {
 		const result = run(`<img src="${src}" alt="">`);

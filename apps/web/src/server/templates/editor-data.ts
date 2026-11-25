@@ -6,7 +6,6 @@
  */
 import { and, eq, inArray } from 'drizzle-orm';
 
-import { collectMediaIds } from '@/mail/blocks/block-schema';
 import type { Brand } from '@/mail/brand/brand-schema';
 import type { MediaInfo } from '@/mail/render/compile';
 import type { TemplateInput } from '@/mail/templates/template-schema';
@@ -22,7 +21,7 @@ import { editorPlaceholders } from './editor-placeholders';
 import type { EditorPlaceholder } from './editor-placeholders';
 import { checkTemplateForSave } from './save-checks';
 import type { SaveProblem } from './save-checks';
-import { getTemplate, listLayoutChoices } from './templates';
+import { getTemplate, listLayoutChoices, mediaIdsOf } from './templates';
 import type { TemplateRecord } from './templates';
 
 /** An image the template shows: what the preview needs, and its name for the form. */
@@ -111,18 +110,21 @@ function inputOf(record: TemplateRecord): TemplateInput {
  * @param db The database.
  * @param actor Who opens it; needs `read` in the template's area.
  * @param id The template.
+ * @param appOrigin The origin of the app (`APP_URL`).
  * @returns What the editor shows.
  * @throws {TemplateNotFoundError} When no template has the id.
  * @throws {ForbiddenError} Without `read` in the area.
  */
+// oxlint-disable-next-line max-params -- the database, the user, the template and the origin of the app
 async function loadTemplateEditorData(
 	db: Db,
 	actor: Principal,
 	id: string,
+	appOrigin: string,
 ): Promise<TemplateEditorData> {
 	const template = await getTemplate(db, actor, id);
 	const { areaId, body } = template;
-	const mediaIds = body.kind === 'blocks' ? collectMediaIds(body.blocks) : [];
+	const mediaIds = mediaIdsOf(body, appOrigin);
 	const [name, allowed, members, partners, layouts, brand, images] = await Promise.all([
 		areaName(db, areaId),
 		allowedTemplatePlaceholders(db, areaId),
@@ -134,7 +136,7 @@ async function loadTemplateEditorData(
 	]);
 	const problems =
 		body.kind === 'blocks'
-			? checkTemplateForSave(inputOf(template), allowed, new Set(Object.keys(images)))
+			? checkTemplateForSave(inputOf(template), allowed, new Set(Object.keys(images)), appOrigin)
 			: [];
 	return {
 		areaName: name,

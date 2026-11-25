@@ -14,9 +14,8 @@ import { ForbiddenError } from '@/server/permissions/principal';
 import type { Principal } from '@/server/permissions/principal';
 import { createMemoryStorage } from '@/server/storage/memory';
 
-import { loadTemplateEditorData } from './editor-data';
 import { TemplateNotFoundError } from './errors';
-import { createTemplate } from './templates';
+import { createTemplate, loadTemplateEditorData } from './testing';
 
 const UNKNOWN_ID = '00000000-0000-4000-8000-000000000000';
 const PNG_LENGTH = 100;
@@ -32,6 +31,7 @@ interface Club {
 	readonly reader: Principal;
 	readonly id: string;
 	readonly imageId: string;
+	readonly membersAreaId: string;
 	readonly partnersAreaId: string;
 }
 
@@ -91,7 +91,7 @@ async function club(): Promise<Club> {
 		membersAreaId,
 		withBlocks([birthDateHeading, imageBlock]),
 	);
-	return { admin, db, editor, id, imageId: image.id, partnersAreaId, reader };
+	return { admin, db, editor, id, imageId: image.id, membersAreaId, partnersAreaId, reader };
 }
 
 describe(loadTemplateEditorData, () => {
@@ -127,6 +127,26 @@ describe(loadTemplateEditorData, () => {
 		const data = await loadTemplateEditorData(c.db, c.editor, c.id);
 		expect(data.placeholders.map(({ key }) => key)).toContain('contact.birthDate');
 		expect(data.problems).toStrictEqual([]);
+	});
+
+	it('knows a library image that only an own layout shows', async () => {
+		const c = await club();
+		const own = {
+			...withBlocks([]),
+			body: {
+				blocks: [],
+				kind: 'blocks',
+				layout: {
+					html: `<img src="/media/${c.imageId}.png" alt="a"><div>{{content}}</div>`,
+					kind: 'own',
+				},
+			},
+			name: 'Eigenes Layout',
+		} as const;
+		const { id } = await createTemplate(c.db, c.editor, c.membersAreaId, own);
+		const data = await loadTemplateEditorData(c.db, c.editor, id);
+		expect(data.problems).toStrictEqual([]);
+		expect(Object.keys(data.media)).toStrictEqual([c.imageId]);
 	});
 
 	it('gives a reader the template without the right to change it', async () => {

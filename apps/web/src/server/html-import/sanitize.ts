@@ -19,7 +19,7 @@ import { toHtml } from 'hast-util-to-html';
 import { cleanDeclarations, cleanStyleSheet } from './css';
 import type { CssReport } from './css';
 import type { FindingsCollector, RemovedWhat } from './findings';
-import { appMedia, judgeUrl, readUrl } from './media-refs';
+import { classifyAppUrl, judgeUrl, readUrl } from './media-refs';
 import type { UrlAttribute } from './media-refs';
 import type { Place, PlaceholderTokens } from './placeholders';
 
@@ -289,9 +289,9 @@ function cssReport(context: CleanContext): CssReport {
 	return {
 		externalHost: findings.externalHost,
 		mediaUrl: (url) => {
-			const media = appMedia(readUrl(url), context.origin);
-			if (media !== null) context.mediaIds.add(media.id);
-			return media?.path ?? null;
+			const app = classifyAppUrl(readUrl(url), context.origin);
+			if (app.kind === 'media') context.mediaIds.add(app.id);
+			return app;
 		},
 		outlook: findings.outlook,
 		removed: findings.removed,

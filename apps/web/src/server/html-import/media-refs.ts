@@ -64,18 +64,39 @@ function readUrl(value: string): string {
 	return result;
 }
 
+/** What a URL is to the app: one of its images, another address on its origin, or elsewhere. */
+type AppUrl =
+	| { readonly kind: 'media'; readonly id: string; readonly path: string }
+	| { readonly kind: 'ownOrigin' }
+	| { readonly kind: 'elsewhere' };
+
+/** The base for a relative URL when the app's origin is not known. */
+const UNKNOWN_ORIGIN = 'https://app.invalid';
+const ELSEWHERE: AppUrl = { kind: 'elsewhere' };
+
 /**
- * The image of the app a URL names.
+ * Tells what a URL is to the app. The URL is resolved like a browser does it (so `./`, `:443`,
+ * an upper-case host and a relative path are what they are) and compared by origin. Any address
+ * on the app's origin is one of its images, written as the canonical path without query or
+ * fragment, or "ownOrigin": the caller drops it.
  *
  * @param url The URL as read.
- * @param origin The origin of the app.
- * @returns The id and the relative path, or null when the URL is no `/media/<file>` of the app.
+ * @param origin The origin of the app; an empty text when unknown.
+ * @returns The image, an address on the app's origin, or another address.
  */
-function appMedia(url: string, origin: string): { id: string; path: string } | null {
-	const path = url.toLowerCase().startsWith(origin.toLowerCase()) ? url.slice(origin.length) : url;
-	if (!path.startsWith(MEDIA_PREFIX)) return null;
-	const parsed = parseMediaFileName(path.slice(MEDIA_PREFIX.length));
-	return parsed === null ? null : { id: parsed.id, path };
+function classifyAppUrl(url: string, origin: string): AppUrl {
+	const base = origin === '' ? UNKNOWN_ORIGIN : origin;
+	const resolved = URL.canParse(url, base) ? new URL(url, base) : null;
+	if (resolved === null || resolved.origin !== new URL(base).origin) return ELSEWHERE;
+	if (!resolved.pathname.startsWith(MEDIA_PREFIX)) return { kind: 'ownOrigin' };
+	const parsed = parseMediaFileName(resolved.pathname.slice(MEDIA_PREFIX.length));
+	return parsed === null
+		? { kind: 'ownOrigin' }
+		: {
+				id: parsed.id,
+				kind: 'media',
+				path: `${MEDIA_PREFIX}${parsed.id}.${parsed.type === 'jpeg' ? 'jpg' : 'png'}`,
+			};
 }
 
 /**
@@ -103,8 +124,8 @@ function hostOf(url: string): string | null {
  */
 function judgeRelative(attribute: UrlAttribute, url: string, origin: string): UrlVerdict {
 	if (attribute === 'href') return url.startsWith('#') ? { kind: 'keep', value: url } : DROP;
-	const media = appMedia(url, origin);
-	return media === null ? DROP : { kind: 'keep', mediaId: media.id, value: media.path };
+	const app = classifyAppUrl(url, origin);
+	return app.kind === 'media' ? { kind: 'keep', mediaId: app.id, value: app.path } : DROP;
 }
 
 /**
@@ -117,8 +138,9 @@ function judgeRelative(attribute: UrlAttribute, url: string, origin: string): Ur
  */
 function judgeAbsolute(attribute: UrlAttribute, url: string, origin: string): UrlVerdict {
 	if (attribute === 'href') return { kind: 'keep', value: url };
-	const media = appMedia(url, origin);
-	if (media !== null) return { kind: 'keep', mediaId: media.id, value: media.path };
+	const app = classifyAppUrl(url, origin);
+	if (app.kind === 'media') return { kind: 'keep', mediaId: app.id, value: app.path };
+	if (app.kind === 'ownOrigin') return DROP;
 	const host = hostOf(url);
 	return host === null ? DROP : { externalHost: host, kind: 'keep', value: url };
 }
@@ -243,5 +265,5 @@ function swapHtmlMediaIds(html: string, copies: ReadonlyMap<string, string>): st
 	return result;
 }
 
-export { appMedia, htmlMediaIds, judgeUrl, readUrl, swapHtmlMediaIds, URL_BRAND_KEYS };
-export type { UrlAttribute, UrlContext, UrlVerdict };
+export { classifyAppUrl, htmlMediaIds, judgeUrl, readUrl, swapHtmlMediaIds, URL_BRAND_KEYS };
+export type { AppUrl, UrlAttribute, UrlContext, UrlVerdict };

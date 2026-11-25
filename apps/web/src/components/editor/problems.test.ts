@@ -94,6 +94,7 @@ describe(problemPlace, () => {
 			problemPlace({ key: 'contact.city', kind: 'placeholderForbidden', where: 'html' }, blocks),
 		).toBeNull();
 		expect(problemPlace({ kind: 'syntax', where: 'html' }, blocks)).toBeNull();
+		expect(problemPlace({ kind: 'placeholderHidden', where: 'html' }, blocks)).toBeNull();
 		expect(
 			problemPlace(
 				{ attribute: 'href', key: 'salutation', kind: 'placeholderInAttribute', where: 'html' },

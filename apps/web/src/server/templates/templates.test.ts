@@ -27,17 +27,9 @@ import {
 	TemplateNameTakenError,
 	TemplateNotFoundError,
 } from './errors';
-import {
-	createFromStarter,
-	createTemplate,
-	deleteTemplate,
-	duplicateTemplate,
-	getTemplate,
-	listLayoutChoices,
-	listTemplates,
-	saveTemplate,
-} from './templates';
+import { deleteTemplate, getTemplate, listLayoutChoices, listTemplates } from './templates';
 import type { TemplateRecord } from './templates';
+import { createFromStarter, createTemplate, duplicateTemplate, saveTemplate } from './testing';
 
 const UNKNOWN_ID = '00000000-0000-4000-8000-000000000000';
 const PNG_LENGTH = 100;
@@ -595,7 +587,7 @@ describe('images of templates', () => {
 			html: `<img src="${origin}/media/${imageId}.png" alt="a">`,
 			kind: 'html',
 		} as const;
-		const { id } = await createTemplate(c.db, c.editor, c.membersAreaId, input({ body }), origin);
+		const { id } = await createTemplate(c.db, c.editor, c.membersAreaId, input({ body }));
 		await expect(c.db.select().from(templateMedia)).resolves.toStrictEqual([
 			{ mediaId: imageId, templateId: id },
 		]);
@@ -610,9 +602,7 @@ describe('images of templates', () => {
 			html: `<img src="${origin}/media/${imageId}.png" alt="">`,
 			kind: 'html',
 		} as const;
-		const error = await failureOf(
-			createTemplate(c.db, c.editor, c.membersAreaId, input({ body }), origin),
-		);
+		const error = await failureOf(createTemplate(c.db, c.editor, c.membersAreaId, input({ body })));
 		expect(error).toMatchObject({ problems: [{ kind: 'mediaForeign', mediaId: imageId }] });
 	});
 

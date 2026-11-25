@@ -53,6 +53,7 @@ type SaveProblem =
 			readonly attribute: string;
 			readonly where: string;
 	  }
+	| { readonly kind: 'placeholderHidden'; readonly where: string }
 	| { readonly kind: 'tooDeep' }
 	| { readonly kind: 'contentMissing' }
 	| { readonly kind: 'contentRepeated' }
@@ -210,6 +211,7 @@ function problemOfRefusal(refusal: ImportRefusal, where: HtmlPlace): SaveProblem
 	}
 	if (refusal.kind === 'placeholderInComment')
 		return { key: refusal.key, kind: refusal.kind, where };
+	if (refusal.kind === 'placeholderHidden') return { kind: refusal.kind, where };
 	if (refusal.kind === 'mediaForeign') return { kind: refusal.kind, mediaId: refusal.mediaId };
 	return refusal.kind === 'syntax' ? { kind: 'syntax', where } : { kind: refusal.kind };
 }
@@ -322,7 +324,7 @@ function prepareTemplateForSave(
 	input: TemplateInput,
 	allowed: AllowedPlaceholders,
 	areaMediaIds: ReadonlySet<string>,
-	appOrigin = '',
+	appOrigin: string,
 ): { input: TemplateInput; problems: SaveProblem[] } {
 	if (encoder.encode(JSON.stringify(input)).byteLength > MAX_TEMPLATE_JSON_BYTES) {
 		return { input, problems: [{ kind: 'tooBig' }] };
@@ -356,7 +358,7 @@ function checkTemplateForSave(
 	input: TemplateInput,
 	allowed: AllowedPlaceholders,
 	areaMediaIds: ReadonlySet<string>,
-	appOrigin = '',
+	appOrigin: string,
 ): SaveProblem[] {
 	return prepareTemplateForSave(input, allowed, areaMediaIds, appOrigin).problems;
 }

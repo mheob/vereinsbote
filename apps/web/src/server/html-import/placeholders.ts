@@ -154,6 +154,8 @@ interface State {
 	content: { own: number; total: number };
 	/** Whether the cleaning is inside a conditional comment, where no placeholder may stand. */
 	inComment: boolean;
+	/** The names `protectCss` wrote for the CSS being cleaned; only they turn into tokens. */
+	cssNames: Set<number>;
 }
 
 /**
@@ -328,14 +330,59 @@ function cssNameAt(index: number): string {
 	return `vbph${String(index)}x`;
 }
 
+/**
+ * Replaces the placeholders of a CSS text by names the CSS parser takes. A name the source wrote
+ * itself is refused: it could stand for a placeholder judged somewhere else.
+ *
+ * @param state The state.
+ * @param css The CSS.
+ * @param place Where it stands.
+ * @returns The CSS with names; the CSS itself when it is refused.
+ */
+function protectCss(state: State, css: string, place: Place): string {
+	state.cssNames.clear();
+	CSS_TOKEN.lastIndex = 0;
+	if (CSS_TOKEN.test(css)) {
+		refuse(state, { kind: 'syntax' });
+		return css;
+	}
+	return replace(state, css, place, (index) => {
+		state.cssNames.add(index);
+		return cssNameAt(index);
+	});
+}
+
+/**
+ * Whether written HTML hides a placeholder.
+ *
+ * @param written The HTML as written, with tokens.
+ * @param count How many placeholders the cleaning judged.
+ * @returns True when a `{{` stands outside a token, or a token stands twice or out of range.
+ */
+function hasHiddenPlaceholder(written: string, count: number): boolean {
+	if (written.includes('{{')) return true;
+	const seen = new Set<number>();
+	for (const match of written.matchAll(TOKEN)) {
+		const index = Number(match.groups?.index);
+		if (index >= count || seen.has(index)) return true;
+		seen.add(index);
+	}
+	return false;
+}
+
 /** The placeholders of one import: the tokens, the refusals and how often `{{content}}` stands. */
 interface PlaceholderTokens {
 	/** Checks a text and replaces its placeholders by tokens. */
 	readonly protect: (text: string, place: Place) => string;
 	/** Like `protect` for CSS: a placeholder becomes a name the CSS parser accepts. */
 	readonly protectCss: (css: string, place: Place) => string;
-	/** Turns the names of `protectCss` into tokens. */
+	/** Turns the names `protectCss` wrote for the last CSS into tokens. */
 	readonly cssToTokens: (css: string) => string;
+	/**
+	 * Whether the written HTML (with tokens) hides a placeholder: a `{{` that is no token, a token
+	 * that stands twice or has no placeholder. Every real placeholder is exactly one token there.
+	 */
+	readonly hidden: (written: string) => boolean;
 	/** Writes every token as its placeholder again. */
 	readonly restore: (html: string) => string;
 	/** The placeholder a value starts with, or null. */
@@ -358,6 +405,7 @@ function createPlaceholderTokens(allowed: PlaceholderKeys): PlaceholderTokens {
 	const state: State = {
 		allowed,
 		content: { own: 0, total: 0 },
+		cssNames: new Set(),
 		inComment: false,
 		refs: [],
 		refusals: new Map(),
@@ -367,14 +415,15 @@ function createPlaceholderTokens(allowed: PlaceholderKeys): PlaceholderTokens {
 		contentCounts: () => state.content,
 		cssToTokens: (css) =>
 			css.replaceAll(CSS_TOKEN, (match, index: string) =>
-				refAt(index) === undefined ? match : tokenAt(Number(index)),
+				state.cssNames.has(Number(index)) ? tokenAt(Number(index)) : match,
 			),
+		hidden: (written) => hasHiddenPlaceholder(written, state.refs.length),
 		leading: (value) => {
 			const index = LEADING_TOKEN.exec(value.trim())?.groups?.index;
 			return index === undefined ? null : (refAt(index) ?? null);
 		},
 		protect: (text, place) => replace(state, text, place, tokenAt),
-		protectCss: (css, place) => replace(state, css, place, cssNameAt),
+		protectCss: (css, place) => protectCss(state, css, place),
 		refusals: () => [...state.refusals.values()],
 		restore: (html) =>
 			html.replaceAll(TOKEN, (match, index: string) => {

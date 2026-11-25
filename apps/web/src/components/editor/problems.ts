@@ -123,6 +123,7 @@ function problemPlace(problem: SaveProblem, blocks: readonly Block[]): ProblemPl
 		case 'fallbackNotAllowed':
 		case 'placeholderForbidden':
 		case 'placeholderInAttribute':
+		case 'placeholderHidden':
 		case 'placeholderInComment':
 		case 'placeholderUnknown':
 		case 'syntax': {

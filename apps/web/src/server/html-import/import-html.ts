@@ -60,6 +60,7 @@ type ImportRefusal =
 			readonly key: string;
 			readonly attribute: string;
 	  }
+	| { readonly kind: 'placeholderHidden' }
 	| { readonly kind: 'tooDeep' }
 	| { readonly kind: 'contentMissing' }
 	| { readonly kind: 'contentRepeated' }
@@ -128,6 +129,8 @@ interface Cleaned {
 	readonly tokens: PlaceholderTokens;
 	readonly findings: FindingsCollector;
 	readonly mediaIds: ReadonlySet<string>;
+	/** The document as written, placeholders still tokens. */
+	readonly written: string;
 }
 
 /**
@@ -150,7 +153,7 @@ function clean(source: string, kind: ImportKind, appOrigin: string): Cleaned {
 		origin,
 		tokens,
 	});
-	return { findings, mediaIds, root, tokens };
+	return { findings, mediaIds, root, tokens, written: writeTree(root) };
 }
 
 /**
@@ -163,8 +166,12 @@ function clean(source: string, kind: ImportKind, appOrigin: string): Cleaned {
  */
 function refusalsOf(kind: ImportKind, cleaned: Cleaned): ImportRefusal[] {
 	const allowed = allowedMedia(kind);
+	const refused = cleaned.tokens.refusals();
+	// A placeholder that was refused stays in the text, which is no hiding.
+	const hidden = refused.length === 0 && cleaned.tokens.hidden(cleaned.written);
 	return [
-		...cleaned.tokens.refusals(),
+		...refused,
+		...(hidden ? [{ kind: 'placeholderHidden' } as const] : []),
 		...contentRefusals(kind, cleaned.tokens.contentCounts()),
 		...[...cleaned.mediaIds]
 			.filter((mediaId) => !allowed.has(mediaId))
@@ -180,7 +187,7 @@ function refusalsOf(kind: ImportKind, cleaned: Cleaned): ImportRefusal[] {
  * @returns The result.
  */
 function accept(cleaned: Cleaned): ImportResult {
-	const html = cleaned.tokens.restore(`${DOCTYPE}${writeTree(cleaned.root)}`);
+	const html = cleaned.tokens.restore(`${DOCTYPE}${cleaned.written}`);
 	const bytes = encoder.encode(html).byteLength;
 	const clipped: ImportFinding[] = bytes > GMAIL_CLIP_BYTES ? [{ bytes, kind: 'clipped' }] : [];
 	return {

@@ -9,7 +9,7 @@ import { ForbiddenError } from '@/server/permissions/principal';
 
 import { TemplateNotFoundError } from './errors';
 import { previewValues, searchPreviewContacts } from './preview-values';
-import { createTemplate } from './templates';
+import { createTemplate } from './testing';
 
 const UNKNOWN_ID = '00000000-0000-4000-8000-000000000000';
 const MAX_HITS = 10;

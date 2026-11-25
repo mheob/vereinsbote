@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vite-plus/test';
 import { blockListSchema } from '@/mail/blocks/block-schema';
 import type { Block, ColumnsBlock } from '@/mail/blocks/block-schema';
 import { DEFAULT_SALUTATIONS } from '@/mail/placeholders/salutation';
-import { checkTemplateForSave } from '@/server/templates/save-checks';
+import { checkTemplateForSave } from '@/server/templates/testing';
 
 import { BLOCK_TYPES, COLUMN_BLOCK_TYPES, duplicateBlock, newBlock } from './block-factory';
 

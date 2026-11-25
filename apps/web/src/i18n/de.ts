@@ -364,6 +364,8 @@ export const de = {
 	'editor.problem.nameTooLong': 'Der Name darf höchstens 100 Zeichen lang sein.',
 	'editor.problem.placeholderForbidden':
 		'Der Platzhalter „{name}“ ist in diesem Bereich nicht erlaubt.',
+	'editor.problem.placeholderHidden':
+		'Das HTML versteckt einen Platzhalter (zum Beispiel durch Umschreibungen oder getrennten Text). Bitte schreibe ihn zusammenhängend in den Text.',
 	'editor.problem.placeholderInAttribute':
 		'Der Platzhalter „{name}“ darf nicht in „{attribute}“ stehen; dort sind nur Werte aus dem CD erlaubt.',
 	'editor.problem.placeholderInComment':

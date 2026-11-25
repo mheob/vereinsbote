@@ -6,7 +6,7 @@ import { BUILTIN_PLACEHOLDERS } from '@/mail/placeholders/registry';
 import { templateInputSchema } from '@/mail/templates/template-schema';
 import type { TemplateBody, TemplateInput } from '@/mail/templates/template-schema';
 import { templatePlaceholders } from '@/server/templates/allowed-placeholders';
-import { checkTemplateForSave } from '@/server/templates/save-checks';
+import { checkTemplateForSave } from '@/server/templates/testing';
 
 import { emptyTemplate, STARTER_IDS, starterTemplate } from './starters';
 import type { StarterId } from './starters';

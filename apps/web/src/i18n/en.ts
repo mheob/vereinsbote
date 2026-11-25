@@ -354,6 +354,8 @@ export const en: Record<keyof typeof de, string> = {
 	'editor.problem.nameEmpty': 'Please enter a name.',
 	'editor.problem.nameTooLong': 'The name may be at most 100 characters long.',
 	'editor.problem.placeholderForbidden': 'The placeholder “{name}” is not allowed in this area.',
+	'editor.problem.placeholderHidden':
+		'The HTML hides a placeholder (for example through escapes or text split apart). Please write it in one piece in the text.',
 	'editor.problem.placeholderInAttribute':
 		'The placeholder “{name}” must not stand in “{attribute}”; only values from the brand are allowed there.',
 	'editor.problem.placeholderInComment':

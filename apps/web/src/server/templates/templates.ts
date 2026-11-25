@@ -69,7 +69,7 @@ interface WriteContext {
 	readonly actor: Principal;
 	readonly areaId: string;
 	readonly allowed: AllowedPlaceholders;
-	/** The origin of the app (`APP_URL`); an empty text when the caller has none. */
+	/** The origin of the app (`APP_URL`). */
 	readonly appOrigin: string;
 }
 
@@ -408,7 +408,7 @@ async function getTemplate(db: Db, actor: Principal, id: string): Promise<Templa
  * @param actor Who creates it; needs `edit` in the area.
  * @param areaId The area.
  * @param input The template.
- * @param appOrigin The origin of the app (`APP_URL`), to recognize its images; empty when unknown.
+ * @param appOrigin The origin of the app (`APP_URL`), to recognize its images.
  * @returns The id of the new template.
  * @throws {ForbiddenError} Without `edit` in the area.
  * @throws {z.ZodError} When the input does not pass `templateInputSchema` (callers validate first).
@@ -423,7 +423,7 @@ async function createTemplate(
 	actor: Principal,
 	areaId: string,
 	input: TemplateInput,
-	appOrigin = '',
+	appOrigin: string,
 ): Promise<{ id: string }> {
 	assertArea(actor, areaId, 'edit');
 	const parsed = templateInputSchema.parse(input);
@@ -457,6 +457,7 @@ async function createTemplate(
  * @param areaId The area.
  * @param starter The starter.
  * @param names The name and the subject.
+ * @param appOrigin The origin of the app (`APP_URL`).
  * @returns The id of the new template.
  * @throws {ForbiddenError} Without `edit` in the area.
  * @throws {UnknownAreaError} When the area does not exist (any more).
@@ -470,16 +471,23 @@ async function createFromStarter(
 	areaId: string,
 	starter: StarterId,
 	names: Readonly<{ name: string; subject: string }>,
+	appOrigin: string,
 ): Promise<{ id: string }> {
 	const { body, preheader, salutationForm, salutationTexts } = starterTemplate(starter);
-	return createTemplate(db, actor, areaId, {
-		body,
-		name: names.name,
-		preheader,
-		salutationForm,
-		salutationTexts,
-		subject: names.subject,
-	});
+	return createTemplate(
+		db,
+		actor,
+		areaId,
+		{
+			body,
+			name: names.name,
+			preheader,
+			salutationForm,
+			salutationTexts,
+			subject: names.subject,
+		},
+		appOrigin,
+	);
 }
 
 /**
@@ -491,7 +499,7 @@ async function createFromStarter(
  * @param id The template.
  * @param input The template as edited.
  * @param version The version the editor loaded.
- * @param appOrigin The origin of the app (`APP_URL`), to recognize its images; empty when unknown.
+ * @param appOrigin The origin of the app (`APP_URL`), to recognize its images.
  * @returns The new version.
  * @throws {TemplateNotFoundError} When no template has the id.
  * @throws {ForbiddenError} Without `edit` in the area.
@@ -508,7 +516,7 @@ async function saveTemplate(
 	id: string,
 	input: TemplateInput,
 	version: number,
-	appOrigin = '',
+	appOrigin: string,
 ): Promise<{ version: number }> {
 	const areaId = await areaOfTemplate(db, id);
 	assertArea(actor, areaId, 'edit');
@@ -738,7 +746,7 @@ async function insertCopy(
  * @param id The template.
  * @param targetAreaId The area of the copy.
  * @param name The name of the copy.
- * @param appOrigin The origin of the app (`APP_URL`), to recognize its images; empty when unknown.
+ * @param appOrigin The origin of the app (`APP_URL`), to recognize its images.
  * @returns The id of the copy.
  * @throws {TemplateNotFoundError} When no template has the id.
  * @throws {ForbiddenError} Without `read` in the source or `edit` in the target area.
@@ -755,7 +763,7 @@ async function duplicateTemplate(
 	id: string,
 	targetAreaId: string,
 	name: string,
-	appOrigin = '',
+	appOrigin: string,
 ): Promise<{ id: string }> {
 	const source = await loadTemplate(db, id);
 	assertArea(actor, source.areaId, 'read');
@@ -835,6 +843,7 @@ export {
 	getTemplate,
 	listLayoutChoices,
 	listTemplates,
+	mediaIdsOf,
 	saveTemplate,
 };
 export type { TemplateBody, TemplateInput, TemplateLayout } from '@/mail/templates/template-schema';

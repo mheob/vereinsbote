@@ -16,13 +16,12 @@ import { templatePlaceholders } from './allowed-placeholders';
 import type { AllowedPlaceholders } from './allowed-placeholders';
 import {
 	blockWhere,
-	checkTemplateForSave,
-	prepareTemplateForSave,
 	MAX_TEMPLATE_NAME_LENGTH,
 	MAX_TEMPLATE_PREHEADER_LENGTH,
 	MAX_TEMPLATE_SUBJECT_LENGTH,
 } from './save-checks';
 import type { SaveProblem } from './save-checks';
+import { checkTemplateForSave, prepareTemplateForSave } from './testing';
 
 const OWN_IMAGE = 'a'.repeat(22);
 const FOREIGN_IMAGE = 'b'.repeat(22);
@@ -275,6 +274,11 @@ const CASES: readonly Case[] = [
 			kind: 'html',
 		}),
 		name: 'a fallback in a style attribute',
+	},
+	{
+		expected: [{ kind: 'placeholderHidden', where: 'html' }],
+		input: withBody({ html: '<p>{<script>x</script>{contact.firstName}}</p>', kind: 'html' }),
+		name: 'a placeholder hidden by a removed node',
 	},
 	{
 		expected: [{ kind: 'tooDeep' }],

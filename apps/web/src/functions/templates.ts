@@ -130,7 +130,12 @@ const loadTemplateEditor = createServerFn({ method: 'GET' })
 		// oxlint-disable-next-line typescript/only-throw-error -- the router shows its not-found page
 		if (!z.uuid().safeParse(data.id).success) throw notFound();
 		try {
-			const editor = await loadTemplateEditorData(context.db, principal, data.id);
+			const editor = await loadTemplateEditorData(
+				context.db,
+				principal,
+				data.id,
+				context.env.appUrl.origin,
+			);
 			return { ...editor, appOrigin: context.env.appUrl.origin };
 		} catch (error) {
 			if (error instanceof TemplateNotFoundError || error instanceof ForbiddenError) {
@@ -196,7 +201,14 @@ const submitCreateTemplate = createServerFn({ method: 'POST' })
 							emptyTemplate(names),
 							context.env.appUrl.origin,
 						)
-					: await templates.createFromStarter(context.db, principal, areaId, start, names);
+					: await templates.createFromStarter(
+							context.db,
+							principal,
+							areaId,
+							start,
+							names,
+							context.env.appUrl.origin,
+						);
 			return { id: created.id, ok: true };
 		} catch (error) {
 			const failure = createFailure(error);

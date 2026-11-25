@@ -13,6 +13,7 @@ import type { CssNode, Declaration, List, Rule } from 'css-tree';
 import { generate, parse, walk } from 'css-tree/dist/csstree.esm';
 
 import outlook from './caniemail-outlook.json';
+import type { AppUrl } from './media-refs';
 
 /** What the cleaning reports; the import turns it into findings. */
 interface CssReport {
@@ -24,9 +25,10 @@ interface CssReport {
 	readonly externalHost: (host: string) => void;
 	/**
 	 * Takes an image of the app a `url()` names (it is then checked and recorded as used).
-	 * Returns the relative path to write, or null when the URL is no image of the app.
+	 * Says what the URL is to the app: an image (with the path to write), another address on
+	 * the app's origin (dropped), or elsewhere.
 	 */
-	readonly mediaUrl: (url: string) => string | null;
+	readonly mediaUrl: (url: string) => AppUrl;
 }
 
 /** At-rules a mail keeps; everything else (`@import`, `@font-face`, `@keyframes`, …) goes. */
@@ -34,6 +36,7 @@ const KEPT_AT_RULES: ReadonlySet<string> = new Set(['media', 'supports']);
 /** Properties that run code in an old client; matched as a part of the name. */
 const FORBIDDEN_PROPERTY_PARTS = ['behavior', 'binding'];
 /** Functions that load or run something other than a checked `url()`. */
+/** `url` is here too: a real `url()` is a `Url` node, so a function of that name was written with an escape. */
 const FORBIDDEN_FUNCTIONS: ReadonlySet<string> = new Set([
 	'element',
 	'expression',
@@ -41,6 +44,7 @@ const FORBIDDEN_FUNCTIONS: ReadonlySet<string> = new Set([
 	'image-set',
 	'paint',
 	'src',
+	'url',
 	'var',
 ]);
 /** Text that must not be in the result, after escapes and white space are gone. */
@@ -167,9 +171,13 @@ function hasString(node: CssNode): boolean {
  * @param report The report.
  */
 function inspectUrl(node: CssNode & { type: 'Url' }, verdict: Verdict, report: CssReport): void {
-	const path = report.mediaUrl(node.value);
-	if (path !== null) {
-		node.value = path;
+	const app = report.mediaUrl(node.value);
+	if (app.kind === 'media') {
+		node.value = app.path;
+		return;
+	}
+	if (app.kind === 'ownOrigin') {
+		verdict.safe = false;
 		return;
 	}
 	const host = httpsHost(normalize(node.value));
@@ -200,7 +208,8 @@ function inspectValue(value: CssNode, report: CssReport): Verdict {
 			const unprefixed = name.replace(VENDOR_PREFIX, '');
 			if (FORBIDDEN_FUNCTIONS.has(unprefixed) || hasString(node)) verdict.safe = false;
 			verdict.functions.push(name);
-		} else if (node.type === 'Raw' && hasForbiddenText(node.value)) {
+		} else if (node.type === 'Raw') {
+			// A value css-tree could not read (`\75 rl(...)` is one) is not checked, so it goes.
 			verdict.safe = false;
 		}
 	});

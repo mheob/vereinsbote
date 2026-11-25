@@ -18,13 +18,8 @@ import type { Principal } from '@/server/permissions/principal';
 import { createMemoryStorage } from '@/server/storage/memory';
 
 import { TemplateChangedError } from './errors';
-import {
-	createTemplate,
-	deleteTemplate,
-	duplicateTemplate,
-	getTemplate,
-	saveTemplate,
-} from './templates';
+import { deleteTemplate, getTemplate } from './templates';
+import { createTemplate, duplicateTemplate, saveTemplate } from './testing';
 
 /*
  * Templates on PostgreSQL. PGlite runs one statement at a time, so it shows neither a wait for
