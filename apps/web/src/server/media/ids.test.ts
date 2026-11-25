@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 
-import { mediaFileName, mediaPath, newMediaId, parseMediaFileName } from './ids';
+import { mediaFileName, mediaPath, mediaStorageKey, newMediaId, parseMediaFileName } from './ids';
 
 describe('media ids', () => {
 	it('makes 22 characters of base64url that never repeat', () => {
@@ -13,11 +13,12 @@ describe('media ids', () => {
 		expect(ids.size).toBe(1000);
 	});
 
-	it('names files and paths by type', () => {
+	it('names files, paths and storage keys', () => {
 		const id = newMediaId();
 		expect(mediaFileName(id, 'jpeg')).toBe(`${id}.jpg`);
 		expect(mediaFileName(id, 'png')).toBe(`${id}.png`);
 		expect(mediaPath(id, 'png')).toBe(`/media/${id}.png`);
+		expect(mediaStorageKey(id)).toBe(`media/${id}`);
 	});
 
 	it('reads back what it wrote', () => {

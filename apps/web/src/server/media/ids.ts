@@ -35,6 +35,16 @@ function mediaFileName(id: string, type: ImageType): string {
 }
 
 /**
+ * The key of an image in the object storage.
+ *
+ * @param id The id of the image.
+ * @returns `media/<id>`.
+ */
+function mediaStorageKey(id: string): string {
+	return `media/${id}`;
+}
+
+/**
  * The path of an image on the app.
  *
  * @param id The id of the image.
@@ -59,5 +69,5 @@ function parseMediaFileName(file: string): { id: string; type: ImageType } | nul
 	return { id, type: extension === 'jpg' ? 'jpeg' : 'png' };
 }
 
-export { mediaFileName, mediaPath, newMediaId, parseMediaFileName };
+export { mediaFileName, mediaPath, mediaStorageKey, newMediaId, parseMediaFileName };
 export type { ImageType };

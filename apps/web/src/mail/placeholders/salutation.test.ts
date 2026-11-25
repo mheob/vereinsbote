@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vite-plus/test';
 
+import { compareCodePoints } from '@/server/compare-code-points';
 import type { Gender } from '@/server/contacts/fields';
 
-import { DEFAULT_SALUTATIONS, salutationFor } from './salutation';
+import { DEFAULT_SALUTATIONS, SALUTATION_CASES, salutationFor } from './salutation';
 import type { SalutationForm } from './salutation';
 
 const FIRM = 'Bäckerei Körner GmbH';
@@ -77,6 +78,40 @@ describe(salutationFor, () => {
 			organization: null,
 		} as const;
 		expect(salutationFor(DEFAULT_SALUTATIONS.du, contact)).toBe('Liebe {{contact.email}}');
+	});
+
+	it('leaves no double space where an optional name is empty', () => {
+		const texts = {
+			...DEFAULT_SALUTATIONS.sie,
+			other: '  Guten Tag  {{contact.firstName | ""}} {{contact.lastName}}  ',
+		};
+		const contact = {
+			firstName: null,
+			gender: 'unspecified',
+			lastName: 'Müller',
+			organization: null,
+		} as const;
+		expect(salutationFor(texts, contact)).toBe('Guten Tag Müller');
+	});
+
+	it('trims and collapses the spaces of the "no name" text too', () => {
+		const texts = {
+			...DEFAULT_SALUTATIONS.du,
+			noName: ' Hallo  {{contact.organization}}  zusammen ',
+		};
+		const contact = {
+			firstName: null,
+			gender: 'female',
+			lastName: null,
+			organization: null,
+		} as const;
+		expect(salutationFor(texts, contact)).toBe('Hallo zusammen');
+	});
+
+	it('names every case once', () => {
+		expect([...SALUTATION_CASES].toSorted(compareCodePoints)).toStrictEqual(
+			Object.keys(DEFAULT_SALUTATIONS.du).toSorted(compareCodePoints),
+		);
 	});
 
 	it('supports edited texts', () => {
