@@ -28,6 +28,9 @@ import type { EditorActions, EditorView } from './editor-view';
 /** The index of the last item, for `at`. */
 const LAST = -1;
 
+/** Called after a save with what was saved and the version the template got. */
+type SavedHandler = (input: TemplateInput, version: number) => void;
+
 /** What the template editor works with. */
 interface EditorModel {
 	readonly state: EditorState;
@@ -245,3 +248,5 @@ export function useEditorModel({
 		view,
 	};
 }
+
+export type { SavedHandler };

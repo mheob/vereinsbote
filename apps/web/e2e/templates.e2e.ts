@@ -218,6 +218,24 @@ test('a reader sees templates but cannot change them', async ({ browser }) => {
 	await expectNoA11yViolations(rita);
 });
 
+// oxlint-disable-next-line max-statements -- one flow, step by step, as the reader sees it
+test('a reader of one area who edits another can copy its templates', async () => {
+	await admin.goto('/admin/users');
+	await grant(admin, { area: 'Finanzen', level: 'Bearbeiten', user: 'Rita' });
+	await rita.goto('/templates');
+	const table = rita.getByRole('grid', { name: 'Vorlagen' });
+	await expect(table.getByRole('link', { exact: true, name: 'Sommerfest' })).toBeVisible();
+	// Copying needs `read` in the source and `edit` in the target; changing needs `edit` in the source.
+	await expect(rita.getByRole('button', { name: 'Sommerfest duplizieren' })).toBeVisible();
+	await expect(rita.getByRole('button', { name: /löschen/u })).toHaveCount(0);
+	await expect(rita.getByRole('link', { name: /bearbeiten/u })).toHaveCount(0);
+	await rita.getByRole('button', { name: 'Sommerfest duplizieren' }).click();
+	const dialog = rita.getByRole('dialog', { name: 'Sommerfest duplizieren' });
+	await expect(dialog.getByRole('button', { name: /Zielbereich/u })).toContainText('Finanzen');
+	await dialog.getByRole('button', { name: 'Abbrechen' }).click();
+	await expect(dialog).toHaveCount(0);
+});
+
 // oxlint-disable-next-line max-statements -- one flow, step by step, as the editor sees it
 test('an editor filters, duplicates and deletes templates', async () => {
 	await eva.goto('/templates');
@@ -469,6 +487,21 @@ test('an editor builds a template with the keyboard only', async () => {
 	await expect(blocks.getByRole('row')).toHaveCount(7);
 	await expect(blocks.getByRole('row').first()).toHaveAccessibleName(/^Text: Hallo/u);
 	await expect(blocks.getByRole('row').nth(1)).toHaveAccessibleName('Bild: Vereinswappen');
+});
+
+// oxlint-disable-next-line max-statements -- one flow, step by step, as the editor sees it
+test('an image that a template shows cannot be deleted', async () => {
+	await eva.goto('/images');
+	await expect(eva.getByRole('button', { name: 'Bild auswählen' })).toBeEnabled();
+	await choose(eva, { label: 'Bereich', option: 'Veranstaltungen' });
+	// The keyboard test left the image in use by „Sommerfest“.
+	await eva.getByRole('button', { name: /^wappen\.(?:jpg|png) löschen$/u }).click();
+	const dialog = eva.getByRole('dialog', { name: /^„wappen\.(?:jpg|png)“ löschen\?$/u });
+	await expect(dialog).toContainText('Sommerfest');
+	await expect(dialog.getByRole('button', { name: 'Endgültig löschen' })).toHaveCount(0);
+	await expectNoA11yViolations(eva);
+	await dialog.getByRole('button', { name: 'Abbrechen' }).click();
+	await expect(dialog).toHaveCount(0);
 });
 
 // oxlint-disable-next-line max-statements -- one flow, step by step, as the editor sees it
@@ -734,11 +767,8 @@ test('an editor imports html with a script and sees it removed', async () => {
 	await expect(
 		eva.getByRole('heading', { exact: true, level: 1, name: 'Rundbrief' }),
 	).toBeVisible();
-	await expect(
-		eva.getByText(
-			'Diese Vorlage besteht aus importiertem HTML und kann hier nur angesehen werden.',
-		),
-	).toBeVisible();
+	await expect(eva.getByText('Diese Vorlage besteht aus importiertem HTML.')).toBeVisible();
+	await expect(eva.getByRole('button', { name: 'Speichern' })).toBeEnabled();
 	await expect(eva.getByRole('heading', { level: 2, name: 'Neues HTML einfügen' })).toBeVisible();
 	await expect(eva.frameLocator(PREVIEW_FRAME).getByText('Rundbrief im Herbst')).toBeVisible();
 	await expect(eva.frameLocator(PREVIEW_FRAME).locator('script')).toHaveCount(0);
@@ -841,9 +871,40 @@ test('a layout without {{content}} is refused', async () => {
 });
 
 // oxlint-disable-next-line max-statements -- one flow, step by step, as the editor sees it
+test('an editor changes the settings of an html template and replaces its html afterwards', async () => {
+	test.slow();
+	await openEditor(eva, 'Rundbrief');
+	await eva.getByRole('button', { name: 'Einstellungen' }).press('Enter');
+	await eva.getByRole('textbox', { name: 'Betreff' }).fill('Neues aus dem Verein im Frühling');
+	await eva.getByRole('radio', { name: 'Sie' }).press('Space');
+	await eva.getByRole('button', { name: 'Speichern' }).press('Enter');
+	await expectAnnounced(eva, 'Die Vorlage ist gespeichert.');
+	await expectNoA11yViolations(eva, [PREVIEW_FRAME, IMPORT_FRAME]);
+
+	// The HTML is replaced at once, without a reload: the import knows the version just saved.
+	await eva
+		.getByLabel('HTML', { exact: true })
+		.fill('<html lang="de"><body><h1>Rundbrief im Frühling</h1></body></html>');
+	await eva.getByRole('button', { name: 'Prüfen' }).click();
+	await expectAnnounced(eva, 'Das HTML wurde geprüft. Du kannst es übernehmen.');
+	await eva.getByRole('button', { name: 'Übernehmen' }).click();
+	await expectAnnounced(eva, 'Das HTML wurde ersetzt.');
+	await expect(eva.getByRole('alertdialog')).toHaveCount(0);
+	await expect(eva.frameLocator(PREVIEW_FRAME).getByText('Rundbrief im Frühling')).toBeVisible();
+
+	// Both settings are still there after the replacement and after opening it anew.
+	await openEditor(eva, 'Rundbrief');
+	await eva.getByRole('button', { name: 'Einstellungen' }).press('Enter');
+	await expect(eva.getByRole('textbox', { name: 'Betreff' })).toHaveText(
+		'Neues aus dem Verein im Frühling',
+	);
+	await expect(eva.getByRole('radio', { name: 'Sie' })).toBeChecked();
+});
+
+// oxlint-disable-next-line max-statements -- one flow, step by step, as the editor sees it
 test('an editor replaces the html of a template and imports an own layout', async () => {
 	test.slow();
-	// An HTML template has no save button: it is opened from the list and waits for its import.
+	// An HTML template is opened from the list; its import waits below the settings.
 	await eva.goto('/templates');
 	await eva
 		.getByRole('grid', { name: 'Vorlagen' })

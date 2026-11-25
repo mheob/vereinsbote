@@ -10,7 +10,8 @@ import { SubmitButton } from '@/components/submit-button';
 import { DeleteTemplateDialog } from '@/components/templates/delete-template-dialog';
 import type { RemovedTemplate } from '@/components/templates/delete-template-dialog';
 import type { SubmitHandler } from '@/components/use-form-submit';
-import { useT } from '@/i18n/use-t';
+import { useLocale, useT } from '@/i18n/use-t';
+import { formatClubDate } from '@/server/contacts/calendar';
 import { MAX_TEMPLATE_NAME_LENGTH } from '@/server/templates/limits';
 
 /** The template as the head shows it. */
@@ -23,6 +24,8 @@ interface HeadTemplate {
 	readonly version: number;
 	readonly areaName: string;
 	readonly dirty: boolean;
+	/** Who changed it last and when; null after a save in this editor (the name would be stale). */
+	readonly updated: Readonly<{ by: string; at: Date }> | null;
 }
 
 /**
@@ -71,7 +74,8 @@ export function EditorHead({
 	onRemoved: (result: RemovedTemplate) => void;
 }>): ReactNode {
 	const t = useT();
-	const { areaName, dirty, id, name, savedName, version } = template;
+	const locale = useLocale();
+	const { areaName, dirty, id, name, savedName, updated, version } = template;
 	const deletable = useMemo(() => ({ id, name: savedName, version }), [id, savedName, version]);
 	return (
 		<div className="flex flex-col gap-4">
@@ -84,6 +88,12 @@ export function EditorHead({
 			<dl className="grid grid-cols-[max-content_1fr] gap-x-6">
 				<dt className="font-semibold">{t('templates.areaLabel')}</dt>
 				<dd>{areaName}</dd>
+				{updated === null ? null : (
+					<>
+						<dt className="font-semibold">{t('templates.updatedBy')}</dt>
+						<dd>{`${updated.by}, ${formatClubDate(updated.at, locale)}`}</dd>
+					</>
+				)}
 			</dl>
 			{readOnlyText === null ? null : <p role="note">{readOnlyText}</p>}
 			{readOnlyText === null ? (

@@ -170,6 +170,28 @@ describe(loadTemplateEditorData, () => {
 		expect(data.placeholders.map(({ key }) => key)).not.toContain('contact.birthDate');
 	});
 
+	it('reports a placeholder the area may no longer use in an HTML template too', async () => {
+		const c = await club();
+		const html = {
+			...withBlocks([]),
+			body: { html: '<p>Geburtstag: {{contact.birthDate}}</p>', kind: 'html' },
+			name: 'Rundbrief',
+		} as const;
+		const { id } = await createTemplate(c.db, c.editor, c.membersAreaId, html);
+		await expect(loadTemplateEditorData(c.db, c.editor, id)).resolves.toMatchObject({
+			problems: [],
+		});
+		await setFieldAreas(c.db, c.admin, {
+			areaIds: [c.partnersAreaId],
+			fieldKey: 'birthDate',
+			kind: 'member',
+		});
+		const data = await loadTemplateEditorData(c.db, c.editor, id);
+		expect(data.problems).toStrictEqual([
+			{ key: 'contact.birthDate', kind: 'placeholderForbidden', where: 'html' },
+		]);
+	});
+
 	it('refuses users without read in the area and unknown templates', async () => {
 		const c = await club();
 		const outsider = await userWith(c.db, { [c.partnersAreaId]: 'edit' });

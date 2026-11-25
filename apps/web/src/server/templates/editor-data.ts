@@ -46,7 +46,7 @@ interface TemplateEditorData {
 	readonly layouts: readonly LayoutSource[];
 	/** The library images of the area that the template shows, by id. */
 	readonly media: Readonly<Record<string, EditorMedia>>;
-	/** What the save checks find now; empty for an HTML template (its import checks it). */
+	/** What the save checks find now, for an HTML template too (the import checks its HTML again). */
 	readonly problems: readonly SaveProblem[];
 }
 
@@ -134,10 +134,12 @@ async function loadTemplateEditorData(
 		getBrand(db),
 		areaImages(db, areaId, mediaIds),
 	]);
-	const problems =
-		body.kind === 'blocks'
-			? checkTemplateForSave(inputOf(template), allowed, new Set(Object.keys(images)), appOrigin)
-			: [];
+	const problems = checkTemplateForSave(
+		inputOf(template),
+		allowed,
+		new Set(Object.keys(images)),
+		appOrigin,
+	);
 	return {
 		areaName: name,
 		brand: brand.brand,

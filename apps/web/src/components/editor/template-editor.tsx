@@ -19,6 +19,7 @@ import { EditorHead } from './editor-head';
 import { EditorLayout } from './editor-layout';
 import type { EditorTab } from './editor-layout';
 import { useEditorModel } from './editor-model';
+import type { SavedHandler } from './editor-model';
 import { PreviewPanel } from './preview-panel';
 import { previewSource } from './preview-source';
 import { indexProblems, problemDescriber } from './problems';
@@ -61,7 +62,8 @@ function useFocusWhenReady(selector: string | null, onDone: () => void): void {
  * (below 1024 px on a tab of its own). Saving is explicit; leaving with unsaved changes asks
  * first. A save the server refuses shows the problems at their fields and moves the focus to the
  * first one; a template somebody else saved meanwhile offers to reload. Without `edit` in the
- * area, and for imported HTML, everything is read-only and the preview stays.
+ * area everything is read-only and the preview stays. An imported HTML template has no blocks:
+ * its name, subject, preview text and salutation change here, its HTML is replaced below.
  *
  * @param props The props.
  * @param props.page What `loadTemplateEditor` gave.
@@ -69,6 +71,7 @@ function useFocusWhenReady(selector: string | null, onDone: () => void): void {
  * @param props.announce Announces in the page's live region.
  * @param props.headingRef The heading, which takes the focus after a copy.
  * @param props.onRemoved Called after the template was deleted here.
+ * @param props.onSaved Called after a save with what was saved and the new version.
  * @returns The editor.
  */
 // oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- the props hold a ref and handlers, which are mutable by design
@@ -77,6 +80,7 @@ export function TemplateEditor({
 	announcement,
 	headingRef,
 	onRemoved,
+	onSaved,
 	page,
 }: Readonly<{
 	page: TemplateEditorPage;
@@ -84,10 +88,12 @@ export function TemplateEditor({
 	announce: Announce;
 	headingRef: RefObject<HTMLHeadingElement | null>;
 	onRemoved: (result: RemovedTemplate) => void;
+	onSaved: SavedHandler;
 }>): ReactNode {
 	const t = useT();
 	const submit = useServerFn(submitTemplate);
-	const isReadOnly = !page.canEdit || page.template.body.kind === 'html';
+	const isReadOnly = !page.canEdit;
+	const isHtml = page.template.body.kind === 'html';
 	const [problems, setProblems] = useState<readonly SaveProblem[]>(page.problems);
 	const [extra, setExtra] = useState<ExtraProblem>(null);
 	const [pendingFocus, setPendingFocus] = useState<string | null>(null);
@@ -176,13 +182,14 @@ export function TemplateEditor({
 					setExtra(null);
 					apply({ input: sent.input, type: 'saved', version: result.version });
 					setSavedName(sent.input.name.trim());
+					onSaved(sent.input, result.version);
 					announce(t('editor.saved'), 'status');
 				} else {
 					handleFailure(result);
 				}
 			});
 		},
-		[announce, apply, handleFailure, page.template.id, stateRef, submit, t],
+		[announce, apply, handleFailure, onSaved, page.template.id, stateRef, submit, t],
 	);
 	const reload = useCallback(() => {
 		leaving.current = true;
@@ -216,6 +223,8 @@ export function TemplateEditor({
 		() => previewSource(state.input, page.layouts, model.media),
 		[model.media, page.layouts, state.input],
 	);
+	// Who saved last is known from the load; after a save here it would name the previous editor.
+	const updatedBy = state.version === page.template.version ? page.template.updatedByName : null;
 	const headTemplate = useMemo(
 		() => ({
 			areaName: page.areaName,
@@ -223,9 +232,19 @@ export function TemplateEditor({
 			id: page.template.id,
 			name: state.input.name,
 			savedName,
+			updated: updatedBy === null ? null : { at: page.template.updatedAt, by: updatedBy },
 			version: state.version,
 		}),
-		[page.areaName, page.template.id, savedName, state.dirty, state.input.name, state.version],
+		[
+			page.areaName,
+			page.template.id,
+			page.template.updatedAt,
+			savedName,
+			state.dirty,
+			state.input.name,
+			state.version,
+			updatedBy,
+		],
 	);
 	const layoutImport = useMemo(
 		() =>
@@ -258,6 +277,7 @@ export function TemplateEditor({
 				<BlockPane
 					blocks={blocks}
 					generalProblems={index.general}
+					isHtml={isHtml}
 					onJump={jumpTo}
 					view={view}
 					warnings={warnings}
@@ -269,6 +289,7 @@ export function TemplateEditor({
 			blocks,
 			errors,
 			index.general,
+			isHtml,
 			isReadOnly,
 			jumpTo,
 			layoutImport,
@@ -305,11 +326,7 @@ export function TemplateEditor({
 				onName={changeName}
 				onRemoved={removed}
 				onSave={save}
-				readOnlyText={
-					isReadOnly
-						? t(page.template.body.kind === 'html' ? 'editor.htmlReadOnly' : 'editor.readOnly')
-						: null
-				}
+				readOnlyText={isReadOnly ? t('editor.readOnly') : null}
 				template={headTemplate}
 			/>
 			{page.problems.length > 0 && !isReadOnly ? (

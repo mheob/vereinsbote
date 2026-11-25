@@ -277,8 +277,8 @@ export const de = {
 	'editor.href': 'Adresse',
 	'editor.hrefHelp': 'Beginnt mit https:, mailto: oder tel:.',
 	'editor.hrefInvalid': 'Bitte gib eine Adresse ein, die mit https:, mailto: oder tel: beginnt.',
-	'editor.htmlReadOnly':
-		'Diese Vorlage besteht aus importiertem HTML und kann hier nur angesehen werden.',
+	'editor.htmlNote':
+		'Diese Vorlage besteht aus importiertem HTML. Name, Betreff, Vorschautext und Anrede änderst du hier, das HTML ersetzt du weiter unten.',
 	'editor.imageChosen': 'Gewählt: {name}',
 	'editor.imageHref': 'Link (optional)',
 	'editor.imageNone': 'Noch kein Bild gewählt.',
@@ -346,6 +346,7 @@ export const de = {
 	'editor.previewFrame': 'Vorschau der Mail',
 	'editor.previewPickContact': 'Wähle einen Kontakt, um die Vorschau zu sehen.',
 	'editor.previewReal': 'Echter Kontakt',
+	'editor.previewRetry': 'Erneut versuchen',
 	'editor.previewSample': 'Beispiel',
 	'editor.previewSampleKind': 'Beispielkontakt',
 	'editor.previewSampleKind.diverse': 'Mitglied, divers',
@@ -405,7 +406,6 @@ export const de = {
 		'Die Texte enden ohne Komma; das setzt die Anrede-Zeile. Erlaubt sind Vorname, Nachname und Firma.',
 	'editor.save': 'Speichern',
 	'editor.saved': 'Die Vorlage ist gespeichert.',
-	'editor.selectHint': 'Wähle einen Baustein in der Liste, um ihn zu bearbeiten.',
 	'editor.settings': 'Einstellungen',
 	'editor.size': 'Größe',
 	'editor.size.large': 'Groß',
@@ -537,7 +537,6 @@ export const de = {
 	'images.forbiddenText':
 		'Du hast noch keinen Zugriff auf einen Bereich, dessen Bilder du ansehen kannst.',
 	'images.gone': 'Das Bild gibt es nicht mehr.',
-	'images.inUse': 'Das Bild wird in Vorlagen genutzt und wurde nicht gelöscht.',
 	'images.listLabel': 'Bilder des Bereichs {area}',
 	'images.loaded': '{count} Bilder',
 	'images.loading': 'Die Bilder werden geladen …',

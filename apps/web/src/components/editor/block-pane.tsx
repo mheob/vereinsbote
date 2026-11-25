@@ -11,6 +11,7 @@ import { BlockList } from './block-list';
 import { openTopLevelBlock } from './editor-state';
 import type { EditorView } from './editor-view';
 import { FindingsPanel } from './findings-panel';
+import { HtmlBody } from './html-body';
 
 /**
  * The blocks of the template: the messages without a field, the hints, the list of the top level
@@ -21,12 +22,14 @@ import { FindingsPanel } from './findings-panel';
  * @param props.view The editor's state and actions.
  * @param props.warnings The hints of the blocks.
  * @param props.generalProblems The messages of problems without a field.
+ * @param props.isHtml Whether the template is imported HTML: it has no blocks.
  * @param props.onJump Opens the form of a block.
  * @returns The pane.
  */
 export function BlockPane({
 	blocks,
 	generalProblems,
+	isHtml,
 	onJump,
 	view,
 	warnings,
@@ -35,6 +38,7 @@ export function BlockPane({
 	view: EditorView;
 	warnings: readonly Warning[];
 	generalProblems: readonly string[];
+	isHtml: boolean;
 	onJump: (blockId: string) => void;
 }>): ReactNode {
 	const t = useT();
@@ -42,6 +46,7 @@ export function BlockPane({
 		() => openTopLevelBlock(blocks, view.selectedId),
 		[blocks, view.selectedId],
 	);
+	if (isHtml) return <HtmlBody generalProblems={generalProblems} />;
 	return (
 		<section aria-labelledby="editor-blocks" className="flex flex-col gap-4">
 			<h2 className="text-xl font-bold" id="editor-blocks">
