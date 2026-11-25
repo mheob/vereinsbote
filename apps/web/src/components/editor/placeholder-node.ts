@@ -11,6 +11,8 @@ import type { PlaceholderRef } from '@/mail/placeholders/syntax';
 import { placeholderLabel } from '@/server/templates/editor-placeholders';
 import type { EditorPlaceholder } from '@/server/templates/editor-placeholders';
 
+import { describePlaceholder } from './describe-placeholder';
+
 interface PlaceholderNodeOptions {
 	/** The name of a placeholder key. */
 	readonly label: (key: string) => string;
@@ -86,20 +88,6 @@ const PlaceholderNode = Node.create<PlaceholderNodeOptions>({
 });
 
 /**
- * A placeholder and what happens when its value is missing, in words.
- *
- * @param ref The placeholder.
- * @param name Its name.
- * @param t The translation function.
- * @returns E.g. „Vorname, Pflicht“ or „Vorname, sonst leer“.
- */
-function describePlaceholder(ref: Readonly<PlaceholderRef>, name: string, t: Translate): string {
-	if (ref.fallback === null) return t('editor.placeholderRequired', { name });
-	if (ref.fallback === '') return t('editor.placeholderOptional', { name });
-	return t('editor.placeholderWithFallback', { fallback: ref.fallback, name });
-}
-
-/**
  * The options of the node for the editor of an area: names in the user's language, the fallback
  * in words.
  *
@@ -119,5 +107,5 @@ function placeholderNodeOptions(
 	};
 }
 
-export { describePlaceholder, PlaceholderNode, placeholderNodeOptions, refOf };
+export { PlaceholderNode, placeholderNodeOptions, refOf };
 export type { PlaceholderNodeOptions };

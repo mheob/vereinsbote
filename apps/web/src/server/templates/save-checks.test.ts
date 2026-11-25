@@ -15,11 +15,11 @@ import type { TemplateBody, TemplateInput } from '@/mail/templates/template-sche
 import { templatePlaceholders } from './allowed-placeholders';
 import type { AllowedPlaceholders } from './allowed-placeholders';
 import {
-	blockWhere,
 	MAX_TEMPLATE_NAME_LENGTH,
 	MAX_TEMPLATE_PREHEADER_LENGTH,
 	MAX_TEMPLATE_SUBJECT_LENGTH,
-} from './save-checks';
+} from './limits';
+import { blockWhere } from './save-checks';
 import type { SaveProblem } from './save-checks';
 import { checkTemplateForSave, prepareTemplateForSave } from './testing';
 

@@ -14,10 +14,7 @@ import { submitCreateTemplate } from '@/functions/templates';
 import type { MessageKey } from '@/i18n/translate';
 import { useT } from '@/i18n/use-t';
 import type { Brand } from '@/mail/brand/brand-schema';
-import {
-	MAX_TEMPLATE_NAME_LENGTH,
-	MAX_TEMPLATE_SUBJECT_LENGTH,
-} from '@/server/templates/save-checks';
+import { MAX_TEMPLATE_NAME_LENGTH, MAX_TEMPLATE_SUBJECT_LENGTH } from '@/server/templates/limits';
 
 import { AreaSelect } from './area-select';
 import { HtmlStart } from './html-start';

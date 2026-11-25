@@ -11,7 +11,7 @@ import { DeleteTemplateDialog } from '@/components/templates/delete-template-dia
 import type { RemovedTemplate } from '@/components/templates/delete-template-dialog';
 import type { SubmitHandler } from '@/components/use-form-submit';
 import { useT } from '@/i18n/use-t';
-import { MAX_TEMPLATE_NAME_LENGTH } from '@/server/templates/save-checks';
+import { MAX_TEMPLATE_NAME_LENGTH } from '@/server/templates/limits';
 
 /** The template as the head shows it. */
 interface HeadTemplate {

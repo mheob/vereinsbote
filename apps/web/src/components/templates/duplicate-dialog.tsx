@@ -25,7 +25,7 @@ import type { TemplateArea } from '@/functions/templates';
 import { submitDuplicate } from '@/functions/templates';
 import { useT } from '@/i18n/use-t';
 import { placeholderLabel } from '@/server/templates/editor-placeholders';
-import { MAX_TEMPLATE_NAME_LENGTH } from '@/server/templates/save-checks';
+import { MAX_TEMPLATE_NAME_LENGTH } from '@/server/templates/limits';
 
 import { AreaSelect } from './area-select';
 

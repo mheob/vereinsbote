@@ -19,13 +19,13 @@ import { placeholderLabel } from '@/server/templates/editor-placeholders';
 
 import { COLUMN_BLOCK_TYPES } from './block-factory';
 import { BlockList } from './block-list';
+import { describePlaceholder } from './describe-placeholder';
 import type { ColumnTarget } from './editor-state';
 import type { EditorView } from './editor-view';
 import { HrefField } from './href-field';
 import { ImageFields } from './image-fields';
 import { InlineEditor } from './inline-editor';
 import { PlaceholderDialog } from './placeholder-menu';
-import { describePlaceholder } from './placeholder-node';
 import { TextBlockEditor } from './text-block-editor';
 
 const LEVELS = ['1', '2', '3'] as const;

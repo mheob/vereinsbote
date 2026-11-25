@@ -15,11 +15,11 @@ import type { ImportKind, ImportRefusal } from '@/server/html-import/import-html
 
 import { allowedLayoutPlaceholders } from './allowed-placeholders';
 import type { AllowedPlaceholders } from './allowed-placeholders';
-
-/** The longest template name, counted after trimming. */
-const MAX_TEMPLATE_NAME_LENGTH = 100;
-const MAX_TEMPLATE_SUBJECT_LENGTH = 200;
-const MAX_TEMPLATE_PREHEADER_LENGTH = 200;
+import {
+	MAX_TEMPLATE_NAME_LENGTH,
+	MAX_TEMPLATE_PREHEADER_LENGTH,
+	MAX_TEMPLATE_SUBJECT_LENGTH,
+} from './limits';
 
 /** The only placeholders a salutation text may use (Design 10.3). */
 const SALUTATION_TEXT_KEYS: ReadonlySet<string> = new Set([
@@ -363,12 +363,5 @@ function checkTemplateForSave(
 	return prepareTemplateForSave(input, allowed, areaMediaIds, appOrigin).problems;
 }
 
-export {
-	blockWhere,
-	checkTemplateForSave,
-	MAX_TEMPLATE_NAME_LENGTH,
-	MAX_TEMPLATE_PREHEADER_LENGTH,
-	MAX_TEMPLATE_SUBJECT_LENGTH,
-	prepareTemplateForSave,
-};
+export { blockWhere, checkTemplateForSave, prepareTemplateForSave };
 export type { SaveProblem };

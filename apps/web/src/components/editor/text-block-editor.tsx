@@ -1,136 +1,33 @@
-/* oxlint-disable typescript/prefer-readonly-parameter-types -- Tiptap's editor and JSON content are mutable handles by design */
-import { Extension } from '@tiptap/core';
-import { Bold } from '@tiptap/extension-bold';
-import { Document } from '@tiptap/extension-document';
-import { HardBreak } from '@tiptap/extension-hard-break';
-import { Italic } from '@tiptap/extension-italic';
-import { Link } from '@tiptap/extension-link';
-import { BulletList, ListItem, OrderedList } from '@tiptap/extension-list';
-import { Paragraph } from '@tiptap/extension-paragraph';
-import { Text } from '@tiptap/extension-text';
-import { UndoRedo } from '@tiptap/extensions';
-import type { Editor, Extensions } from '@tiptap/react';
-import { useCallback, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
+import { ClientOnly } from '@tanstack/react-router';
+import { lazy, Suspense, useMemo } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
 
-import { useT } from '@/i18n/use-t';
-import { isAllowedHref } from '@/mail/blocks/text-doc';
-import type { TextDoc } from '@/mail/blocks/text-doc';
-import type { EditorPlaceholder } from '@/server/templates/editor-placeholders';
+import { EditorFieldPlaceholder } from './editor-field-placeholder';
+import type { TextBlockField } from './text-block-field';
 
-import { textDocFromJson, textDocToJson } from './editor-content';
-import { PlaceholderNode, placeholderNodeOptions } from './placeholder-node';
-import { TextToolbar } from './text-toolbar';
-import { TiptapField } from './tiptap-field';
-
-/** A link keeps only its address: the stored document has no `rel`, `target` or `class`. */
-const AddressLink = Link.extend({
-	addAttributes() {
-		return {
-			href: { default: null, parseHTML: (element: HTMLElement) => element.getAttribute('href') },
-		};
-	},
-}).configure({
-	HTMLAttributes: {},
-	autolink: false,
-	enableClickSelection: false,
-	isAllowedUri: (url) => isAllowedHref(url),
-	linkOnPaste: false,
-	openOnClick: false,
+// Tiptap is a browser library: the import runs on the client only, and `import.meta.env.SSR`
+// keeps it out of the server bundle (the CI bundle check looks for it there).
+const LoadedField = lazy(async () => {
+	if (import.meta.env.SSR) throw new Error('Tiptap loads in the browser only');
+	const { TextBlockField: field } = await import('./text-block-field');
+	return { default: field };
 });
 
 /**
- * A list item holds paragraphs only (no nested lists), and Tab and Shift+Tab leave the editor
- * instead of indenting, so the keyboard never gets stuck.
- */
-const FlatListItem = ListItem.extend({
-	addKeyboardShortcuts() {
-		return { Enter: () => this.editor.commands.splitListItem(this.name) };
-	},
-	content: 'paragraph+',
-});
-
-/**
- * The editor of a text block (Tiptap): bold, italic, links, lists, line breaks (Shift+Enter) and
- * placeholders. Undo and redo work inside the block.
+ * The editor of a text block. Tiptap loads in the browser only; the server and the first client
+ * render show an empty field of the same size.
  *
- * @param props The props.
- * @param props.label The visible label.
- * @param props.value The block's document.
- * @param props.onChange Called with the new document.
- * @param props.placeholders The placeholders the toolbar offers.
- * @param props.isReadOnly Whether the block is read-only.
- * @param props.error The message of a refusal, or null.
- * @param props.focusKey The key of the editor's problem jump.
+ * @param props The props of `TextBlockField`.
  * @returns The field.
  */
-export function TextBlockEditor({
-	error,
-	focusKey,
-	isReadOnly,
-	label,
-	onChange,
-	placeholders,
-	value,
-}: Readonly<{
-	label: string;
-	value: TextDoc;
-	onChange: (value: TextDoc) => void;
-	placeholders: readonly EditorPlaceholder[];
-	isReadOnly: boolean;
-	error: string | null;
-	focusKey: string;
-}>): ReactNode {
-	const t = useT();
-	const toolbarRef = useRef<HTMLDivElement>(null);
-	// Created once: Tiptap builds its schema from the extensions when the editor starts.
-	// oxlint-disable-next-line react/hook-use-state -- kept from the first render, never set: Tiptap builds its schema from it
-	const [extensions] = useState<Extensions>(() => [
-		Document,
-		Paragraph,
-		Text,
-		Bold,
-		Italic,
-		AddressLink,
-		BulletList,
-		OrderedList,
-		FlatListItem,
-		HardBreak,
-		PlaceholderNode.configure(placeholderNodeOptions(placeholders, t)),
-		UndoRedo,
-		Extension.create({
-			addKeyboardShortcuts() {
-				return {
-					'Alt-F10': () => {
-						toolbarRef.current?.querySelector<HTMLElement>('button')?.focus();
-						return true;
-					},
-				};
-			},
-			name: 'toolbarShortcut',
-		}),
-	]);
-	const before = useCallback(
-		(editor: Editor) =>
-			isReadOnly ? null : (
-				<TextToolbar editor={editor} placeholders={placeholders} toolbarRef={toolbarRef} />
-			),
-		[isReadOnly, placeholders],
-	);
+export function TextBlockEditor(props: Readonly<ComponentProps<typeof TextBlockField>>): ReactNode {
+	const { label } = props;
+	const fallback = useMemo(() => <EditorFieldPlaceholder label={label} multiline />, [label]);
 	return (
-		<TiptapField
-			before={before}
-			description={isReadOnly ? null : t('editor.toolbarHelp')}
-			error={error}
-			extensions={extensions}
-			focusKey={focusKey}
-			fromJson={textDocFromJson}
-			isReadOnly={isReadOnly}
-			label={label}
-			multiline
-			onChange={onChange}
-			toJson={textDocToJson}
-			value={value}
-		/>
+		<ClientOnly fallback={fallback}>
+			<Suspense fallback={fallback}>
+				<LoadedField {...props} />
+			</Suspense>
+		</ClientOnly>
 	);
 }
