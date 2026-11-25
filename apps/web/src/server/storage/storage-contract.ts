@@ -21,9 +21,13 @@ async function readAll(body: ReadableStream<Uint8Array>): Promise<Uint8Array> {
  * other tests use behaves like R2, Vercel Blob and S3.
  *
  * @param name The implementation's name, the title of the suite.
- * @param open Opens an empty storage, called once per case.
+ * @param open Opens an empty storage, called once per case; a storage that needs no setup is
+ *   returned as it is, one that does through a promise.
  */
-function describeStorageContract(name: string, open: () => Promise<ObjectStorage>): void {
+function describeStorageContract(
+	name: string,
+	open: () => ObjectStorage | Promise<ObjectStorage>,
+): void {
 	describe(`${name} as object storage`, () => {
 		it('stores and reads bytes with their type', async () => {
 			const storage = await open();
@@ -74,8 +78,4 @@ async function expectStorageFailures(storage: ObjectStorage): Promise<void> {
 	]);
 }
 
-// A storage that is ready at once, for the `open` of a suite whose storage needs no setup.
-// oxlint-disable-next-line typescript/require-await -- adapts a ready storage to the async `open`
-const readyStorage = async (storage: ObjectStorage): Promise<ObjectStorage> => storage;
-
-export { describeStorageContract, expectStorageFailures, readyStorage };
+export { describeStorageContract, expectStorageFailures };

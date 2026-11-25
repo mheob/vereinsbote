@@ -17,7 +17,8 @@ import { FONT_STACKS } from '@/mail/brand/brand-schema';
 import type { FontStackId } from '@/mail/brand/brand-schema';
 
 function isFontStack(key: Key | null): key is FontStackId {
-	return FONT_STACKS.some((stack) => stack === key);
+	const stacks: readonly unknown[] = FONT_STACKS;
+	return stacks.includes(key);
 }
 
 /**

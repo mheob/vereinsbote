@@ -37,7 +37,7 @@ function marked(text: string, marks: readonly Mark[], theme: MailTheme): ReactNo
 }
 
 interface InlineProps {
-	readonly nodes?: readonly InlineNode[] | undefined;
+	readonly nodes?: readonly InlineNode[];
 	readonly theme: MailTheme;
 	readonly resolve: ResolvePlaceholder;
 }

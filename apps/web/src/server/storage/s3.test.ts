@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vite-plus/test';
 
 import { createS3StorageFor, s3ClientEndpoint } from './s3';
 import type { S3ClientLike } from './s3';
-import { describeStorageContract, readyStorage, expectStorageFailures } from './storage-contract';
+import { describeStorageContract, expectStorageFailures } from './storage-contract';
 
 const failing = (): never => {
 	throw new Error('media/secret AKIASECRET');
@@ -33,9 +33,7 @@ const createFakeClient = (withLength = true): S3ClientLike => {
 	};
 };
 
-describeStorageContract('The S3 storage', async () =>
-	readyStorage(createS3StorageFor(createFakeClient())),
-);
+describeStorageContract('The S3 storage', () => createS3StorageFor(createFakeClient()));
 
 describe(createS3StorageFor, () => {
 	it('measures a body that comes without a length', async () => {

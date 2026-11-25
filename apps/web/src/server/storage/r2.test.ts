@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vite-plus/test';
 
 import { createR2Storage } from './r2';
 import type { R2BucketLike } from './r2';
-import { describeStorageContract, readyStorage, expectStorageFailures } from './storage-contract';
+import { describeStorageContract, expectStorageFailures } from './storage-contract';
 
 // A bucket as R2's binding behaves: reads give the body, the size and the stored type.
 const createFakeBucket = (): R2BucketLike => {
@@ -36,9 +36,7 @@ const failing = (): never => {
 	throw new Error('secret-key-in-message');
 };
 
-describeStorageContract('The R2 storage', async () =>
-	readyStorage(createR2Storage(createFakeBucket())),
-);
+describeStorageContract('The R2 storage', () => createR2Storage(createFakeBucket()));
 
 describe(createR2Storage, () => {
 	it('falls back to a binary type for an object stored without one', async () => {

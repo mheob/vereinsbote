@@ -9,13 +9,14 @@ import {
 	contrastWarnings,
 	contrastWarningText,
 	draftFromBrand,
+	newLinkDraft,
 	recommendsLegalLinks,
 	updateColor,
 	updateDraft,
 	updateFonts,
 	updateFooter,
 } from './brand-draft';
-import type { BrandDraft } from './brand-draft';
+import type { BrandDraft, LinkDraft } from './brand-draft';
 
 const LOGO: BrandLogo = {
 	alt: 'Wappen',
@@ -53,8 +54,31 @@ function withFooter(footer: Partial<BrandDraft['footer']>): BrandDraft {
  * @returns The draft.
  */
 function withIconLink(url: string): BrandDraft {
-	return withFooter({ links: [{ display: 'icon', label: '', url }] });
+	return withFooter({ links: [{ display: 'icon', id: 0, label: '', url }] });
 }
+
+describe(newLinkDraft, () => {
+	const text = { display: 'text', label: '', url: '' } as const;
+
+	it('gives the links of a brand an id each, and the brand leaves them out', () => {
+		const links = [
+			{ display: 'text', label: 'Blog', url: 'https://example.org/blog' },
+			{ display: 'icon', label: '', url: 'https://www.instagram.com/verein' },
+		] as const;
+		const base = draftFromBrand({ ...DEFAULT_BRAND, footer: { ...DEFAULT_BRAND.footer, links } });
+		expect(base.footer.links.map((link) => link.id)).toStrictEqual([0, 1]);
+		expect(brandFromDraft(base)).toMatchObject({ brand: { footer: { links } }, ok: true });
+	});
+
+	it('starts with id 0 and gives a new link an id no other link has, also after a removal', () => {
+		expect(newLinkDraft([])).toStrictEqual({ ...text, id: 0 });
+		const three: LinkDraft[] = [0, 1, 2].map((id) => ({ display: 'text', id, label: '', url: '' }));
+		const withoutMiddle = three.filter((link) => link.id !== 1);
+		expect(newLinkDraft(withoutMiddle).id).toBe(3);
+		const withoutLast = three.filter((link) => link.id !== 2);
+		expect(newLinkDraft(withoutLast).id).toBe(2);
+	});
+});
 
 describe(brandFromDraft, () => {
 	it('accepts a valid draft', () => {
@@ -105,11 +129,13 @@ describe(brandFromDraft, () => {
 	it('allows five links and no sixth', () => {
 		const link = { display: 'text', label: 'Seite', url: 'https://example.org/' } as const;
 		const five = brandFromDraft(
-			withFooter({ links: Array.from({ length: MAX_FOOTER_LINKS }, () => link) }),
+			withFooter({ links: Array.from({ length: MAX_FOOTER_LINKS }, (_, id) => ({ ...link, id })) }),
 		);
 		expect(five.ok).toBe(true);
 		const six = brandFromDraft(
-			withFooter({ links: Array.from({ length: MAX_FOOTER_LINKS + 1 }, () => link) }),
+			withFooter({
+				links: Array.from({ length: MAX_FOOTER_LINKS + 1 }, (_, id) => ({ ...link, id })),
+			}),
 		);
 		expect(six).toStrictEqual({ errors: { links: 'brand.tooManyLinks' }, ok: false });
 	});
@@ -118,8 +144,8 @@ describe(brandFromDraft, () => {
 		const result = brandFromDraft(
 			withFooter({
 				links: [
-					{ display: 'text', label: 'Gut', url: 'https://example.org/' },
-					{ display: 'text', label: '', url: 'ftp://example.org/' },
+					{ display: 'text', id: 0, label: 'Gut', url: 'https://example.org/' },
+					{ display: 'text', id: 1, label: '', url: 'ftp://example.org/' },
 				],
 			}),
 		);

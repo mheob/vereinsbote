@@ -15,6 +15,8 @@ import { detectPlatform } from '@/mail/brand/social';
 type ColorKey = keyof Brand['colors'];
 
 interface LinkDraft {
+	/** Tells the links apart while the form shows them; never part of the brand. */
+	readonly id: number;
 	readonly url: string;
 	readonly label: string;
 	readonly display: 'text' | 'icon';
@@ -91,7 +93,7 @@ function draftFromBrand(brand: Brand): BrandDraft {
 			address: footer.address,
 			iconVariant: footer.iconVariant,
 			imprintUrl: footer.imprintUrl ?? '',
-			links: footer.links.map(({ display, label, url }) => ({ display, label, url })),
+			links: footer.links.map(({ display, label, url }, id) => ({ display, id, label, url })),
 			privacyUrl: footer.privacyUrl ?? '',
 			register: footer.register,
 			text: footer.text,
@@ -102,6 +104,18 @@ function draftFromBrand(brand: Brand): BrandDraft {
 		logoAlign: brand.logoAlign,
 		name: brand.name,
 	};
+}
+
+/**
+ * A new, empty text link, with an id no other link of the list has.
+ *
+ * @param links The links of the draft.
+ * @returns The link.
+ */
+function newLinkDraft(links: readonly LinkDraft[]): LinkDraft {
+	let id = 0;
+	for (const link of links) id = Math.max(id, link.id + 1);
+	return { display: 'text', id, label: '', url: '' };
 }
 
 function orNull(value: string): string | null {
@@ -198,7 +212,8 @@ const COLOR_KEYS: readonly ColorKey[] = ['primary', 'secondary', 'text', 'backgr
 const LINK_PATH_LENGTH = 4;
 
 function isColorKey(value: unknown): value is ColorKey {
-	return COLOR_KEYS.some((key) => key === value);
+	const keys: readonly unknown[] = COLOR_KEYS;
+	return keys.includes(value);
 }
 
 function linkFieldOf(path: readonly PropertyKey[]): BrandDraftField {
@@ -350,7 +365,9 @@ function contrastWarnings(
 ): Partial<Record<ColorKey, ContrastFinding[]>> {
 	const warnings: Partial<Record<ColorKey, ContrastFinding[]>> = {};
 	for (const finding of contrastFindings(colors)) {
-		for (const key of PAIR_FIELDS[finding.pair]) (warnings[key] ??= []).push(finding);
+		for (const key of PAIR_FIELDS[finding.pair]) {
+			warnings[key] = [...(warnings[key] ?? []), finding];
+		}
 	}
 	return warnings;
 }
@@ -427,6 +444,7 @@ export {
 	contrastWarnings,
 	contrastWarningText,
 	draftFromBrand,
+	newLinkDraft,
 	recommendsLegalLinks,
 	updateColor,
 	updateDraft,

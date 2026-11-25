@@ -254,7 +254,7 @@ interface StandardLayoutProps {
 	/** The preview text with markers; `''` for none. */
 	readonly preheader: string;
 	/** The rows of the blocks. */
-	readonly children: ReactNode;
+	readonly children?: ReactNode;
 }
 
 /**

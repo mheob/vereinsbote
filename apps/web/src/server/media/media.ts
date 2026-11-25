@@ -228,7 +228,7 @@ async function openMedia(
 	const parsed = parseMediaFileName(file);
 	if (parsed === null) return null;
 	const [row] = await db.select().from(media).where(eq(media.id, parsed.id));
-	if (row === undefined || row.type !== parsed.type) return null;
+	if (row?.type !== parsed.type) return null;
 	const object = await storage.get(storageKey(row.id));
 	return object === null ? null : { object, record: toRecord(row) };
 }

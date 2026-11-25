@@ -440,9 +440,9 @@ async function renderBlocks(
 	if (layout === null) {
 		const { locale, origin, prepared, preheader, subject } = input;
 		const layoutContext = { brand: prepared.brand, locale, origin, theme: context.theme };
-		const children = createElement(BlockRows, { blocks, context });
+		const rows = createElement(BlockRows, { blocks, context });
 		return renderDocument(
-			createElement(StandardLayout, { children, context: layoutContext, preheader, subject }),
+			createElement(StandardLayout, { context: layoutContext, preheader, subject }, rows),
 		);
 	}
 	const content = await renderFragment(createElement(BlockContent, { blocks, context }));

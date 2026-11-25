@@ -24,7 +24,8 @@ const VARIANT_LABELS = {
 } as const;
 
 function isIconVariant(value: string): value is IconVariant {
-	return ICON_VARIANTS.some((variant) => variant === value);
+	const variants: readonly string[] = ICON_VARIANTS;
+	return variants.includes(value);
 }
 
 /**

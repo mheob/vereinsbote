@@ -22,6 +22,7 @@ import { fillMail } from '@/mail/render/fill';
 import type { FilledMail } from '@/mail/render/fill';
 import { SAMPLE_BLOCKS, SAMPLE_CONTACTS } from '@/mail/sample';
 import type { SampleContactKind } from '@/mail/sample';
+import { withoutTrailingSlashes } from '@/mail/trailing-slashes';
 import type { FieldKey } from '@/server/contacts/fields';
 import { mediaPath } from '@/server/media/ids';
 
@@ -279,7 +280,7 @@ async function buildSampleMail(
  * @returns The mails with the files their images need.
  */
 async function buildSampleMails(appOrigin: string): Promise<SampleMail[]> {
-	const origin = appOrigin.replace(/\/+$/u, '');
+	const origin = withoutTrailingSlashes(appOrigin);
 	const images = await imageFiles(origin);
 	return Promise.all(SPECS.map(async (spec) => buildSampleMail(spec, origin, images)));
 }

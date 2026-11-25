@@ -1,4 +1,4 @@
 import { createMemoryStorage } from './memory';
-import { describeStorageContract, readyStorage } from './storage-contract';
+import { describeStorageContract } from './storage-contract';
 
-describeStorageContract('The in-memory storage', async () => readyStorage(createMemoryStorage()));
+describeStorageContract('The in-memory storage', () => createMemoryStorage());

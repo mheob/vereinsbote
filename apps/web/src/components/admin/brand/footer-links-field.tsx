@@ -7,6 +7,7 @@ import { useT } from '@/i18n/use-t';
 import { MAX_FOOTER_LINKS } from '@/mail/brand/brand-schema';
 import { detectPlatform } from '@/mail/brand/social';
 
+import { newLinkDraft } from './brand-draft';
 import type { LinkDraft } from './brand-draft';
 import { BrandTextField } from './brand-text-field';
 import { Choice } from './choice';
@@ -145,7 +146,7 @@ export function FooterLinksField({
 		[announce, links, onChange, t],
 	);
 	const addLink = useCallback(() => {
-		onChange([...links, { display: 'text', label: '', url: '' }]);
+		onChange([...links, newLinkDraft(links)]);
 		announce(t('brand.linkAdded', { n: links.length + 1 }));
 	}, [announce, links, onChange, t]);
 	return (
@@ -155,9 +156,7 @@ export function FooterLinksField({
 					{links.map((link, index) => (
 						<LinkRow
 							index={index}
-							// The links have no identity of their own; the position is their key.
-							// oxlint-disable-next-line react/no-array-index-key -- see above
-							key={index}
+							key={link.id}
 							link={link}
 							onChange={changeLink}
 							onRemove={removeLink}

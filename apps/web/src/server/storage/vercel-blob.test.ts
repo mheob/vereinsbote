@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
 
-import { describeStorageContract, readyStorage, expectStorageFailures } from './storage-contract';
+import { describeStorageContract, expectStorageFailures } from './storage-contract';
 import { createVercelBlobStorage } from './vercel-blob';
 import type { VercelBlobClient } from './vercel-blob';
 
@@ -44,8 +44,8 @@ const createFakeClient = (record: (call: unknown) => void): VercelBlobClient => 
 	};
 };
 
-describeStorageContract('The Vercel Blob storage', async () =>
-	readyStorage(createVercelBlobStorage(createFakeClient(ignore), TOKEN)),
+describeStorageContract('The Vercel Blob storage', () =>
+	createVercelBlobStorage(createFakeClient(ignore), TOKEN),
 );
 
 describe(createVercelBlobStorage, () => {

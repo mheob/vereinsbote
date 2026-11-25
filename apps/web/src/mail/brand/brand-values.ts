@@ -2,12 +2,11 @@
  * The `brand.*` placeholder values of a brand (Design 7). Optional values that are empty are left
  * out, so the compiler treats a template that needs one as invalid.
  */
+import { withoutTrailingSlashes } from '@/mail/trailing-slashes';
 import { mediaPath } from '@/server/media/ids';
 
 import type { Brand, BrandLogo } from './brand-schema';
 import { fontFamilyCss } from './fonts';
-
-const TRAILING_SLASHES = /\/+$/u;
 
 function logoUrl(origin: string, logo: BrandLogo | null): string {
 	return logo === null ? '' : `${origin}${mediaPath(logo.mediaId, logo.type)}`;
@@ -21,7 +20,7 @@ function logoUrl(origin: string, logo: BrandLogo | null): string {
  * @returns A map from placeholder key to value, without the empty optional ones.
  */
 function brandPlaceholderValues(brand: Brand, appOrigin: string): Map<string, string> {
-	const origin = appOrigin.replace(TRAILING_SLASHES, '');
+	const origin = withoutTrailingSlashes(appOrigin);
 	const { colors, fonts, footer } = brand;
 	const entries: [string, string | null][] = [
 		['brand.name', brand.name],

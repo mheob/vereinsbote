@@ -206,12 +206,13 @@ function ColumnsRow({ context, left, right }: ColumnsProps): ReactNode {
 		<Row padding="0">
 			<LayoutTable width="100%">
 				<tr>
-					{[left, right].map((content, index) => (
-						<Column
-							key={String(index)}
-							padding={`0 ${String(COLUMN_GUTTER)}px`}
-							width={COLUMN_WIDTH}
-						>
+					{(
+						[
+							['left', left],
+							['right', right],
+						] as const
+					).map(([side, content]) => (
+						<Column key={side} padding={`0 ${String(COLUMN_GUTTER)}px`} width={COLUMN_WIDTH}>
 							{content.map((inner) => (
 								<BlockRow key={inner.id} area={COLUMN_AREA} block={inner} context={context} />
 							))}

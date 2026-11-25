@@ -6,9 +6,9 @@ import type { CSSProperties } from 'react';
 
 declare module 'react' {
 	interface CSSProperties {
-		msoHide?: 'all' | undefined;
-		msoLineHeightRule?: 'exactly' | undefined;
-		msoPaddingAlt?: string | undefined;
+		msoHide?: 'all';
+		msoLineHeightRule?: 'exactly';
+		msoPaddingAlt?: string;
 	}
 }
 
