@@ -43,6 +43,8 @@ const HTTP_MULTIPLE_CHOICES = 300;
 const HTTP_UNAUTHORIZED = 401;
 const HTTP_FORBIDDEN = 403;
 const HTTP_TOO_MANY = 429;
+// Request timeout and too early: sending again is safe with the idempotency key.
+const RETRYABLE_STATUS: ReadonlySet<number> = new Set([408, 425]);
 const HTTP_SERVER_ERROR = 500;
 const BASE64_CHUNK = 0x60_00;
 const TRAILING_SLASHES = /\/+$/u;
@@ -99,6 +101,7 @@ function classifyByStatus(status: number): Classified {
 		return { code: 'resend.unauthorized', failure: 'unauthorized' };
 	}
 	if (status >= HTTP_SERVER_ERROR) return { code: 'resend.server', failure: 'transient' };
+	if (RETRYABLE_STATUS.has(status)) return { code: 'resend.server', failure: 'transient' };
 	if (status === HTTP_TOO_MANY) return { code: 'resend.throttled', failure: 'transient' };
 	return { code: 'resend.rejected', failure: 'rejected' };
 }
@@ -170,6 +173,7 @@ function buildPayload(mail: Readonly<OutgoingMail>): Record<string, unknown> {
 	return {
 		attachments: mail.attachments.map((file) => ({
 			content: toBase64(file.bytes),
+			content_type: file.contentType,
 			filename: cleanHeaderText(file.filename),
 		})),
 		...(mail.kind === 'regular' && mail.bcc !== null ? { bcc: [assertMailAddress(mail.bcc)] } : {}),

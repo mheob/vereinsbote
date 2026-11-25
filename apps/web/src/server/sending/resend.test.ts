@@ -83,7 +83,7 @@ describe(createResendTransport, () => {
 		expect(request?.headers.get('idempotency-key')).toBe('send-1');
 		expect(request?.headers.get('authorization')).toBe(`Bearer ${KEY}`);
 		expect(request?.body).toMatchObject({
-			attachments: [{ content: 'AQID', filename: 'a.pdf' }],
+			attachments: [{ content: 'AQID', content_type: 'application/pdf', filename: 'a.pdf' }],
 			from: '"Verein \'Muster\'" <verein@example.org>',
 			headers: {
 				'List-Unsubscribe': '<https://example.org/u/abc>',
@@ -192,13 +192,15 @@ describe(classifyResendResponse, () => {
 		});
 	});
 
-	it('never returns uncertain', () => {
-		for (const status of [408, 500, 502, 503, 504]) {
-			expect(classifyResendResponse(status, null, NONE, NOW)).not.toMatchObject({
-				failure: 'uncertain',
+	it.each([408, 425, 500, 502, 503, 504])(
+		'classifies status %i as transient, never uncertain',
+		(status) => {
+			expect(classifyResendResponse(status, null, NONE, NOW)).toMatchObject({
+				failure: 'transient',
+				ok: false,
 			});
-		}
-	});
+		},
+	);
 
 	it('takes a success without id as providerId null', () => {
 		expect(classifyResendResponse(200, {}, NONE, NOW)).toStrictEqual({
