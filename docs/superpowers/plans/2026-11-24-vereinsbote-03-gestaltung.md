@@ -93,9 +93,9 @@ Was das Design dem Builder überlässt (Design 23), hier festgelegt:
    - Die Nutzung führt `template_media`, beim Speichern aus Bausteinen und HTML ermittelt. Ein Fremdschlüssel `on delete restrict` sperrt das Löschen eines genutzten Bilds.
 5. **Layout-Nutzung:** Die Spalte `templates.shared_layout_id` (Fremdschlüssel `on delete restrict`) spiegelt die Wahl eines globalen Layouts.
 6. **Vorschau-Rahmen:**
-   - Das Elternfenster schickt `postMessage({ type: 'vb-preview', html })` an `'*'`; der Rahmen ist sandboxed und hat deshalb eine opake Herkunft.
-   - Der Rahmen nimmt nur Nachrichten an, deren `source === window.parent` und deren `origin` `APP_URL` ist.
-   - Er ersetzt `document.documentElement.innerHTML` durch Kopf und Körper aus `DOMParser` und meldet `{ type: 'vb-preview-ready' }`, sobald er geladen ist.
+   - Der Rahmen ist sandboxed und hat deshalb eine opake Herkunft. Beim Laden öffnet er einen `MessageChannel` und meldet `{ type: 'vb-preview-ready' }` per `window.parent.postMessage` mit der Herkunft von `APP_URL` als Ziel und `port2` als Transfer: Nur ein Elternfenster dieser Herkunft bekommt den Port.
+   - Das Elternfenster nimmt die Meldung nur an, wenn `source` das Fenster des Rahmens ist, `origin` `'null'` (so heißt eine opake Herkunft in einem Nachrichtenereignis), die Daten passen und ein Port dabei ist. Es behält den Port und schickt `{ type: 'vb-preview', html }` darauf. Eine neue Meldung (der Rahmen lädt neu) ersetzt den Port und schließt den alten; das Aushängen schließt ihn ebenfalls. Nichts geht an `'*'`.
+   - Der Rahmen nimmt HTML nur auf seinem Port an, keine Nachricht am Fenster. Er ersetzt den Inhalt von `document.documentElement` durch Kopf und Körper aus `DOMParser`.
 7. **`/media`-Cache:** `Cache-Control: public, max-age=86400`. Auf Vercel zusätzlich `CDN-Cache-Control: public, max-age=86400`. Auf Workers kein Cache-API-Aufwand, R2-Lesen ist billig.
 8. **caniemail-Auszug:** CSS-Eigenschaften und -Funktionen, die „Outlook Windows“ (klassisch) laut caniemail nicht unterstützt (`n`). JSON `apps/web/src/server/html-import/caniemail-outlook.json` mit Quelle, Lizenz (MIT) und Datum. Erzeugt von `apps/web/scripts/update-caniemail.ts`, das von Hand laufen gelassen wird.
 9. **Social-Media-Icons:**
@@ -705,7 +705,8 @@ it('puts the rendered blocks into {{content}} of an HTML layout', …)
 export function previewFramePage(nonce: string, appOrigin: string): string   // HTML mit einem Inline-Skript (nonce) für das Protokoll
 // components/preview/preview-protocol.ts
 export const PREVIEW_MESSAGE = 'vb-preview'; export const PREVIEW_READY = 'vb-preview-ready'
-export function isPreviewReady(event: Pick<MessageEvent, 'data' | 'source'>, frame: Window | null): boolean
+export const SANDBOXED_ORIGIN = 'null'
+export function previewReadyListener(frame: () => Window | null, onPort: (port: MessagePort) => void): (event: Pick<MessageEvent, 'data' | 'origin' | 'ports' | 'source'>) => void
 // components/preview/use-compiled-preview.ts
 export type PreviewState = { kind: 'pending' } | { kind: 'ready'; mail: FilledMail } | { kind: 'missing'; keys: string[]; brand: boolean } | { kind: 'invalid' }
 export function computePreview(source: MailSource, brand: Brand, appOrigin: string, values: ReadonlyMap<string, string>): Promise<PreviewState>
@@ -725,8 +726,8 @@ export function MailPreview(props: { state: PreviewState; title: string }): Reac
 - [ ] **Step 1: Failing Tests schreiben**
 
 ```ts
-// frame-page.test.ts: enthält <script nonce="n1">, keinen weiteren <script>; prüft im Skript `event.source !== window.parent` und den Ursprung
-// preview-protocol.test.ts: isPreviewReady nur für data.type 'vb-preview-ready' und source === frame
+// frame-page.test.ts: enthält <script nonce="n1">, keinen weiteren <script>; das Skript gibt einen Port nur an die App-Herkunft, zeigt HTML vom Port und hört nicht am Fenster
+// preview-protocol.test.ts: previewReadyListener gibt den Port nur weiter bei data.type 'vb-preview-ready', source === frame, origin 'null' und vorhandenem Port
 // use-compiled-preview.test.ts: computePreview mit SAMPLE_BLOCKS → ready; ohne Website bei {{brand.website}} → missing brand true;
 //   Kontaktwert fehlt → missing keys ['contact.city']
 ```

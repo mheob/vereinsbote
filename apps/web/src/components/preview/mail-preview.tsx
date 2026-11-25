@@ -1,8 +1,8 @@
 /*
  * The live preview of a mail: subject and preview text, the mail in a sandboxed frame at desktop
- * or phone width, or its plain text. The mail's HTML goes to `/preview-frame` by `postMessage`
- * (`preview-protocol.ts`), never into the page: its inline styles work in the frame, and nothing
- * in the mail can run or reach the app.
+ * or phone width, or its plain text. The mail's HTML goes to `/preview-frame` over the message
+ * port the frame hands over (`preview-protocol.ts`), never into the page: its inline styles work
+ * in the frame, and nothing in the mail can run or reach the app.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Key, ReactNode } from 'react';
@@ -12,7 +12,7 @@ import { useHydrated } from '@/components/use-hydrated';
 import { useT } from '@/i18n/use-t';
 import { BUILTIN_PLACEHOLDERS } from '@/mail/placeholders/registry';
 
-import { isPreviewReady, PREVIEW_MESSAGE } from './preview-protocol';
+import { PREVIEW_MESSAGE, previewReadyListener } from './preview-protocol';
 import type { PreviewState } from './use-compiled-preview';
 
 type PreviewMode = 'desktop' | 'mobile' | 'text';
@@ -39,8 +39,10 @@ function modeOf(keys: ReadonlySet<Key>): PreviewMode | null {
 }
 
 /**
- * The mail in the sandboxed frame. It sends the HTML once the frame says it is ready, and again
- * on every change; messages of any other window are ignored.
+ * The mail in the sandboxed frame. When the frame says it is ready, it keeps the port the frame
+ * handed over and sends the HTML on it, then again on every change. A new ready message (the frame
+ * loaded again) replaces the port and closes the old one; unmounting closes it too. Messages of any
+ * other window or origin are ignored.
  *
  * @param props The component's props.
  * @param props.html The mail's HTML.
@@ -54,22 +56,26 @@ function PreviewFrame({
 	width,
 }: Readonly<{ html: string; title: string; width: string }>): ReactNode {
 	const frame = useRef<HTMLIFrameElement>(null);
-	const [loads, setLoads] = useState(0);
+	const [port, setPort] = useState<MessagePort | null>(null);
 	useEffect(() => {
-		// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- a message event is a browser object
-		function onMessage(event: MessageEvent): void {
-			if (isPreviewReady(event, frame.current?.contentWindow ?? null)) setLoads((n) => n + 1);
-		}
+		let current: MessagePort | null = null;
+		const onMessage = previewReadyListener(
+			() => frame.current?.contentWindow ?? null,
+			(next) => {
+				current?.close();
+				current = next;
+				setPort(next);
+			},
+		);
 		window.addEventListener('message', onMessage);
 		return () => {
 			window.removeEventListener('message', onMessage);
+			current?.close();
 		};
 	}, []);
 	useEffect(() => {
-		// The frame is sandboxed without `allow-same-origin`: its origin is opaque, so the target is `*`;
-		// the message goes to this one window, and only the frame's own script reads it.
-		if (loads > 0) frame.current?.contentWindow?.postMessage({ html, type: PREVIEW_MESSAGE }, '*');
-	}, [loads, html]);
+		port?.postMessage({ html, type: PREVIEW_MESSAGE });
+	}, [port, html]);
 	return (
 		<iframe
 			className={`h-144 max-w-full border border-gray-600 bg-white ${width}`}

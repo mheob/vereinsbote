@@ -1,6 +1,6 @@
 import { runInNewContext } from 'node:vm';
 
-import { describe, expect, it, vi } from 'vite-plus/test';
+import { describe, expect, it, onTestFinished, vi } from 'vite-plus/test';
 
 import { previewFramePage } from './frame-page';
 
@@ -16,14 +16,17 @@ describe(previewFramePage, () => {
 		expect(page).not.toMatch(/\ssrc=|<link|<style|\son\w+=/u);
 	});
 
-	it('accepts messages only from the parent window and the app origin', () => {
-		expect(page).toContain('event.source !== window.parent');
-		expect(page).toContain('event.origin !== origin');
-		expect(page).toContain('var origin = "https://verein.example"');
+	it('takes the mail on a message channel of its own, never on the window', () => {
+		expect(page).toContain('new MessageChannel()');
+		expect(page).not.toContain('window.addEventListener');
+		expect(page).not.toContain('"*"');
 	});
 
-	it('answers the parent at the app origin only', () => {
-		expect(page).toContain('window.parent.postMessage({ type: "vb-preview-ready" }, origin)');
+	it('hands its port to the parent at the app origin only', () => {
+		expect(page).toContain('var origin = "https://verein.example"');
+		expect(page).toContain(
+			'window.parent.postMessage({ type: "vb-preview-ready" }, origin, [channel.port2])',
+		);
 	});
 
 	it('never evaluates strings', () => {
@@ -51,18 +54,21 @@ interface FrameRun {
 	meta: { remove: ReturnType<typeof vi.fn> };
 	parent: { postMessage: ReturnType<typeof vi.fn> };
 	parsed: { querySelectorAll: ReturnType<typeof vi.fn> };
-	send: Listener;
+	parseFromString: ReturnType<typeof vi.fn>;
+	port: MessagePort | undefined;
+	windowListeners: string[];
 }
 
 /**
- * Runs the frame's script against stand-ins for the browser objects.
+ * Runs the frame's script against stand-ins for the browser objects and a real message channel.
+ * The parent's end of the channel is closed when the test ends.
  *
  * @param origin The app origin the page is made for.
- * @returns The stand-ins and a way to deliver messages.
+ * @returns The stand-ins and the port the frame handed to the parent.
  */
 function runFrame(origin = 'https://verein.example'): FrameRun {
 	const parent = { postMessage: vi.fn() };
-	const listeners = new Map<string, Listener>();
+	const windowListeners: string[] = [];
 	const clickListeners: { listener: Listener; capture: unknown }[] = [];
 	const meta = { remove: vi.fn() };
 	const parsed = {
@@ -70,6 +76,7 @@ function runFrame(origin = 'https://verein.example'): FrameRun {
 		head: 'head',
 		querySelectorAll: vi.fn(() => [meta]),
 	};
+	const parseFromString = vi.fn(() => parsed);
 	const documentElement = { replaceChildren: vi.fn() };
 	const document = {
 		addEventListener: (type: string, listener: Listener, capture: unknown) => {
@@ -79,66 +86,87 @@ function runFrame(origin = 'https://verein.example'): FrameRun {
 		documentElement,
 	};
 	const window = {
-		addEventListener: (type: string, listener: Listener) => listeners.set(type, listener),
+		addEventListener: (type: string) => windowListeners.push(type),
 		parent,
 	};
 	class FakeParser {
-		public parseFromString = vi.fn(() => parsed);
+		public parseFromString = parseFromString;
 	}
 	const script = /<script nonce="n1">(?<code>[\s\S]*)<\/script>/u.exec(
 		previewFramePage('n1', origin),
 	)?.groups?.code;
-	runInNewContext(script ?? '', { DOMParser: FakeParser, document, window });
-	const send = (event: unknown): void => listeners.get('message')?.(event);
+	runInNewContext(script ?? '', { DOMParser: FakeParser, MessageChannel, document, window });
+	const transfer: unknown = parent.postMessage.mock.calls[0]?.[2];
+	const port: unknown = Array.isArray(transfer) ? transfer[0] : undefined;
+	const handed = port instanceof MessagePort ? port : undefined;
+	onTestFinished(() => {
+		handed?.close();
+	});
 	return {
 		click: (event) => clickListeners[0]?.listener(event),
 		clickCaptures: clickListeners.map((entry) => entry.capture),
 		documentElement,
 		meta,
 		parent,
+		parseFromString,
 		parsed,
-		send,
+		port: handed,
+		windowListeners,
 	};
 }
 
 describe('the frame script', () => {
 	const html = '<p>x</p>';
-	const good = { data: { html, type: 'vb-preview' }, origin: 'https://verein.example' };
+	const mail = { html, type: 'vb-preview' };
 
-	it('tells the parent it is ready, at the app origin only', () => {
-		const { parent } = runFrame();
-		expect(parent.postMessage).toHaveBeenCalledWith(
+	it('tells the parent it is ready, at the app origin only, and hands over a port', () => {
+		const { parent, port } = runFrame();
+		expect(parent.postMessage).toHaveBeenCalledExactlyOnceWith(
 			{ type: 'vb-preview-ready' },
 			'https://verein.example',
+			[port],
 		);
+		expect(port).toBeInstanceOf(MessagePort);
 	});
 
-	it('shows the mail of the parent window', () => {
+	it('shows the mail that arrives on the port', async () => {
 		const frame = runFrame();
-		frame.send({ ...good, source: frame.parent });
-		expect(frame.documentElement.replaceChildren).toHaveBeenCalledWith('head', 'body');
-	});
-
-	it('ignores a foreign source, a wrong origin and a bad shape', () => {
-		const frame = runFrame();
-		frame.send({ ...good, source: {} });
-		frame.send({ ...good, origin: 'https://evil.example', source: frame.parent });
-		frame.send({
-			data: { html: 5, type: 'vb-preview' },
-			origin: good.origin,
-			source: frame.parent,
+		frame.port?.postMessage(mail);
+		await vi.waitFor(() => {
+			expect(frame.documentElement.replaceChildren).toHaveBeenCalledWith('head', 'body');
 		});
-		frame.send({ data: { html, type: 'other' }, origin: good.origin, source: frame.parent });
-		frame.send({ data: 'vb-preview', origin: good.origin, source: frame.parent });
-		frame.send({ data: null, origin: good.origin, source: frame.parent });
-		expect(frame.documentElement.replaceChildren).not.toHaveBeenCalled();
+		expect(frame.parseFromString).toHaveBeenCalledWith(html, 'text/html');
 	});
 
-	it('removes a meta refresh from the mail', () => {
+	it('ignores a bad shape on the port', async () => {
 		const frame = runFrame();
-		frame.send({ ...good, source: frame.parent });
+		for (const data of [
+			{ html: 5, type: 'vb-preview' },
+			{ html, type: 'other' },
+			'vb-preview',
+			null,
+		]) {
+			frame.port?.postMessage(data);
+		}
+		// The port delivers in order: once the good message is shown, the bad ones were handled.
+		frame.port?.postMessage(mail);
+		await vi.waitFor(() => {
+			expect(frame.documentElement.replaceChildren).toHaveBeenCalledOnce();
+		});
+		expect(frame.parseFromString).toHaveBeenCalledExactlyOnceWith(html, 'text/html');
+	});
+
+	it('takes no message on the window', () => {
+		expect(runFrame().windowListeners).toStrictEqual([]);
+	});
+
+	it('removes a meta refresh from the mail', async () => {
+		const frame = runFrame();
+		frame.port?.postMessage(mail);
+		await vi.waitFor(() => {
+			expect(frame.meta.remove).toHaveBeenCalledOnce();
+		});
 		expect(frame.parsed.querySelectorAll).toHaveBeenCalledWith('meta[http-equiv="refresh" i]');
-		expect(frame.meta.remove).toHaveBeenCalledOnce();
 	});
 
 	it('cancels a click on or inside a link, in the capture phase, and leaves other clicks', () => {

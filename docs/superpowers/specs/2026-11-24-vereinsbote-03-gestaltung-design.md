@@ -313,7 +313,7 @@ Eine Einstellung pro Instanz, verwaltet vom Admin unter `/admin/brand`.
   - Werte echter Kontakte liefert eine Server-Funktion. Sie prüft `read` im Bereich der Vorlage und liefert nur Werte erlaubter Platzhalter (10.2), gefiltert über `loadContactAccess`.
   - Fehlt ein Pflichtwert, zeigt die Vorschau die Fehlermeldung, die der Versand erzeugen würde, statt der Mail.
 - **Rendern im Browser** mit dem Modul aus 11, verzögert um etwa 300 ms nach der letzten Änderung. **[Claude]** In Safari braucht `@react-email/render` einen Polyfill für `ReadableByteStreamController`.
-- **Rahmen:** ein `<iframe sandbox="allow-scripts">` (ohne `allow-same-origin`, ohne Formulare, Popups oder Navigation) auf der Route `/preview-frame`. Die Route liefert eine kleine Seite mit eigener CSP (17) und einem Skript, das HTML per `postMessage` annimmt (nur vom Elternfenster derselben Herkunft) und anzeigt. Links in der Vorschau führen nirgendwohin.
+- **Rahmen:** ein `<iframe sandbox="allow-scripts">` (ohne `allow-same-origin`, ohne Formulare, Popups oder Navigation) auf der Route `/preview-frame`. Die Route liefert eine kleine Seite mit eigener CSP (17) und einem Skript, das beim Laden einen `MessageChannel` öffnet, einen Port per `postMessage` nur an ein Elternfenster mit der Herkunft der App gibt und das HTML anzeigt, das auf dem anderen Port ankommt (keine Nachricht am Fenster, kein `postMessage` an `'*'`). Links in der Vorschau führen nirgendwohin.
 - Die Vorschau ist für Screenreader als Rahmen mit Titel („Vorschau der Mail“) erreichbar; die Nur-Text-Ansicht ist normaler Seitentext.
 
 ---

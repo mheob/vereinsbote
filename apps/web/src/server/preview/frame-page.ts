@@ -1,8 +1,10 @@
 /*
  * The page inside the preview's sandboxed iframe (`/preview-frame`). It is empty until the parent
- * window sends the mail's HTML, then shows it. It accepts a message only from the parent window at
- * the app's origin, and its links lead nowhere (clicks are cancelled, a meta refresh is dropped), so
- * the frame never navigates away. It never runs a script of the mail: the frame's Content Security Policy
+ * window sends the mail's HTML, then shows it. On load it opens a `MessageChannel` and hands one
+ * port to the parent window, with the app's origin as target origin, so only a parent at that
+ * origin gets it; the mail arrives on the other port, and the frame takes no message on the window
+ * at all. Its links lead nowhere (clicks are cancelled, a meta refresh is dropped), so the frame
+ * never navigates away. It never runs a script of the mail: the frame's Content Security Policy
  * allows only the one script below (by its nonce), and HTML put in by the DOM never runs scripts.
  */
 
@@ -27,8 +29,7 @@ function scriptLiteral(value: string): string {
  * The HTML of the preview frame.
  *
  * @param nonce The Content Security Policy nonce of the request; the one script carries it.
- * @param appOrigin The origin of `APP_URL`: the only origin whose messages the frame takes, and
- *   the only one it answers.
+ * @param appOrigin The origin of `APP_URL`: the only origin the frame hands its port to.
  * @returns The page.
  */
 function previewFramePage(nonce: string, appOrigin: string): string {
@@ -38,15 +39,15 @@ function previewFramePage(nonce: string, appOrigin: string): string {
 		var target = event.target;
 		if (target && typeof target.closest === "function" && target.closest("a[href], area[href]")) event.preventDefault();
 	}, true);
-	window.addEventListener("message", function (event) {
-		if (event.source !== window.parent || event.origin !== origin) return;
+	var channel = new MessageChannel();
+	channel.port1.onmessage = function (event) {
 		var data = event.data;
 		if (data === null || typeof data !== "object" || data.type !== ${scriptLiteral(MESSAGE)} || typeof data.html !== "string") return;
 		var parsed = new DOMParser().parseFromString(data.html, "text/html");
 		parsed.querySelectorAll('meta[http-equiv="refresh" i]').forEach(function (meta) { meta.remove(); });
 		document.documentElement.replaceChildren(document.adoptNode(parsed.head), document.adoptNode(parsed.body));
-	});
-	window.parent.postMessage({ type: ${scriptLiteral(READY)} }, origin);
+	};
+	window.parent.postMessage({ type: ${scriptLiteral(READY)} }, origin, [channel.port2]);
 })();`;
 	return `<!doctype html>
 <html lang="de">
