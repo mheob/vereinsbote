@@ -62,6 +62,7 @@ All variables are described in `apps/web/.env.example`. They are trimmed and val
 | `MS_LOGIN_CLIENT_ID`, `MS_LOGIN_CLIENT_SECRET`, `MS_LOGIN_TENANT_ID` | no | Sign-in with Microsoft, all three or none. The tenant must be the club's tenant ID (a GUID); `common`, `organizations` and `consumers` are refused |
 | `DEV_SMTP_URL` | no | Development only: system mails via SMTP, e.g. to Mailpit. Unencrypted only to `localhost`, `127.0.0.1` or `[::1]`; any other server must offer STARTTLS |
 | `DEV_NEON_WS_PROXY` | no | Development only: a local Neon WebSocket proxy for the Neon driver (see [Cloudflare smoke test](#local-smoke-test-of-the-cloudflare-build)); needs an `http://localhost` `APP_URL` |
+| `DEV_PROVIDERS_URL` | no | Development and e2e only: the local fake server of the mail providers, an `http://localhost:<port>` origin; needs an `http://localhost` `APP_URL` and is refused on Cloudflare and Vercel |
 | `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | no | Node/Docker: S3 storage for images, all five or none. `http://` only for `localhost` and `127.0.0.1`, the bucket must exist (see [Image storage](#image-storage)) |
 | `BLOB_READ_WRITE_TOKEN` | no | Vercel: the read-write token of a private Vercel Blob store; the build reads it (see [Image storage](#image-storage)) |
 | `HEARTBEAT_URL` | no | Called after every completed tick, also when a step failed (not when the tick could not run, e.g. without a database) |

@@ -1,7 +1,7 @@
 const SECRETS_INFO = 'vereinsbote:secrets:v1';
 const AUTH_INFO = 'vereinsbote:auth:v1';
 const LOGIN_WINDOW_INFO = 'vereinsbote:login-window:v1';
-const TOKEN_VERSION = 'v1';
+const TOKEN_VERSION = 'v2';
 const IV_BYTES = 12;
 const AUTH_SECRET_BYTES = 32;
 const BASE64URL_PATTERN = /^[\w-]*$/u;
@@ -79,10 +79,15 @@ const hashLoginWindowEmail = async (key: CryptoKey, email: string): Promise<stri
 	return toBase64Url(new Uint8Array(signature));
 };
 
-const encryptSecret = async (plaintext: string, key: CryptoKey): Promise<string> => {
+// The associated data binds a ciphertext to its place: a value copied to another row or field
+// no longer decrypts.
+const secretAad = (table: string, rowId: string, field: string): string =>
+	`${table}/${rowId}/${field}`;
+
+const encryptSecret = async (plaintext: string, key: CryptoKey, aad: string): Promise<string> => {
 	const iv = globalThis.crypto.getRandomValues(new Uint8Array(IV_BYTES));
 	const ciphertext = await globalThis.crypto.subtle.encrypt(
-		{ iv, name: 'AES-GCM' },
+		{ additionalData: encoder.encode(aad), iv, name: 'AES-GCM' },
 		key,
 		encoder.encode(plaintext),
 	);
@@ -90,7 +95,7 @@ const encryptSecret = async (plaintext: string, key: CryptoKey): Promise<string>
 };
 
 // Every failure surfaces as SecretDecryptError; its message never contains token or plaintext.
-const decryptSecret = async (token: string, key: CryptoKey): Promise<string> => {
+const decryptSecret = async (token: string, key: CryptoKey, aad: string): Promise<string> => {
 	const [version, ivPart, ciphertextPart, ...rest] = token.split('.');
 	if (version !== TOKEN_VERSION || rest.length > 0 || ciphertextPart === undefined) {
 		throw new SecretDecryptError();
@@ -99,7 +104,7 @@ const decryptSecret = async (token: string, key: CryptoKey): Promise<string> => 
 		const iv = fromBase64Url(ivPart ?? '');
 		if (iv.length !== IV_BYTES) throw new SecretDecryptError();
 		const plaintext = await globalThis.crypto.subtle.decrypt(
-			{ iv, name: 'AES-GCM' },
+			{ additionalData: encoder.encode(aad), iv, name: 'AES-GCM' },
 			key,
 			fromBase64Url(ciphertextPart),
 		);
@@ -117,4 +122,5 @@ export {
 	deriveSecretsKey,
 	encryptSecret,
 	hashLoginWindowEmail,
+	secretAad,
 };

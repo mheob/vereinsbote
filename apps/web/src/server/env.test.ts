@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 
-import { EnvError, parseEnv } from './env';
+import { EnvError, misplacedProvidersUrl, parseEnv } from './env';
 
 /** A tenant ID as Microsoft Entra shows it (a GUID). */
 const TENANT_ID = '6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b';
@@ -246,6 +246,54 @@ describe(parseEnv, () => {
 	])('rejects the local Neon proxy with APP_URL %s and %s', (appUrl, proxy) => {
 		const error = envErrorFor({ ...valid, APP_URL: appUrl, DEV_NEON_WS_PROXY: proxy });
 		expect(error.variables).toStrictEqual(['DEV_NEON_WS_PROXY']);
+	});
+
+	it('leaves DEV_PROVIDERS_URL unset by default', () => {
+		expect(parseEnv(valid).devProvidersUrl).toBeNull();
+	});
+
+	it('accepts DEV_PROVIDERS_URL with a local http APP_URL', () => {
+		const env = parseEnv({
+			...valid,
+			APP_URL: 'http://localhost:3100',
+			DEV_PROVIDERS_URL: 'http://localhost:3200',
+		});
+		expect(env.devProvidersUrl?.origin).toBe('http://localhost:3200');
+	});
+
+	it.each(['https://verein.example', 'http://192.168.1.5:3000'])(
+		'refuses DEV_PROVIDERS_URL with APP_URL %s',
+		(appUrl) => {
+			const error = envErrorFor({
+				...valid,
+				APP_URL: appUrl,
+				DEV_PROVIDERS_URL: 'http://localhost:3200',
+			});
+			expect(error.variables).toContain('DEV_PROVIDERS_URL');
+		},
+	);
+
+	it.each([
+		'https://localhost:3200',
+		'http://provider.example',
+		'http://localhost:3200/path',
+		'http://localhost:3200/?x=1',
+		'http://user:pw@localhost:3200',
+		'not a url',
+	])('refuses the DEV_PROVIDERS_URL %s', (value) => {
+		const error = envErrorFor({
+			...valid,
+			APP_URL: 'http://localhost:3100',
+			DEV_PROVIDERS_URL: value,
+		});
+		expect(error.variables).toStrictEqual(['DEV_PROVIDERS_URL']);
+	});
+
+	it.each(['cloudflare', 'vercel'] as const)('refuses DEV_PROVIDERS_URL on %s', (platform) => {
+		const source = { APP_URL: 'http://localhost:3100', DEV_PROVIDERS_URL: 'http://localhost:3200' };
+		expect(misplacedProvidersUrl(source, platform)).toStrictEqual(['DEV_PROVIDERS_URL']);
+		expect(misplacedProvidersUrl(source, 'node')).toStrictEqual([]);
+		expect(misplacedProvidersUrl({ APP_URL: 'https://x.example' }, platform)).toStrictEqual([]);
 	});
 
 	it('treats empty optional values as unset', () => {

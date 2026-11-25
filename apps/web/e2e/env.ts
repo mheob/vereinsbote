@@ -30,6 +30,8 @@ const E2E_SERVER_ENV = {
 	CRON_SECRET: 'e2e-only-cron-secret-of-at-least-32-characters',
 	DATABASE_URL: E2E_DATABASE_URL,
 	DEV_NEON_WS_PROXY: '',
+	// The fake mail providers of the sending e2e tests.
+	DEV_PROVIDERS_URL: 'http://localhost:3200',
 	DEV_SMTP_URL: 'smtp://localhost:1025',
 	HEARTBEAT_URL: '',
 	MS_LOGIN_CLIENT_ID: '',
