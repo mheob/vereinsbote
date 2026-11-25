@@ -22,3 +22,5 @@ export function useFormSubmit(submitForm: (formData: FormData) => void): SubmitH
 		[submitForm],
 	);
 }
+
+export type { SubmitHandler };

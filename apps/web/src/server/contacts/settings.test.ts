@@ -11,6 +11,7 @@ import { NotProtectedFieldError, UnknownAreaError, UnknownCustomFieldError } fro
 import { customFieldKey } from './fields';
 import type { ContactKind, FieldKey } from './fields';
 import {
+	areaFieldKeys,
 	FieldAreasEmptyError,
 	getContactSettings,
 	getFieldAreas,
@@ -234,6 +235,37 @@ describe(getFieldAreas, () => {
 			partnersAreaId,
 			membersAreaId,
 		]);
+	});
+});
+
+describe(areaFieldKeys, () => {
+	it('gives the protected fields assigned to an area, per kind', async () => {
+		const db = await createTestDb();
+		const { admin, membersAreaId, partnersAreaId } = await setUpClub(db);
+		const note = customFieldKey(await insertNote(db));
+		await setFieldAreas(db, admin, {
+			areaIds: [partnersAreaId],
+			fieldKey: 'address',
+			kind: 'member',
+		});
+		await expect(areaFieldKeys(db, membersAreaId)).resolves.toStrictEqual({
+			member: new Set(['birthDate', 'entryDate', 'exitDate', note]),
+			partner: new Set(),
+		});
+		await expect(areaFieldKeys(db, partnersAreaId)).resolves.toStrictEqual({
+			member: new Set(['address']),
+			partner: new Set(['birthDate', 'address']),
+		});
+	});
+
+	it('gives nothing to an area without protected fields', async () => {
+		const db = await createTestDb();
+		const { admin } = await setUpClub(db);
+		const { areaId } = await createArea(db, admin, 'Veranstaltungen');
+		await expect(areaFieldKeys(db, areaId)).resolves.toStrictEqual({
+			member: new Set(),
+			partner: new Set(),
+		});
 	});
 });
 

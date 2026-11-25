@@ -7,7 +7,10 @@ import { parsePlaceholders } from './syntax';
 import type { PlaceholderRef } from './syntax';
 
 type SalutationForm = 'du' | 'sie';
-type SalutationCase = 'female' | 'male' | 'other' | 'organization' | 'noName';
+
+/** The cases of the salutation, each with a text of its own. */
+const SALUTATION_CASES = ['female', 'male', 'other', 'organization', 'noName'] as const;
+type SalutationCase = (typeof SALUTATION_CASES)[number];
 type SalutationTexts = Readonly<Record<SalutationCase, string>>;
 
 /** The default texts; they end without a comma, the template sets it. */
@@ -92,12 +95,20 @@ function fill(text: string, names: ReadonlyMap<string, string>): string | null {
 			? { missing: false, text: segment.value }
 			: partOfPlaceholder(segment.ref, names),
 	);
-	return parts.some(({ missing }) => missing)
-		? null
-		: parts
-				.map(({ text: part }) => part)
-				.join('')
-				.trim();
+	return parts.some(({ missing }) => missing) ? null : parts.map(({ text: part }) => part).join('');
+}
+
+/**
+ * Trims a text and turns each run of spaces into one, so an empty optional name leaves no gap.
+ *
+ * @param text The text.
+ * @returns The text without leading, trailing or double spaces.
+ */
+function collapseSpaces(text: string): string {
+	return text
+		.split(' ')
+		.filter((word) => word !== '')
+		.join(' ');
 }
 
 /**
@@ -106,7 +117,8 @@ function fill(text: string, names: ReadonlyMap<string, string>): string | null {
  *
  * @param texts The texts of the template.
  * @param contact The contact.
- * @returns The salutation, without a comma. Values are inserted as they are, never evaluated.
+ * @returns The salutation, without a comma, trimmed and without double spaces. Values are
+ * inserted as they are, never evaluated.
  */
 function salutationFor(texts: SalutationTexts, contact: Readonly<SalutationContact>): string {
 	const names = new Map([
@@ -117,8 +129,8 @@ function salutationFor(texts: SalutationTexts, contact: Readonly<SalutationConta
 	const isOrganization =
 		names.get('contact.organization') !== '' && names.get('contact.firstName') === '';
 	const text = texts[isOrganization ? 'organization' : GENDER_CASE[contact.gender]];
-	return fill(text, names) ?? fill(texts.noName, names) ?? texts.noName;
+	return collapseSpaces(fill(text, names) ?? fill(texts.noName, names) ?? texts.noName);
 }
 
-export { DEFAULT_SALUTATIONS, salutationFor };
+export { DEFAULT_SALUTATIONS, SALUTATION_CASES, salutationFor };
 export type { SalutationCase, SalutationForm, SalutationTexts };

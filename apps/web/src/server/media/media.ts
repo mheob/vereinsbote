@@ -11,7 +11,7 @@ import type { Principal } from '@/server/permissions/principal';
 import { StorageNotConfiguredError } from '@/server/storage/storage';
 import type { ObjectStorage, StoredObject } from '@/server/storage/storage';
 
-import { newMediaId, parseMediaFileName } from './ids';
+import { mediaStorageKey, newMediaId, parseMediaFileName } from './ids';
 import type { ImageType } from './ids';
 import { readImageHeader } from './image-header';
 import type { ImageHeader } from './image-header';
@@ -54,10 +54,6 @@ type MediaTarget = Readonly<{ purpose: 'brand' } | { purpose: 'library'; areaId:
 type UploadImageResult =
 	| Readonly<{ ok: true; media: MediaRecord }>
 	| Readonly<{ ok: false; failure: 'invalidImage' | 'storageMissing' | 'gone' }>;
-
-function storageKey(id: string): string {
-	return `media/${id}`;
-}
 
 function toRecord(row: Readonly<typeof media.$inferSelect>): MediaRecord {
 	const { areaId, bytes, createdAt, height, id, name, purpose, type, width } = row;
@@ -165,7 +161,7 @@ async function storeImage(
 	await assertTarget(db, actor, target);
 	const header = checkedHeader(file.bytes);
 	const id = newMediaId();
-	await storage.put(storageKey(id), file.bytes, { contentType: CONTENT_TYPES[header.type] });
+	await storage.put(mediaStorageKey(id), file.bytes, { contentType: CONTENT_TYPES[header.type] });
 	try {
 		const { bytes, name } = file;
 		return await recordImage(db, target, {
@@ -176,7 +172,7 @@ async function storeImage(
 			userId: actor.userId,
 		});
 	} catch (error) {
-		await storage.delete(storageKey(id));
+		await storage.delete(mediaStorageKey(id));
 		throw error;
 	}
 }
@@ -229,7 +225,7 @@ async function openMedia(
 	if (parsed === null) return null;
 	const [row] = await db.select().from(media).where(eq(media.id, parsed.id));
 	if (row?.type !== parsed.type) return null;
-	const object = await storage.get(storageKey(row.id));
+	const object = await storage.get(mediaStorageKey(row.id));
 	return object === null ? null : { object, record: toRecord(row) };
 }
 
@@ -267,5 +263,5 @@ function mediaResponse(
 	return new Response(null, { headers });
 }
 
-export { InvalidImageError, mediaResponse, openMedia, storeImage, uploadImageResult };
+export { InvalidImageError, mediaResponse, openMedia, storeImage, toRecord, uploadImageResult };
 export type { MediaPurpose, MediaRecord, UploadImageResult };

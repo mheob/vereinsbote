@@ -8,9 +8,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Key, ReactNode } from 'react';
 import { ToggleButton, ToggleButtonGroup } from 'react-aria-components';
 
+import { segmentedButtonClass } from '@/components/styles';
 import { useHydrated } from '@/components/use-hydrated';
 import { useT } from '@/i18n/use-t';
-import { BUILTIN_PLACEHOLDERS } from '@/mail/placeholders/registry';
+import { placeholderNames } from '@/server/templates/editor-placeholders';
+import type { EditorPlaceholder } from '@/server/templates/editor-placeholders';
 
 import { PREVIEW_MESSAGE, previewReadyListener } from './preview-protocol';
 import type { PreviewState } from './use-compiled-preview';
@@ -27,12 +29,9 @@ const MODE_LABELS = {
 
 const SELECTED = { desktop: ['desktop'], mobile: ['mobile'], text: ['text'] } as const;
 
+const NO_PLACEHOLDERS: readonly EditorPlaceholder[] = [];
+
 const FRAME_WIDTH_CLASS = { desktop: 'w-[600px]', mobile: 'w-[375px]' } as const;
-
-const LABEL_KEYS = new Map(BUILTIN_PLACEHOLDERS.map((entry) => [entry.key, entry.labelKey]));
-
-const toggleClass =
-	'border border-gray-600 px-3 py-1.5 font-semibold first:rounded-l-md last:rounded-r-md data-focus-visible:outline-2 data-focus-visible:outline-offset-2 data-focus-visible:outline-blue-700 data-hovered:bg-gray-100 data-selected:border-blue-700 data-selected:bg-blue-700 data-selected:text-white';
 
 function modeOf(keys: ReadonlySet<Key>): PreviewMode | null {
 	return MODES.find((mode) => keys.has(mode)) ?? null;
@@ -88,35 +87,21 @@ function PreviewFrame({
 }
 
 /**
- * The names of the missing placeholders, as the editor shows them.
- *
- * @param keys The placeholder keys.
- * @param t The translation function.
- * @returns The names, comma separated.
- */
-function placeholderNames(keys: readonly string[], t: ReturnType<typeof useT>): string {
-	return keys
-		.map((key) => {
-			const labelKey = LABEL_KEYS.get(key);
-			return labelKey === undefined ? key : t(labelKey);
-		})
-		.join(', ');
-}
-
-/**
  * The words that stand in place of the mail.
  *
  * @param state A state that is not `ready`.
+ * @param offered The placeholders the editor offers, for the names of custom fields.
  * @param t The translation function.
  * @returns The text.
  */
 function statusMessage(
 	state: Exclude<PreviewState, { kind: 'ready' }>,
+	offered: readonly EditorPlaceholder[],
 	t: ReturnType<typeof useT>,
 ): string {
 	if (state.kind === 'pending') return t('preview.pending');
 	if (state.kind === 'invalid') return t('preview.invalid');
-	const list = placeholderNames(state.keys, t);
+	const list = placeholderNames(state.keys, offered, t);
 	return t(state.brand ? 'preview.missingBrand' : 'preview.missingContact', { list });
 }
 
@@ -126,12 +111,18 @@ function statusMessage(
  * @param props The component's props.
  * @param props.state What `useCompiledPreview` gives.
  * @param props.title The accessible name of the frame.
+ * @param props.placeholders The placeholders the editor offers: a missing custom field is named by its name; none for the built-in names only.
  * @returns The preview.
  */
 export function MailPreview({
+	placeholders = NO_PLACEHOLDERS,
 	state,
 	title,
-}: Readonly<{ state: PreviewState; title: string }>): ReactNode {
+}: Readonly<{
+	state: PreviewState;
+	title: string;
+	placeholders?: readonly EditorPlaceholder[];
+}>): ReactNode {
 	const t = useT();
 	const hydrated = useHydrated();
 	const [mode, setMode] = useState<PreviewMode>('desktop');
@@ -139,7 +130,7 @@ export function MailPreview({
 		setMode(modeOf(keys) ?? 'desktop');
 	}, []);
 	if (state.kind !== 'ready') {
-		return <output className="block">{statusMessage(state, t)}</output>;
+		return <output className="block">{statusMessage(state, placeholders, t)}</output>;
 	}
 	const { mail } = state;
 	return (
@@ -160,7 +151,7 @@ export function MailPreview({
 				selectionMode="single"
 			>
 				{MODES.map((key) => (
-					<ToggleButton className={toggleClass} id={key} key={key}>
+					<ToggleButton className={segmentedButtonClass} id={key} key={key}>
 						{t(MODE_LABELS[key])}
 					</ToggleButton>
 				))}

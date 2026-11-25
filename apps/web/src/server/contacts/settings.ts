@@ -159,6 +159,27 @@ async function getFieldAreas(
 }
 
 /**
+ * The protected fields an area sees, per kind: built-in ones and protected custom fields whose
+ * effective areas (`getFieldAreas`) include it. Base fields are not in the result.
+ *
+ * @param db The database.
+ * @param areaId The area.
+ * @returns The field keys per kind; empty sets for an area that sees no protected field.
+ */
+async function areaFieldKeys(
+	db: Db,
+	areaId: string,
+): Promise<Record<ContactKind, ReadonlySet<FieldKey>>> {
+	const [member, partner] = await Promise.all([
+		getFieldAreas(db, 'member'),
+		getFieldAreas(db, 'partner'),
+	]);
+	const keysOf = (fieldAreas: ReadonlyMap<FieldKey, readonly string[]>): ReadonlySet<FieldKey> =>
+		new Set([...fieldAreas].filter(([, areaIds]) => areaIds.includes(areaId)).map(([key]) => key));
+	return { member: keysOf(member), partner: keysOf(partner) };
+}
+
+/**
  * Makes sure that areas exist and keeps them until the transaction ends, as a foreign key does
  * (`FOR KEY SHARE`, so a rename does not wait): a deletion in another tab waits, and one that came
  * first is a refusal instead of a foreign key error.
@@ -333,6 +354,7 @@ async function setStaleImportWeeks(db: Db, actor: Principal, weeks: number): Pro
 }
 
 export {
+	areaFieldKeys,
 	FieldAreasEmptyError,
 	getContactSettings,
 	getFieldAreas,

@@ -18,8 +18,9 @@ import type { Block } from '@/mail/blocks/block-schema';
 import { brandSchema } from '@/mail/brand/brand-schema';
 import type { Brand } from '@/mail/brand/brand-schema';
 import { brandPlaceholderValues } from '@/mail/brand/brand-values';
+import { COLUMN_STYLE } from '@/mail/components/mobile-rules';
 import { Preheader } from '@/mail/components/preheader';
-import { cleanHeaderText, escapeHtml, stripMarkers } from '@/mail/escape';
+import { cleanHeaderText, stripMarkers } from '@/mail/escape';
 import { CONTENT_KEY } from '@/mail/placeholders/registry';
 import { parsePlaceholders } from '@/mail/placeholders/syntax';
 import type { PlaceholderRef } from '@/mail/placeholders/syntax';
@@ -27,6 +28,8 @@ import { compareCodePoints } from '@/server/compare-code-points';
 import { mediaPath } from '@/server/media/ids';
 import type { ImageType } from '@/server/media/ids';
 
+import { joinHtml, withStyleInHead } from './html-segments';
+import type { Segments } from './html-segments';
 import type { ResolvePlaceholder } from './inline-text';
 import { referencesMarker, slotMarker, splitParts } from './parts';
 import type { Part } from './parts';
@@ -77,12 +80,6 @@ type CompileResult =
 	| { ok: true; mail: CompiledMail }
 	| { ok: false; missingBrand: string[] }
 	| { ok: false; invalid: CompileFailure };
-
-type Segment =
-	| { readonly kind: 'text'; readonly value: string }
-	| { readonly kind: 'placeholder'; readonly ref: Readonly<PlaceholderRef> };
-
-type Segments = readonly Segment[];
 
 type PreparedBody =
 	| { readonly kind: 'blocks'; readonly blocks: readonly Block[]; readonly layout: Segments | null }
@@ -339,19 +336,16 @@ function resolverFor(
 }
 
 /**
- * Joins segments to a text, with a placeholder's value from the resolver.
+ * Joins the segments of a plain text (the subject, the preview text), with a placeholder's value
+ * from the resolver.
  *
  * @param segments The segments.
  * @param resolve The placeholder values.
- * @param content The text for `{{content}}`.
  * @returns The text.
  */
-function joinSegments(segments: Segments, resolve: ResolvePlaceholder, content = ''): string {
+function joinSegments(segments: Segments, resolve: ResolvePlaceholder): string {
 	return segments
-		.map((segment) => {
-			if (segment.kind === 'text') return segment.value;
-			return segment.ref.key === CONTENT_KEY ? content : resolve(segment.ref);
-		})
+		.map((segment) => (segment.kind === 'text' ? segment.value : resolve(segment.ref)))
 		.join('');
 }
 
@@ -446,7 +440,8 @@ async function renderBlocks(
 		);
 	}
 	const content = await renderFragment(createElement(BlockContent, { blocks, context }));
-	const html = joinSegments(layout, (ref) => escapeHtml(input.resolve(ref)), content);
+	const { origin, resolve } = input;
+	const html = joinHtml(withStyleInHead(layout, COLUMN_STYLE), { content, origin, resolve });
 	return withPreheader(html, input.preheader);
 }
 
@@ -459,7 +454,8 @@ async function renderBlocks(
 async function renderHtml(input: RenderInput): Promise<string> {
 	const { body } = input.prepared;
 	if (body.kind === 'blocks') return renderBlocks(input, body.blocks, body.layout);
-	const html = joinSegments(body.segments, (ref) => escapeHtml(input.resolve(ref)));
+	const { origin, resolve } = input;
+	const html = joinHtml(body.segments, { origin, resolve });
 	return withPreheader(html, input.preheader);
 }
 

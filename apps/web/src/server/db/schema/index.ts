@@ -7,3 +7,4 @@ export * from './brand';
 export * from './contacts';
 export * from './media';
 export * from './system';
+export * from './templates';

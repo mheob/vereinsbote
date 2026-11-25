@@ -1,6 +1,6 @@
 import type { Announce } from '@/components/announcements';
-import type { Translate } from '@/components/contacts/import/import-messages';
 import { FAILED } from '@/components/settle';
+import type { Translate } from '@/i18n/translate';
 import type { ContactListPage } from '@/server/contacts/contacts';
 import { pageCount } from '@/server/contacts/list-query';
 

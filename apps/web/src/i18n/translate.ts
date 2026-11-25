@@ -6,6 +6,9 @@ type MessageKey = keyof typeof de;
 
 type MessageParams = Readonly<Record<string, string | number>>;
 
+/** A translation function of one language, as `useT()` gives it. */
+type Translate = (key: MessageKey, params?: MessageParams) => string;
+
 const MESSAGES: Readonly<Record<Locale, Readonly<Record<MessageKey, string>>>> = { de, en };
 
 const PARAMETER = /\{(?<name>\w+)\}/gu;
@@ -30,4 +33,4 @@ function translate(locale: Locale, key: MessageKey, params: MessageParams = {}):
 }
 
 export { translate };
-export type { MessageKey, MessageParams };
+export type { MessageKey, MessageParams, Translate };

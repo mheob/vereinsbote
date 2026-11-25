@@ -1,7 +1,10 @@
 /*
  * Reads an import file in the browser: CSV (UTF-8 or Windows-1252, `;`, `,` or tab) and XLSX. The
  * file never leaves the browser; later steps send only the mapped columns. The libraries are
- * loaded with `import()` when a file is read, so they stay out of the page bundle.
+ * loaded with `import()` when a file is read, so they stay out of the page bundle. The production
+ * server build drops the imports (`import.meta.env.SSR && import.meta.env.PROD` is a constant
+ * there, the unit tests run with `PROD` false): the CI bundle check wants no reading library in
+ * the server bundle.
  */
 import { MAX_COLUMNS, MAX_HEADER_LENGTH } from '@/server/contacts/import/mapping';
 import { cleanText } from '@/server/contacts/import/values';
@@ -201,6 +204,7 @@ function toSheet(grid: readonly (readonly unknown[])[]): Sheet | null {
  * @returns The reader; it throws for broken quotes.
  */
 async function loadCsvReader(): Promise<GridReader> {
+	if (import.meta.env.SSR && import.meta.env.PROD) throw new Error('browser only');
 	const { default: papa } = await import('papaparse');
 	return (bytes) => {
 		const text = decodeCsvBytes(bytes);
@@ -227,6 +231,7 @@ async function loadCsvReader(): Promise<GridReader> {
  *   so an empty cover sheet does not hide the others) and throws for a file that is not a workbook.
  */
 async function loadWorkbookReader(): Promise<GridReader> {
+	if (import.meta.env.SSR && import.meta.env.PROD) throw new Error('browser only');
 	const [{ unzipSync, zipSync }, { default: readXlsxFile }] = await Promise.all([
 		import('fflate'),
 		import('read-excel-file/universal'),

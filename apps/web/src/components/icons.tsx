@@ -44,3 +44,36 @@ export function CloseIcon(): ReactNode {
 		</svg>
 	);
 }
+
+/**
+ * The grip of a drag handle: decoration, the handle names itself.
+ *
+ * @returns The icon.
+ */
+export function DragIcon(): ReactNode {
+	return (
+		<svg aria-hidden="true" className="size-4 shrink-0" fill="currentColor" viewBox="0 0 16 16">
+			<circle cx="5.5" cy="3.5" r="1.5" />
+			<circle cx="10.5" cy="3.5" r="1.5" />
+			<circle cx="5.5" cy="8" r="1.5" />
+			<circle cx="10.5" cy="8" r="1.5" />
+			<circle cx="5.5" cy="12.5" r="1.5" />
+			<circle cx="10.5" cy="12.5" r="1.5" />
+		</svg>
+	);
+}
+
+/**
+ * The dots of a menu button: decoration, the button names itself.
+ *
+ * @returns The icon.
+ */
+export function MoreIcon(): ReactNode {
+	return (
+		<svg aria-hidden="true" className="size-4 shrink-0" fill="currentColor" viewBox="0 0 16 16">
+			<circle cx="3" cy="8" r="1.5" />
+			<circle cx="8" cy="8" r="1.5" />
+			<circle cx="13" cy="8" r="1.5" />
+		</svg>
+	);
+}
