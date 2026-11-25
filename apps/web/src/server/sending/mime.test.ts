@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vite-plus/test';
 
-import { buildMime, GRAPH_REQUEST_LIMIT_BYTES, graphRequestBytes } from '@/server/sending/mime';
+import {
+	buildMime,
+	GRAPH_REQUEST_LIMIT_BYTES,
+	graphRequestBytes,
+	MimeAddressError,
+} from '@/server/sending/mime';
 import type { MailAttachment, OutgoingMail } from '@/server/sending/transport';
 
 const DATE = new Date('2026-11-25T10:00:00Z');
@@ -137,9 +142,21 @@ describe(buildMime, () => {
 		expect(headerNamed(mime, 'Subject')).toHaveLength(1);
 	});
 
-	it('cannot add a header through a line break in an address', () => {
-		const mime = buildMime(mail({ to: 'a@example.org\r\nBcc: x@example.org' }), DATE);
-		expect(headerNamed(mime, 'Bcc')).toHaveLength(0);
+	it('refuses an address that holds a line break', () => {
+		const attack = mail({ to: 'a@example.org\r\nBcc: x@example.org' });
+		expect(() => buildMime(attack, DATE)).toThrow(MimeAddressError);
+	});
+
+	it.each([
+		['to', { to: 'a@example.org, b@example.org' }],
+		['to', { to: 'Anna <a@example.org>' }],
+		['replyTo', { replyTo: 'ä@example.org' }],
+		['bcc', { bcc: 'a@example.org\u0000' }],
+		['listUnsubscribe', { listUnsubscribe: 'https://app.example.org/u?a=1,2' }],
+		['listUnsubscribe', { listUnsubscribe: 'https://app.example.org/u;x' }],
+		['from', { from: { address: 'a b@example.org', name: 'X' } }],
+	])('refuses an unusable %s without echoing it', (_field, overrides) => {
+		expect(() => buildMime(mail(overrides), DATE)).toThrow(/^invalid address in mail header$/u);
 	});
 
 	it('sets Bcc only when given', () => {
@@ -183,6 +200,53 @@ describe(buildMime, () => {
 		expect(headerLines(buildMime(given, DATE))).toContain('Message-ID: <fixed-id@example.org>');
 		expect(headerLines(buildMime(given, DATE))).toContain('Reply-To: vorstand@example.org');
 		expect(headerNamed(plain(), 'Reply-To')).toHaveLength(0);
+	});
+});
+
+describe('header edge cases', () => {
+	it('keeps every line of a 200 character subject and name short', () => {
+		const long = 'Sommerfest '.repeat(19).slice(0, 200);
+		const ascii = buildMime(
+			mail({ from: { address: 'v@example.org', name: long }, subject: long }),
+			DATE,
+		);
+		expect(longestHeaderLine(ascii)).toBeLessThanOrEqual(998);
+		expect(subjectOf(ascii)).toBe(long.trim());
+	});
+
+	it('folds a 200 character ascii word without spaces below 998', () => {
+		const word = 'x'.repeat(200);
+		const mime = buildMime(
+			mail({ from: { address: 'v@example.org', name: word }, subject: word }),
+			DATE,
+		);
+		expect(longestHeaderLine(mime)).toBeLessThanOrEqual(998);
+		expect(subjectOf(mime)).toBe(word);
+	});
+
+	it('encodes an emoji display name', () => {
+		const mime = buildMime(mail({ from: { address: 'v@example.org', name: '🎉🎉 Fest' } }), DATE);
+		const from = decodeWords(line(headerLines(mime), 'From: '));
+		expect(from).toBe('From: 🎉🎉 Fest <v@example.org>');
+		expect(longestHeaderLine(mime)).toBeLessThanOrEqual(MAX_LINE);
+	});
+
+	it('turns a lone CR and a CRLF in the subject into spaces', () => {
+		const cr = buildMime(mail({ subject: 'Hallo\rWelt' }), DATE);
+		const crlf = buildMime(mail({ subject: 'Hallo\r\nBcc: x' }), DATE);
+		expect(subjectOf(cr)).toBe('Hallo Welt');
+		expect(subjectOf(crlf)).toBe('Hallo Bcc: x');
+	});
+
+	it('survives a lone surrogate in a file name', () => {
+		const disposition = dispositionOf({ ...pdf(10), filename: 'a\uD800b.pdf' });
+		expect(disposition).toContain("filename*=UTF-8''a%EF%BF%BDb.pdf");
+	});
+
+	it('keeps the encoded file name parameter short for 100 astral characters', () => {
+		const disposition = dispositionOf({ ...pdf(10), filename: '𝒜'.repeat(100) });
+		expect(disposition.length).toBeLessThan(500);
+		expect(disposition).toContain("filename*=UTF-8''%F0%9D%92%9C");
 	});
 });
 

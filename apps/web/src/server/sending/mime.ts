@@ -22,7 +22,9 @@ const HEX = 16;
 
 const encoder = new TextEncoder();
 const NON_ASCII = /[^\u0020-\u007E]/u;
-const ADDRESS_FORBIDDEN = /[\s<>,;"\\]/gu;
+const ADDRESS_VALID = /^[\u0021-\u007E]+$/u;
+const ADDRESS_FORBIDDEN = /[<>,;"\\]/u;
+const MAX_FILENAME_ENCODED = 300;
 const PATH_PART = /^.*[/\\]/u;
 const FILENAME_FORBIDDEN = /[\p{Cc}\u2028\u2029]/gu;
 const FILENAME_FALLBACK_FORBIDDEN = /[^\w .()+-]/gu;
@@ -103,8 +105,17 @@ function textHeader(name: string, value: string): string {
 	return foldHeader(name, textTokens(cleanHeaderText(value)));
 }
 
+/** Thrown for an address or URL that cannot go into a header as it is. The message holds no value. */
+class MimeAddressError extends Error {
+	public constructor() {
+		super('invalid address in mail header');
+		this.name = 'MimeAddressError';
+	}
+}
+
 function address(value: string): string {
-	return cleanHeaderText(value).replaceAll(ADDRESS_FORBIDDEN, '');
+	if (!ADDRESS_VALID.test(value) || ADDRESS_FORBIDDEN.test(value)) throw new MimeAddressError();
+	return value;
 }
 
 function fromHeader(from: OutgoingMail['from']): string {
@@ -134,26 +145,34 @@ function textPart(contentType: string, body: string): string {
 	].join(CRLF);
 }
 
-function safeFilename(filename: string): string {
-	const name = cleanHeaderText(filename.replaceAll(FILENAME_FORBIDDEN, '').replace(PATH_PART, ''))
-		.replaceAll(/\.{2,}/gu, '.')
-		.trim();
-	let limited = '';
-	let count = 0;
-	for (const character of name) {
-		if (count === MAX_FILENAME_CHARACTERS) break;
-		limited += character;
-		count += 1;
-	}
-	const trimmed = limited.replace(/^\.+/u, '');
-	return trimmed === '' ? 'attachment' : trimmed;
-}
-
 function rfc2231(value: string): string {
 	return encodeURIComponent(value).replaceAll(
 		/['()*]/gu,
 		(c) => `%${(c.codePointAt(0) ?? 0).toString(HEX).toUpperCase()}`,
 	);
+}
+
+function limitName(name: string): string {
+	let limited = '';
+	let count = 0;
+	let encodedLength = 0;
+	for (const character of name) {
+		encodedLength += rfc2231(character).length;
+		if (count === MAX_FILENAME_CHARACTERS || encodedLength > MAX_FILENAME_ENCODED) break;
+		limited += character;
+		count += 1;
+	}
+	return limited;
+}
+
+function safeFilename(filename: string): string {
+	const name = cleanHeaderText(
+		filename.toWellFormed().replaceAll(FILENAME_FORBIDDEN, '').replace(PATH_PART, ''),
+	)
+		.replaceAll(/\.{2,}/gu, '.')
+		.trim();
+	const trimmed = limitName(name).replace(/^\.+/u, '');
+	return trimmed === '' ? 'attachment' : trimmed;
 }
 
 function attachmentPart(attachment: MailAttachment): string {
@@ -229,4 +248,4 @@ function graphRequestBytes(mail: Readonly<OutgoingMail>, date: Date): number {
 	return toBase64(encoder.encode(buildMime(mail, date))).length;
 }
 
-export { buildMime, GRAPH_REQUEST_LIMIT_BYTES, graphRequestBytes };
+export { buildMime, GRAPH_REQUEST_LIMIT_BYTES, graphRequestBytes, MimeAddressError };
