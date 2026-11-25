@@ -3,12 +3,18 @@
  * Resend connection counts for all its senders (`QuotaScope`). The day is the club's calendar day
  * in Europe/Berlin. Personal mails due today keep a reserve that group mails may not use.
  */
-import { and, count, eq, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, count, eq, isNull, lt, lte, or, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 
 import { CLUB_TIME_ZONE, todayInClubZone } from '@/server/contacts/calendar';
 import type { Db } from '@/server/db/client';
-import { mailConnections, outboxEntries, sendQuotaDays, senders } from '@/server/db/schema';
+import {
+	mailConnections,
+	outboxEntries,
+	sendQuotaDays,
+	sendScopePauses,
+	senders,
+} from '@/server/db/schema';
 
 import type { QuotaScope } from './open-transport';
 import type { EntryPriority } from './outbox';
@@ -18,6 +24,12 @@ interface QuotaState {
 	used: number;
 	limit: number | null;
 	reserved: number;
+}
+
+/** A scope the provider stopped after a quota refusal, until when and with which code. */
+interface ScopePause {
+	readonly until: Date;
+	readonly code: string;
 }
 
 const SENDER_PREFIX = 'sender:';
@@ -187,6 +199,58 @@ async function countSent(db: Db, scope: QuotaScope, now: Date): Promise<void> {
 }
 
 /**
+ * The pause of a scope, if one is stored; it may have ended already.
+ *
+ * @param db The database.
+ * @param scope The scope.
+ * @returns The pause, or null.
+ */
+async function scopePause(db: Db, scope: QuotaScope): Promise<ScopePause | null> {
+	const [row] = await db
+		.select({ code: sendScopePauses.code, until: sendScopePauses.pausedUntil })
+		.from(sendScopePauses)
+		.where(eq(sendScopePauses.scope, scope));
+	return row ?? null;
+}
+
+/**
+ * Pauses a scope after a quota refusal (ruling R5). A pause that lasts longer stays.
+ *
+ * @param db The database.
+ * @param pause The scope, the end of the pause and the provider's code.
+ */
+async function pauseScope(
+	db: Db,
+	pause: Readonly<{ scope: QuotaScope; until: Date; code: string }>,
+): Promise<void> {
+	const { code, scope, until } = pause;
+	await db
+		.insert(sendScopePauses)
+		.values({ code, pausedUntil: until, scope })
+		.onConflictDoUpdate({
+			set: {
+				code: sql`excluded.code`,
+				pausedUntil: sql`greatest(${sendScopePauses.pausedUntil}, excluded.paused_until)`,
+			},
+			target: sendScopePauses.scope,
+		});
+}
+
+/**
+ * Ends the pause of a scope once the provider took a mail again; a pause that has not ended (set
+ * by another run in the meantime) stays.
+ *
+ * @param db The database.
+ * @param scope The scope.
+ * @param now The instant.
+ */
+async function liftPause(db: Db, scope: QuotaScope, now: Date): Promise<void> {
+	await db
+		.delete(sendScopePauses)
+		.where(and(eq(sendScopePauses.scope, scope), lte(sendScopePauses.pausedUntil, now)));
+}
+
+/**
  * How many club days a wave takes, counting today as the first: today the room the count and
  * the reserve leave, then the limit less the reserve each day.
  *
@@ -212,5 +276,15 @@ function estimateDays(
 	return 1 + Math.ceil((mails - today) / perDay);
 }
 
-export { countSent, estimateDays, inScope, mayStart, quotaToday, startOfNextClubDay };
-export type { QuotaState };
+export {
+	countSent,
+	estimateDays,
+	inScope,
+	liftPause,
+	mayStart,
+	pauseScope,
+	quotaToday,
+	scopePause,
+	startOfNextClubDay,
+};
+export type { QuotaState, ScopePause };

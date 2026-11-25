@@ -41,6 +41,8 @@ const RETRY_DELAYS_MS = [FIVE_MINUTES_MS, HALF_AN_HOUR_MS, TWO_HOURS_MS, EIGHT_H
 const UNCERTAIN_AFTER_MS = 600_000;
 /** A provider's `Retry-After` counts up to a day; a longer one is a provider's mistake. */
 const MAX_RETRY_AFTER_MS = 86_400_000;
+/** The shortest pause of a scope after a quota refusal (ruling R5). */
+const QUOTA_PAUSE_MS = 3_600_000;
 const WINDOW_MS = 60_000;
 
 /** An entry a run has taken. `messageId` is made at its first take and kept for every retry. */
@@ -82,8 +84,8 @@ type EntryOutcome =
 	| { kind: 'retry'; code: string; at: Date }
 	/** Back to `planned` without an attempt: the provider refused the credentials. */
 	| { kind: 'release'; code: string }
-	/** Back to `planned` until `until` without an attempt: the provider's quota is spent. */
-	| { kind: 'defer'; code: string; until: Date };
+	/** Back to `planned` without an attempt, and the scope pauses until `until` (ruling R5). */
+	| { kind: 'pause'; code: string; until: Date };
 
 /** A taken entry and the time of the take, which every later write names. */
 interface Claim {
@@ -91,11 +93,22 @@ interface Claim {
 	readonly claimedAt: Date;
 }
 
-/** A sender with due entries, its connection and whether that is disturbed. */
+/** A sender with due entries, its connection and whether (and why) that is disturbed. */
 interface DueSender {
 	readonly senderId: string;
 	readonly connectionId: string;
 	readonly disturbedSince: Date | null;
+	readonly disturbedCode: string | null;
+}
+
+/**
+ * The wait a provider asked for, at most a day.
+ *
+ * @param retryAfterMs The provider's `Retry-After`, or null.
+ * @returns The wait in milliseconds; 0 without one.
+ */
+function askedWait(retryAfterMs: number | null): number {
+	return Math.min(Math.max(0, retryAfterMs ?? 0), MAX_RETRY_AFTER_MS);
 }
 
 /**
@@ -108,8 +121,7 @@ interface DueSender {
 function nextAttemptDelay(attempts: number, retryAfterMs: number | null): number | null {
 	if (attempts >= MAX_ATTEMPTS) return null;
 	const delay = RETRY_DELAYS_MS[Math.max(1, attempts) - 1] ?? EIGHT_HOURS_MS;
-	const asked = Math.min(Math.max(0, retryAfterMs ?? 0), MAX_RETRY_AFTER_MS);
-	return Math.max(delay, asked);
+	return Math.max(delay, askedWait(retryAfterMs));
 }
 
 /**
@@ -130,24 +142,27 @@ function retryOrFail(
 
 /**
  * What a send result makes of the entry (Design 6.3, 8.4 to 8.6; ruling R2: an unclear send is
- * never repeated).
+ * never repeated; ruling R5: a spent quota pauses the scope for at least an hour).
  *
  * @param result What the transport answered.
- * @param at The attempts before this one, the instant and the start of the next club day.
+ * @param at The attempts before this one and the instant.
  * @returns The outcome.
  */
 function outcomeOf(
 	result: Readonly<SendResult>,
-	at: Readonly<{ attempts: number; now: Date; nextDay: Date }>,
+	at: Readonly<{ attempts: number; now: Date }>,
 ): EntryOutcome {
 	if (result.ok) return { kind: 'sent', providerId: result.providerId };
-	const { code, failure } = result;
+	const { code, failure, retryAfterMs } = result;
+	const { now } = at;
 	if (failure === 'uncertain') return { code, kind: 'uncertain' };
 	if (failure === 'rejected') return { attempt: true, code, kind: 'failed' };
 	if (failure === 'unauthorized') return { code, kind: 'release' };
-	if (failure === 'quota') return { code, kind: 'defer', until: at.nextDay };
-	const { now } = at;
-	return retryOrFail(code, { attempts: at.attempts + 1, now, retryAfterMs: result.retryAfterMs });
+	if (failure === 'quota') {
+		const pause = Math.max(QUOTA_PAUSE_MS, askedWait(retryAfterMs));
+		return { code, kind: 'pause', until: new Date(now.getTime() + pause) };
+	}
+	return retryOrFail(code, { attempts: at.attempts + 1, now, retryAfterMs });
 }
 
 /**
@@ -221,6 +236,7 @@ async function dueSenders(db: Db, now: Date): Promise<DueSender[]> {
 	return db
 		.select({
 			connectionId: senders.connectionId,
+			disturbedCode: mailConnections.disturbedCode,
 			disturbedSince: mailConnections.disturbedSince,
 			senderId: senders.id,
 		})
@@ -381,9 +397,8 @@ function changesOf(
 		return { ...counted, lastErrorCode: outcome.code, status: 'failed' };
 	}
 	if (kind === 'skipped') return { lastErrorCode: outcome.reason, status: 'skipped' };
-	if (kind === 'release') return { lastErrorCode: outcome.code, status: 'planned' };
-	const { code, until } = outcome;
-	return { lastErrorCode: code, nextAttemptAt: null, notBefore: until, status: 'planned' };
+	// `release` and `pause`: the entry waits for its connection or its scope, without an attempt.
+	return { lastErrorCode: outcome.code, status: 'planned' };
 }
 
 /**
@@ -409,23 +424,6 @@ async function storeOutcome(
 		.where(stillTaken(claim))
 		.returning({ id: outboxEntries.id });
 	return updated.length > 0;
-}
-
-/**
- * Moves the due entries of a scope to the start of the next club day, without an attempt: the
- * provider's quota is spent, and every one of them would be refused as well.
- *
- * @param db The database.
- * @param scope The scope.
- * @param now The instant.
- * @param until The start of the next club day.
- */
-// oxlint-disable-next-line max-params -- the database, the scope, the instant and the new start
-async function deferDue(db: Db, scope: QuotaScope, now: Date, until: Date): Promise<void> {
-	await db
-		.update(outboxEntries)
-		.set({ nextAttemptAt: null, notBefore: until })
-		.where(and(inScope(scope), isDue(now)));
 }
 
 /**
@@ -494,7 +492,6 @@ export {
 	UNCERTAIN_AFTER_MS,
 	claimEntry,
 	clearDisturbance,
-	deferDue,
 	disturbConnection,
 	dueSenders,
 	failOrphans,

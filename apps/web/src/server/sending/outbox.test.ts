@@ -18,7 +18,7 @@ import type { SendFailureClass, SendResult } from './transport';
 
 const WAVE_ID = '00000000-0000-4000-8000-0000000000aa';
 const NOW = new Date('2026-11-25T09:00:00.000Z');
-const NEXT_DAY = new Date('2026-11-25T23:00:00.000Z');
+const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
 const MINUTE_MS = 60_000;
 
@@ -53,14 +53,28 @@ function refused(failure: SendFailureClass): SendResult {
 }
 
 describe(outcomeOf, () => {
-	const at = { attempts: 0, nextDay: NEXT_DAY, now: NOW };
+	const at = { attempts: 0, now: NOW };
 
 	it.each([
 		[{ ok: true, providerId: 'p-1' }, 0, { kind: 'sent', providerId: 'p-1' }],
 		[refused('uncertain'), 0, { code: 'x.code', kind: 'uncertain' }],
 		[refused('rejected'), 0, { attempt: true, code: 'x.code', kind: 'failed' }],
 		[refused('unauthorized'), 0, { code: 'x.code', kind: 'release' }],
-		[refused('quota'), 0, { code: 'x.code', kind: 'defer', until: NEXT_DAY }],
+		[
+			refused('quota'),
+			0,
+			{ code: 'x.code', kind: 'pause', until: new Date(NOW.getTime() + HOUR_MS) },
+		],
+		[
+			{ ...refused('quota'), retryAfterMs: 3 * HOUR_MS },
+			0,
+			{ code: 'x.code', kind: 'pause', until: new Date(NOW.getTime() + 3 * HOUR_MS) },
+		],
+		[
+			{ ...refused('quota'), retryAfterMs: 3 * DAY_MS },
+			0,
+			{ code: 'x.code', kind: 'pause', until: new Date(NOW.getTime() + DAY_MS) },
+		],
 		[
 			refused('transient'),
 			0,

@@ -6,7 +6,16 @@ import type { Db } from '@/server/db/client';
 import { outboxEntries, senders } from '@/server/db/schema';
 import { createTestDb } from '@/server/db/test-db';
 
-import { countSent, estimateDays, mayStart, quotaToday, startOfNextClubDay } from './quota';
+import {
+	countSent,
+	estimateDays,
+	liftPause,
+	mayStart,
+	pauseScope,
+	quotaToday,
+	scopePause,
+	startOfNextClubDay,
+} from './quota';
 import { graphConnection, resendConnection, senderOn } from './testing';
 
 const WAVE_ID = '00000000-0000-4000-8000-0000000000aa';
@@ -184,5 +193,24 @@ describe(estimateDays, () => {
 		[{ limit: 20, mails: 1, reservedPerDay: 20, usedToday: 0 }, Number.POSITIVE_INFINITY],
 	] as const)('estimates %o as %s days', (input, days) => {
 		expect(estimateDays(input)).toBe(days);
+	});
+});
+
+describe(pauseScope, () => {
+	it('keeps the later pause and lifts only one that has ended', async () => {
+		const db = await createTestDb();
+		const scope = 'connection:00000000-0000-4000-8000-000000000001';
+		const later = new Date(NOW.getTime() + 2 * HOUR_MS);
+		await pauseScope(db, { code: 'resend.quota', scope, until: later });
+		await pauseScope(db, { code: 'resend.quota', scope, until: new Date(NOW.getTime() + HOUR_MS) });
+		const kept = await scopePause(db, scope);
+		await liftPause(db, scope, NOW);
+		const early = await scopePause(db, scope);
+		await liftPause(db, scope, later);
+		expect({ early, kept }).toStrictEqual({
+			early: { code: 'resend.quota', until: later },
+			kept: { code: 'resend.quota', until: later },
+		});
+		await expect(scopePause(db, scope)).resolves.toBeNull();
 	});
 });

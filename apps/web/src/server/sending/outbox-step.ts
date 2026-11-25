@@ -2,13 +2,16 @@
  * The tick step of the outbox (Design 8.2 to 8.7). It turns stuck entries `uncertain`, then sends
  * the due entries of every sender in turns, one entry per turn: personal mail first, within the
  * daily limit and its reserve, at most `perMinute` mails per quota scope and minute, and on
- * Cloudflare at most 40 per sender and run (subrequests). A disturbed connection waits: a Graph
- * connection is checked once per run by fetching a token, a Resend connection by sending one
- * entry. The step stops before its deadline and reports `moreWork` while due entries are left
- * that hang neither on a limit nor on a disturbance.
+ * Cloudflare at most 40 per sender and tick (subrequests). A disturbed connection waits: a Graph
+ * connection is checked once per run by fetching a token, a Resend connection (or a refused
+ * mailbox) by sending one entry. A scope the provider stopped for its quota waits until its pause
+ * ends, then one entry tests it (ruling R5). The step stops starting sends shortly before its
+ * deadline, so that the later steps of the tick still run, and reports `moreWork` while due
+ * entries are left that hang neither on a limit, a pause nor a disturbance.
  */
 import { platformName } from '@/platform/platform';
 import type { Platform, PlatformName } from '@/platform/platform';
+import { SecretDecryptError } from '@/server/crypto/secrets';
 import { errorLabel } from '@/server/error-label';
 import type { TickContext, TickStep } from '@/server/tick/tick';
 
@@ -18,7 +21,6 @@ import type { QuotaScope, SenderTransport } from './open-transport';
 import {
 	claimEntry,
 	clearDisturbance,
-	deferDue,
 	disturbConnection,
 	dueSenders,
 	failOrphans,
@@ -38,7 +40,8 @@ import type {
 	EntryPreparer,
 	PreparedMail,
 } from './outbox';
-import { countSent, mayStart, quotaToday, startOfNextClubDay } from './quota';
+import { countSent, liftPause, mayStart, pauseScope, quotaToday, scopePause } from './quota';
+import type { ScopePause } from './quota';
 import { newMessageId } from './transport';
 import type { OutgoingMail, SendResult, Transport } from './transport';
 
@@ -47,8 +50,24 @@ import type { OutgoingMail, SendResult, Transport } from './transport';
  * keep work after the response for 30 seconds only. The rest follows with the next tick.
  */
 const KICK_BUDGET_MS = 20_000;
-/** Mails per sender and run on Cloudflare: each costs one or two of the Worker's subrequests. */
+/**
+ * Mails per sender and tick on Cloudflare: each costs one or two of the Worker's subrequests. A
+ * cron invocation chains up to `MAX_CHAINED_TICKS + 1` ticks, so this bounds a tick, not the
+ * invocation.
+ */
 const CLOUDFLARE_SENDS_PER_SENDER = 40;
+/**
+ * No new send starts this long before the deadline, so that the later steps of the tick (bounces,
+ * warnings) still run during a long wave; at most a quarter of the step's budget, so that a short
+ * run (`KICK_BUDGET_MS`) still sends.
+ */
+const LATER_STEPS_MS = 20_000;
+const LATER_STEPS_SHARE = 4;
+/**
+ * Disturbance codes of a refused sending mailbox: a token says nothing about them, so one entry
+ * tests the connection instead (like Resend).
+ */
+const MAILBOX_CODES: ReadonlySet<string> = new Set(['graph.mailbox']);
 /** The throttle counts the mails of a scope per window of this length (decision 6). */
 const WINDOW_MS = 60_000;
 
@@ -86,6 +105,13 @@ interface ConnectionState {
 	readonly mode: 'closed' | 'open' | 'probing';
 	readonly disturbedSince: Date | null;
 }
+
+/**
+ * A quota scope as this run sees it: `open`; `probing` after a pause ended, so one entry tests
+ * whether the provider takes mails again; `closed` while paused, at the limit or after a failed
+ * test.
+ */
+type ScopeMode = 'closed' | 'open' | 'probing';
 
 /** The throttle window of a scope: when it began and how many mails went in it. */
 interface SendWindow {
@@ -160,6 +186,18 @@ function unsentOutcome(
 }
 
 /**
+ * How a scope starts the run: open without a pause, closed while paused, probing after it.
+ *
+ * @param pause The stored pause, or null.
+ * @param now The instant.
+ * @returns The mode.
+ */
+function scopeModeOf(pause: Readonly<ScopePause> | null, now: Date): ScopeMode {
+	if (pause === null) return 'open';
+	return pause.until.getTime() > now.getTime() ? 'closed' : 'probing';
+}
+
+/**
  * The lane of an opened sender.
  *
  * @param due The sender and its connection.
@@ -218,9 +256,12 @@ class OutboxRun {
 	private turn = 0;
 	private moreWork = false;
 	private readonly windows = new Map<QuotaScope, SendWindow>();
+	private readonly scopes = new Map<QuotaScope, ScopeMode>();
 	private readonly connections = new Map<string, ConnectionState>();
 	private readonly sends = new Map<string, number>();
 	private readonly maxSends: number;
+	/** No send starts at or after this instant, epoch milliseconds. */
+	private readonly stopAt: number;
 
 	/**
 	 * @param deps The preparers, `fetch`, `sleep` and the overrides of tests.
@@ -233,6 +274,8 @@ class OutboxRun {
 		const platform = deps.platform ?? platformName();
 		this.maxSends =
 			platform === 'cloudflare' ? CLOUDFLARE_SENDS_PER_SENDER : Number.POSITIVE_INFINITY;
+		const budget = Math.max(0, ctx.deadline - ctx.now().getTime());
+		this.stopAt = ctx.deadline - Math.min(LATER_STEPS_MS, budget / LATER_STEPS_SHARE);
 	}
 
 	/**
@@ -266,13 +309,13 @@ class OutboxRun {
 
 	/**
 	 * One step of the loop: a mail for the next lane in turn, or a wait for the next window. Stops
-	 * at the deadline, and when the next window would open after it.
+	 * shortly before the deadline (`LATER_STEPS_MS`), and when the next window would open after that.
 	 *
 	 * @returns Whether to go on, or whether work is left.
 	 */
 	private async step(): Promise<Next> {
 		const now = this.ctx.now().getTime();
-		if (now >= this.ctx.deadline) return (await this.anyLeft()) ? 'more' : 'done';
+		if (now >= this.stopAt) return (await this.anyLeft()) ? 'more' : 'done';
 		const lane = this.readyLane(now);
 		if (lane !== undefined) {
 			await this.sendNext(lane);
@@ -283,7 +326,7 @@ class OutboxRun {
 
 	/**
 	 * Waits until the first full window ends, unless no lane has anything left or the window would
-	 * end after the deadline.
+	 * end after the step stops starting sends.
 	 *
 	 * @param now The instant, epoch milliseconds.
 	 * @returns Whether to go on, or whether work is left.
@@ -291,7 +334,7 @@ class OutboxRun {
 	private async waitForWindow(now: number): Promise<Next> {
 		if (!(await this.anyLeft())) return 'done';
 		const wake = Math.min(...this.lanes.map((each) => this.openAtFor(each, now)));
-		if (wake >= this.ctx.deadline) return 'more';
+		if (wake >= this.stopAt) return 'more';
 		await this.deps.sleep(wake - now);
 		return 'continue';
 	}
@@ -338,15 +381,21 @@ class OutboxRun {
 	 * @param lane The lane.
 	 */
 	private async dropIfIdle(lane: Readonly<Lane>): Promise<void> {
+		if (!(await this.hasSendable(lane))) this.dropLane(lane);
+	}
+
+	/**
+	 * Whether a lane has a due entry its scope's limit lets start (decision 5).
+	 *
+	 * @param lane The lane.
+	 * @returns True when one may go.
+	 */
+	private async hasSendable(lane: Readonly<Lane>): Promise<boolean> {
 		const admission = await this.admit(lane);
-		if (admission === 'closed') {
-			this.closeScope(lane.scope);
-			return;
-		}
+		if (admission === 'closed') return false;
 		const { personalOnly } = admission;
 		const now = this.ctx.now();
-		const due = await hasDueEntry(this.ctx.db, { now, personalOnly, senderId: lane.senderId });
-		if (!due) this.dropLane(lane);
+		return hasDueEntry(this.ctx.db, { now, personalOnly, senderId: lane.senderId });
 	}
 
 	/**
@@ -359,11 +408,25 @@ class OutboxRun {
 		const known = this.connections.get(due.connectionId);
 		if (known?.mode === 'closed') return;
 		const opened = await this.openTransport(due);
-		if (opened === null) return;
+		if (opened === null || (await this.scopeMode(opened.scope)) === 'closed') return;
 		const connection = known ?? (await this.check(due, opened.transport));
 		if (connection.mode === 'closed') return;
 		this.lanes.push(laneOf(due, opened));
 		await this.startWindow(opened.scope);
+	}
+
+	/**
+	 * The mode of a scope, read from its stored pause the first time the run meets it.
+	 *
+	 * @param scope The scope.
+	 * @returns The mode.
+	 */
+	private async scopeMode(scope: QuotaScope): Promise<ScopeMode> {
+		const known = this.scopes.get(scope);
+		if (known !== undefined) return known;
+		const mode = scopeModeOf(await scopePause(this.ctx.db, scope), this.ctx.now());
+		this.scopes.set(scope, mode);
+		return mode;
 	}
 
 	/**
@@ -380,11 +443,13 @@ class OutboxRun {
 	}
 
 	/**
-	 * Opens the transport of a sender. Credentials that cannot be used (a secret that does not
-	 * decrypt) disturb the connection, so that its entries wait and the admins learn of it.
+	 * Opens the transport of a sender. A secret that does not decrypt (another app secret) disturbs
+	 * the connection, so that its entries wait and the admins learn of it; any other failure (the
+	 * database) ends the step, and the entries wait for the next tick.
 	 *
 	 * @param due The sender and its connection.
 	 * @returns The transport with its scope and limits, or null.
+	 * @throws {Error} Whatever opening threw, but a missing sender or a secret that does not decrypt.
 	 */
 	private async openTransport(due: Readonly<DueSender>): Promise<SenderTransport | null> {
 		const openTransport = this.deps.openTransport ?? openSenderTransport;
@@ -396,6 +461,7 @@ class OutboxRun {
 			});
 		} catch (error) {
 			if (error instanceof SenderNotFoundError) return null;
+			if (!(error instanceof SecretDecryptError)) throw error;
 			// oxlint-disable-next-line no-console -- name or code only, the message may carry details
 			console.error('outbox transport not opened', errorLabel(error));
 			await this.disturb(due.connectionId, 'outbox.credentials', due.disturbedSince);
@@ -421,8 +487,8 @@ class OutboxRun {
 
 	/**
 	 * Whether a connection may send: yes when it is not disturbed; a disturbed Graph connection
-	 * when a token comes (the disturbance ends); a disturbed Resend connection by one entry
-	 * (decision 9).
+	 * when a token comes (the disturbance ends); a disturbed Resend connection, or one whose sending
+	 * mailbox was refused, by one entry (decision 9).
 	 *
 	 * @param due The sender and its connection.
 	 * @param transport The transport of the sender.
@@ -432,9 +498,9 @@ class OutboxRun {
 		due: Readonly<DueSender>,
 		transport: Transport,
 	): Promise<ConnectionState['mode']> {
-		const { connectionId, disturbedSince } = due;
+		const { connectionId, disturbedCode, disturbedSince } = due;
 		if (disturbedSince === null) return 'open';
-		if (transport.probe === null) return 'probing';
+		if (transport.probe === null || MAILBOX_CODES.has(disturbedCode ?? '')) return 'probing';
 		const probed = await probeSafely(transport.probe);
 		if (probed.ok) {
 			await clearDisturbance(this.ctx.db, connectionId);
@@ -562,7 +628,7 @@ class OutboxRun {
 		if (result.ok) await countSent(this.ctx.db, lane.scope, now);
 		const { attempts } = claim.entry;
 		return {
-			outcome: outcomeOf(result, { attempts, nextDay: startOfNextClubDay(now), now }),
+			outcome: outcomeOf(result, { attempts, now }),
 			result,
 		};
 	}
@@ -579,8 +645,8 @@ class OutboxRun {
 	}
 
 	/**
-	 * Acts on a stored outcome: records or ends a disturbance, moves the scope's entries to the
-	 * next day on a spent quota and stops a lane at the Cloudflare limit.
+	 * Acts on a stored outcome: records or ends a disturbance, pauses the scope on a spent quota or
+	 * ends its pause, and stops a lane at the Cloudflare limit.
 	 *
 	 * @param lane The lane.
 	 * @param delivery What became of the entry.
@@ -592,11 +658,49 @@ class OutboxRun {
 			return;
 		}
 		if (!(await this.settleProbe(lane, result))) return;
-		if (outcome.kind === 'defer') {
-			await this.deferScope(lane, outcome.until);
-			return;
-		}
+		if (!(await this.settleScope(lane, outcome, result))) return;
 		await this.stopAtLimit(lane);
+	}
+
+	/**
+	 * Pauses the lane's scope on a spent quota (ruling R5); after a pause, the one entry that tested
+	 * the scope ends the pause when the provider took it, else the scope waits for the next run.
+	 *
+	 * @param lane The lane.
+	 * @param outcome What became of the entry.
+	 * @param result The provider's answer, or null when nothing was sent.
+	 * @returns False when the scope's lanes stopped.
+	 */
+	private async settleScope(
+		lane: Readonly<Lane>,
+		outcome: Readonly<EntryOutcome>,
+		result: Readonly<SendResult> | null,
+	): Promise<boolean> {
+		if (outcome.kind === 'pause') {
+			const { code, until } = outcome;
+			await pauseScope(this.ctx.db, { code, scope: lane.scope, until });
+			this.closeScope(lane.scope);
+			return false;
+		}
+		if (this.scopes.get(lane.scope) !== 'probing' || result === null) return true;
+		return this.endPause(lane, result);
+	}
+
+	/**
+	 * Ends the pause of a scope when its test entry went out, else stops the scope for this run.
+	 *
+	 * @param lane The lane.
+	 * @param result The provider's answer to the test entry.
+	 * @returns Whether the scope sends again.
+	 */
+	private async endPause(lane: Readonly<Lane>, result: Readonly<SendResult>): Promise<boolean> {
+		if (!result.ok) {
+			this.closeScope(lane.scope);
+			return false;
+		}
+		await liftPause(this.ctx.db, lane.scope, this.ctx.now());
+		this.scopes.set(lane.scope, 'open');
+		return true;
 	}
 
 	/**
@@ -612,20 +716,8 @@ class OutboxRun {
 	}
 
 	/**
-	 * Moves the due entries of a lane's scope to the next club day and stops the scope's lanes:
-	 * the provider's quota is spent.
-	 *
-	 * @param lane The lane.
-	 * @param until The start of the next club day.
-	 */
-	private async deferScope(lane: Readonly<Lane>, until: Date): Promise<void> {
-		await deferDue(this.ctx.db, lane.scope, this.ctx.now(), until);
-		this.closeScope(lane.scope);
-	}
-
-	/**
-	 * Ends the disturbance of a Resend connection when its one entry of the run shows that the
-	 * credentials work, else stops its lanes.
+	 * Ends the disturbance of a connection when its one test entry of the run shows that the
+	 * credentials (or the mailbox) work, else stops its lanes.
 	 *
 	 * @param lane The lane.
 	 * @param result The provider's answer, or null when nothing was sent.
@@ -647,21 +739,16 @@ class OutboxRun {
 	}
 
 	/**
-	 * Stops a lane at the Cloudflare limit of mails per sender and run; due entries left ask for
-	 * the next run.
+	 * Stops a lane at the Cloudflare limit of mails per sender and tick; due entries the scope's
+	 * limit lets start ask for the next tick.
 	 *
 	 * @param lane The lane.
 	 */
 	private async stopAtLimit(lane: Readonly<Lane>): Promise<void> {
 		if ((this.sends.get(lane.senderId) ?? 0) < this.maxSends) return;
 		this.dropLane(lane);
-		const now = this.ctx.now();
-		const due = await hasDueEntry(this.ctx.db, {
-			now,
-			personalOnly: false,
-			senderId: lane.senderId,
-		});
-		this.moreWork ||= due;
+		const sendable = await this.hasSendable(lane);
+		this.moreWork ||= sendable;
 	}
 
 	/**
@@ -683,6 +770,7 @@ class OutboxRun {
 	}
 
 	private closeScope(scope: QuotaScope): void {
+		this.scopes.set(scope, 'closed');
 		this.lanes = this.lanes.filter((lane) => lane.scope !== scope);
 	}
 

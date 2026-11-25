@@ -181,3 +181,14 @@ export const sendQuotaDays = pgTable(
 	},
 	(table) => [primaryKey({ columns: [table.scope, table.day] })],
 );
+
+/**
+ * A quota scope the provider stopped for a while (ruling R5): after a quota refusal nothing of
+ * the scope is sent until `paused_until`; then one entry tests whether the provider takes mails
+ * again, and its acceptance removes the row. Resend counts its quota over a rolling 24 hours.
+ */
+export const sendScopePauses = pgTable('send_scope_pauses', {
+	code: text('code').notNull(),
+	pausedUntil: timestamp('paused_until', { withTimezone: true }).notNull(),
+	scope: text('scope').primaryKey(),
+});
