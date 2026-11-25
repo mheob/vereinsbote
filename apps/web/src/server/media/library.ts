@@ -7,7 +7,7 @@ import { and, desc, eq, inArray } from 'drizzle-orm';
 
 import { writeAudit } from '@/server/audit/audit';
 import type { Db } from '@/server/db/client';
-import { isForeignKeyViolation } from '@/server/db/errors';
+import { isForeignKeyViolationOf } from '@/server/db/errors';
 import { media, templateMedia, templates } from '@/server/db/schema';
 import { errorLabelWithCause } from '@/server/error-label';
 import { assertArea } from '@/server/permissions/principal';
@@ -19,6 +19,8 @@ import { toRecord } from './media';
 import type { MediaRecord } from './media';
 
 const MAX_NAME_LENGTH = 200;
+/** The foreign key from `template_media.media_id`, which keeps an image in use from being deleted. */
+const USAGE_CONSTRAINT = 'template_media_media_id_media_id_fk';
 
 interface UsingTemplate {
 	readonly id: string;
@@ -191,10 +193,13 @@ async function removeRow(
 	try {
 		await deleteRowChecked(db, id, by);
 	} catch (error) {
-		// A template saved after the check: the foreign key refused the delete.
-		if (!isForeignKeyViolation(error)) throw error;
-		const using = await usageOf(db, [id]);
-		throw new ImageInUseError(using.get(id) ?? []);
+		// A template saved after the check: the foreign key of `template_media` refused the delete.
+		// Any other failure, or one no template explains, stays what it is.
+		if (!isForeignKeyViolationOf(error, USAGE_CONSTRAINT)) throw error;
+		const usage = await usageOf(db, [id]);
+		const using = usage.get(id) ?? [];
+		if (using.length === 0) throw error;
+		throw new ImageInUseError(using);
 	}
 }
 

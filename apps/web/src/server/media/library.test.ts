@@ -91,6 +91,36 @@ async function templateUsing(c: Club, mediaId: string, name: string): Promise<st
 	return row.id;
 }
 
+/**
+ * A database whose delete transaction sees no usage although a template starts using the image
+ * (committed) right before: the race between the usage check and the delete.
+ *
+ * @param c The club.
+ * @param mediaId The image.
+ * @returns The database.
+ */
+function racingDb(c: Club, mediaId: string): Db {
+	const blind = { from: () => ({ innerJoin: () => ({ where: () => ({ orderBy: () => [] }) }) }) };
+	return new Proxy(c.db, {
+		get(target, property, receiver) {
+			if (property !== 'transaction') return Reflect.get(target, property, receiver) as unknown;
+			return async (run: Parameters<Db['transaction']>[0]) => {
+				await templateUsing(c, mediaId, 'Neu');
+				return target.transaction(async (tx) =>
+					run(
+						new Proxy(tx, {
+							get: (inner, key, innerReceiver) =>
+								key === 'select'
+									? () => blind
+									: (Reflect.get(inner, key, innerReceiver) as unknown),
+						}),
+					),
+				);
+			};
+		},
+	});
+}
+
 describe(listLibrary, () => {
 	it('lists the images of an area for readers only', async () => {
 		const c = await club();
@@ -209,5 +239,29 @@ describe(deleteImage, () => {
 		await expect(deleteImage(c.db, c.storage, c.editor, UNKNOWN_ID)).rejects.toBeInstanceOf(
 			ImageNotFoundError,
 		);
+	});
+
+	it('maps a template that starts using the image after the check to the in-use refusal', async () => {
+		const c = await club();
+		const id = await upload(c, c.membersAreaId, 'a.png');
+		const racing = racingDb(c, id);
+		const error = await deleteImage(racing, c.storage, c.editor, id).catch(
+			(error_: unknown) => error_,
+		);
+		expect(error).toBeInstanceOf(ImageInUseError);
+		expect(error).toMatchObject({ templates: [{ name: 'Neu' }] });
+		await expect(c.db.select().from(media).where(eq(media.id, id))).resolves.toHaveLength(1);
+	});
+
+	it('does not call an unrelated foreign key violation "in use"', async () => {
+		const c = await club();
+		const id = await upload(c, c.membersAreaId, 'a.png');
+		// The audit entry names a user that does not exist: its own foreign key refuses it.
+		const ghost: Principal = { ...c.editor, userId: 'ghost' };
+		const error = await deleteImage(c.db, c.storage, ghost, id).catch((error_: unknown) => error_);
+		expect(error).toBeInstanceOf(Error);
+		expect(error).not.toBeInstanceOf(ImageInUseError);
+		await expect(c.db.select().from(media).where(eq(media.id, id))).resolves.toHaveLength(1);
+		await expect(c.storage.get(`media/${id}`)).resolves.not.toBeNull();
 	});
 });
