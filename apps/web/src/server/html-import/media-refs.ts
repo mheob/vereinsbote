@@ -75,6 +75,29 @@ const UNKNOWN_ORIGIN = 'https://app.invalid';
 const ELSEWHERE: AppUrl = { kind: 'elsewhere' };
 
 /**
+ * The host name of an address in lower case without a trailing dot.
+ *
+ * @param url The address.
+ * @returns The host name.
+ */
+function hostWithoutDot(url: URL): string {
+	return url.hostname.replace(/\.$/u, '').toLowerCase();
+}
+
+/**
+ * Whether an address is on the app's host: `http:` or `https:`, the same host (a trailing dot
+ * and the case do not count) and the same port (the default port is no port).
+ *
+ * @param url The address.
+ * @param app The origin of the app.
+ * @returns True when a browser would reach the app's host.
+ */
+function isAppHost(url: URL, app: URL): boolean {
+	const web = url.protocol === 'https:' || url.protocol === 'http:';
+	return web && hostWithoutDot(url) === hostWithoutDot(app) && url.port === app.port;
+}
+
+/**
  * Tells what a URL is to the app. The URL is resolved like a browser does it (so `./`, `:443`,
  * an upper-case host and a relative path are what they are) and compared by origin. Any address
  * on the app's origin is one of its images, written as the canonical path without query or
@@ -85,9 +108,9 @@ const ELSEWHERE: AppUrl = { kind: 'elsewhere' };
  * @returns The image, an address on the app's origin, or another address.
  */
 function classifyAppUrl(url: string, origin: string): AppUrl {
-	const base = origin === '' ? UNKNOWN_ORIGIN : origin;
+	const base = new URL(origin === '' ? UNKNOWN_ORIGIN : origin);
 	const resolved = URL.canParse(url, base) ? new URL(url, base) : null;
-	if (resolved === null || resolved.origin !== new URL(base).origin) return ELSEWHERE;
+	if (resolved === null || !isAppHost(resolved, base)) return ELSEWHERE;
 	if (!resolved.pathname.startsWith(MEDIA_PREFIX)) return { kind: 'ownOrigin' };
 	const parsed = parseMediaFileName(resolved.pathname.slice(MEDIA_PREFIX.length));
 	return parsed === null

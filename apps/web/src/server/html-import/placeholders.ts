@@ -105,6 +105,18 @@ function stripPrivateUse(text: string): string {
 }
 
 /**
+ * Whether a text has a marker or token character. After parsing, one can only have come from an
+ * entity or a CSS escape (the raw source is stripped), which is a forgery.
+ *
+ * @param text The decoded text.
+ * @returns True when it has one.
+ */
+function hasPrivateUse(text: string): boolean {
+	for (const character of text) if (PRIVATE_USE.has(character)) return true;
+	return false;
+}
+
+/**
  * Whether a text has the characters of a token.
  *
  * @param text The text.
@@ -331,6 +343,30 @@ function cssNameAt(index: number): string {
 }
 
 /**
+ * Refuses a decoded text that has a marker or token character.
+ *
+ * @param state The state.
+ * @param text The decoded text.
+ * @returns The text.
+ */
+function noPrivateUse(state: State, text: string): string {
+	if (hasPrivateUse(text)) refuse(state, { kind: 'syntax' });
+	return text;
+}
+
+/**
+ * Checks a text and replaces its placeholders by tokens.
+ *
+ * @param state The state.
+ * @param text The decoded text.
+ * @param place Where it stands.
+ * @returns The text with tokens; the text itself when it is refused.
+ */
+function protect(state: State, text: string, place: Place): string {
+	return hasPrivateUse(text) ? noPrivateUse(state, text) : replace(state, text, place, tokenAt);
+}
+
+/**
  * Replaces the placeholders of a CSS text by names the CSS parser takes. A name the source wrote
  * itself is refused: it could stand for a placeholder judged somewhere else.
  *
@@ -341,6 +377,7 @@ function cssNameAt(index: number): string {
  */
 function protectCss(state: State, css: string, place: Place): string {
 	state.cssNames.clear();
+	if (hasPrivateUse(css)) return noPrivateUse(state, css);
 	CSS_TOKEN.lastIndex = 0;
 	if (CSS_TOKEN.test(css)) {
 		refuse(state, { kind: 'syntax' });
@@ -364,7 +401,9 @@ function hasHiddenPlaceholder(written: string, count: number): boolean {
 	const seen = new Set<number>();
 	for (const match of written.matchAll(TOKEN)) {
 		const index = Number(match.groups?.index);
-		if (index >= count || seen.has(index)) return true;
+		// A `{` in front of a token would make `{{key}}` of it again when the placeholder is written.
+		const braced = written.charAt(match.index - 1) === '{';
+		if (index >= count || seen.has(index) || braced) return true;
 		seen.add(index);
 	}
 	return false;
@@ -414,7 +453,7 @@ function createPlaceholderTokens(allowed: PlaceholderKeys): PlaceholderTokens {
 	return {
 		contentCounts: () => state.content,
 		cssToTokens: (css) =>
-			css.replaceAll(CSS_TOKEN, (match, index: string) =>
+			noPrivateUse(state, css).replaceAll(CSS_TOKEN, (match, index: string) =>
 				state.cssNames.has(Number(index)) ? tokenAt(Number(index)) : match,
 			),
 		hidden: (written) => hasHiddenPlaceholder(written, state.refs.length),
@@ -422,7 +461,7 @@ function createPlaceholderTokens(allowed: PlaceholderKeys): PlaceholderTokens {
 			const index = LEADING_TOKEN.exec(value.trim())?.groups?.index;
 			return index === undefined ? null : (refAt(index) ?? null);
 		},
-		protect: (text, place) => replace(state, text, place, tokenAt),
+		protect: (text, place) => protect(state, text, place),
 		protectCss: (css, place) => protectCss(state, css, place),
 		refusals: () => [...state.refusals.values()],
 		restore: (html) =>

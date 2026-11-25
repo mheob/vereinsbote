@@ -430,3 +430,71 @@ describe('addresses of the app', () => {
 		});
 	});
 });
+
+describe('token characters written as an entity or an escape', () => {
+	const FORGED_INJECTION = `<p foo='{{brand.register | "red;background:url(http://evil.example/x.png);behavior:url(x.htc);width:expression(alert(1))"}}'>a</p>`;
+
+	it.each([
+		[
+			'an entity in a style attribute',
+			`${FORGED_INJECTION}<p style='color:&#xE002;0&#xE003;'>b</p>`,
+		],
+		[
+			'a CSS escape in a style attribute',
+			`${FORGED_INJECTION}<p style='font-family:"\\E002 0\\E003 "'>b</p>`,
+		],
+		[
+			'a CSS escape in a sheet',
+			`${FORGED_INJECTION}<style>p{font-family:"\\E002 0\\E003 "}</style>`,
+		],
+		[
+			'an entity in a conditional comment',
+			`${FORGED_INJECTION}<!--[if mso]><p>&#xE002;0&#xE003;</p><![endif]-->`,
+		],
+		[
+			'an escape in a conditional comment',
+			`${FORGED_INJECTION}<!--[if mso]><style>p{font-family:"\\E002 0\\E003 "}</style><![endif]-->`,
+		],
+		[
+			'an entity in a href path',
+			`${FORGED_INJECTION}<a href='https://x.example/&#xE002;0&#xE003;'>b</a>`,
+		],
+		['an entity in text', `${FORGED_INJECTION}<p>&#xE002;0&#xE003;</p>`],
+		['a compiler marker as an entity', '<p>&#xE000;0&#xE001;</p>'],
+	])('are refused: %s', (_name, body) => {
+		expect(refusalsOf(run(body))).toContainEqual({ kind: 'syntax' });
+	});
+});
+
+describe('a brace in front of a placeholder', () => {
+	it.each([
+		['across a removed script', '<p>{<script>x</script>{{brand.name}}</p>'],
+		['across a removed comment', '<p>{<!-- x -->{{brand.name}}</p>'],
+	])('is refused: %s', (_name, body) => {
+		expect(refusalsOf(run(body))).toStrictEqual([{ kind: 'placeholderHidden' }]);
+	});
+});
+
+describe('the host of the app in other forms', () => {
+	it.each([
+		`http://verein.example.org/media/${FOREIGN}.png`,
+		`https://verein.example.org./media/${FOREIGN}.png`,
+		`http://VEREIN.example.org./media/${FOREIGN}.png`,
+	])('is judged as the library, or dropped: %s', (src) => {
+		expect(outcome(run(`<img src="${src}" alt="">`))).not.toMatch(/src='https?:/u);
+		expect(outcome(run(`<p style='background:url(${src})'>x</p>`))).not.toMatch(/url\(https?:/u);
+	});
+
+	it('takes the library image of the area under such a host', () => {
+		expect(run(`<img src="http://verein.example.org./media/${OWN}.png" alt="">`)).toMatchObject({
+			mediaIds: [OWN],
+			ok: true,
+		});
+	});
+
+	it('keeps another port and another host external', () => {
+		expect(
+			run(`<img src="https://verein.example.org:8443/media/${FOREIGN}.png" alt="">`),
+		).toMatchObject({ ok: true });
+	});
+});
