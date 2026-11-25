@@ -33,6 +33,7 @@
 		"react-dom": "catalog:",
 		"read-excel-file": "catalog:",
 		"s3mini": "catalog:",
+		"web-streams-polyfill": "catalog:",
 		"zod": "catalog:"
 	},
 	"devDependencies": {

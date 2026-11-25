@@ -64,6 +64,9 @@ catalog:
   vite-plus: 1.7.0
   # Pinned to the Vitest that vite-plus bundles (`vp toolchain vitest`), npm already has a newer one.
   vitest: 5.1.0
+  # Only loaded in the browser when it lacks `ReadableByteStreamController` (Safari), so the mail
+  # preview can render (`components/preview/readable-stream-polyfill.ts`).
+  web-streams-polyfill: ^4.5.1
   wrangler: ^4.166.0
   write-excel-file: ^4.1.1
   zod: ^4.6.7

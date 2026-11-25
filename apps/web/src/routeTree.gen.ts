@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteRouteImport } from './routes/admin/route'
 import { Route as ContactsRouteRouteImport } from './routes/contacts/route'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as PreviewFrameRouteImport } from './routes/preview-frame'
 import { Route as SetupRouteImport } from './routes/setup'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AdminAreasRouteImport } from './routes/admin/areas'
@@ -46,6 +47,11 @@ const ContactsRouteRoute = ContactsRouteRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PreviewFrameRoute = PreviewFrameRouteImport.update({
+  id: '/preview-frame',
+  path: '/preview-frame',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SetupRoute = SetupRouteImport.update({
@@ -124,6 +130,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRouteRouteWithChildren
   '/contacts': typeof ContactsRouteRouteWithChildren
   '/login': typeof LoginRoute
+  '/preview-frame': typeof PreviewFrameRoute
   '/setup': typeof SetupRoute
   '/admin/areas': typeof AdminAreasRoute
   '/admin/contact-settings': typeof AdminContactSettingsRoute
@@ -142,6 +149,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/preview-frame': typeof PreviewFrameRoute
   '/setup': typeof SetupRoute
   '/admin/areas': typeof AdminAreasRoute
   '/admin/contact-settings': typeof AdminContactSettingsRoute
@@ -163,6 +171,7 @@ export interface FileRoutesById {
   '/admin': typeof AdminRouteRouteWithChildren
   '/contacts': typeof ContactsRouteRouteWithChildren
   '/login': typeof LoginRoute
+  '/preview-frame': typeof PreviewFrameRoute
   '/setup': typeof SetupRoute
   '/admin/areas': typeof AdminAreasRoute
   '/admin/contact-settings': typeof AdminContactSettingsRoute
@@ -185,6 +194,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/contacts'
     | '/login'
+    | '/preview-frame'
     | '/setup'
     | '/admin/areas'
     | '/admin/contact-settings'
@@ -203,6 +213,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/login'
+    | '/preview-frame'
     | '/setup'
     | '/admin/areas'
     | '/admin/contact-settings'
@@ -223,6 +234,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/contacts'
     | '/login'
+    | '/preview-frame'
     | '/setup'
     | '/admin/areas'
     | '/admin/contact-settings'
@@ -244,6 +256,7 @@ export interface RootRouteChildren {
   AdminRouteRoute: typeof AdminRouteRouteWithChildren
   ContactsRouteRoute: typeof ContactsRouteRouteWithChildren
   LoginRoute: typeof LoginRoute
+  PreviewFrameRoute: typeof PreviewFrameRoute
   SetupRoute: typeof SetupRoute
   ApiHealthRoute: typeof ApiHealthRoute
   ApiTickRoute: typeof ApiTickRoute
@@ -279,6 +292,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/preview-frame': {
+      id: '/preview-frame'
+      path: '/preview-frame'
+      fullPath: '/preview-frame'
+      preLoaderRoute: typeof PreviewFrameRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/setup': {
@@ -425,6 +445,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRouteRoute: AdminRouteRouteWithChildren,
   ContactsRouteRoute: ContactsRouteRouteWithChildren,
   LoginRoute: LoginRoute,
+  PreviewFrameRoute: PreviewFrameRoute,
   SetupRoute: SetupRoute,
   ApiHealthRoute: ApiHealthRoute,
   ApiTickRoute: ApiTickRoute,
