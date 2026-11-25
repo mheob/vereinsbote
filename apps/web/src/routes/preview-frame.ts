@@ -1,23 +1,23 @@
 import { createFileRoute } from '@tanstack/react-router';
 
 /*
- * The page of the mail preview's sandboxed iframe. Its headers (a policy of its own with the
- * request's nonce, `SAMEORIGIN` framing) come from the request middleware in `start.ts`; the nonce
- * in the script is the one that middleware put in the header (`cspNonceFor` of the same request).
+ * The page of the mail preview's sandboxed iframe, with a policy of its own (the request's nonce,
+ * `SAMEORIGIN` framing): the request middleware in `start.ts` sets it, and so does
+ * `handlePreviewFrameRequest` on every answer, with the same nonce (`cspNonceFor` of the same
+ * request). Every method lands here (`ANY`), so other methods than GET get 405.
  */
 
-async function serve(request: Request): Promise<Response> {
-	const [{ getAppEnv }, { cspNonceFor }, { previewFramePage }] = await Promise.all([
-		import('@/platform/context'),
-		import('@/platform/csp-nonce'),
-		import('@/server/preview/frame-page'),
-	]);
+async function appOrigin(): Promise<string> {
+	const { getAppEnv } = await import('@/platform/context');
 	const { appUrl } = await getAppEnv();
-	return new Response(previewFramePage(cspNonceFor(request), appUrl.origin), {
-		headers: { 'cache-control': 'no-store', 'content-type': 'text/html; charset=utf-8' },
-	});
+	return appUrl.origin;
+}
+
+async function serve(request: Request): Promise<Response> {
+	const { handlePreviewFrameRequest } = await import('@/server/preview/frame-request');
+	return handlePreviewFrameRequest(request, appOrigin);
 }
 
 export const Route = createFileRoute('/preview-frame')({
-	server: { handlers: { GET: async ({ request }) => serve(request) } },
+	server: { handlers: { ANY: async ({ request }) => serve(request) } },
 });
