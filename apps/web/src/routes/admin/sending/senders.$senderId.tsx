@@ -1,16 +1,25 @@
-import { createFileRoute, Link, useLoaderData, useRouter } from '@tanstack/react-router';
-import { startTransition, useCallback } from 'react';
+import {
+	createFileRoute,
+	Link,
+	useLoaderData,
+	useLocation,
+	useRouter,
+} from '@tanstack/react-router';
+import { startTransition, useCallback, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 
 import { DeleteSendingDialog } from '@/components/admin/sending/delete-sending-dialog';
 import { SelfTest } from '@/components/admin/sending/self-test-result';
-import { SenderForm, SystemSenderControl } from '@/components/admin/sending/sender-form';
+import { SenderForm } from '@/components/admin/sending/sender-form';
+import { SystemSenderControl } from '@/components/admin/sending/system-sender-control';
 import { Announcements, useAnnouncer } from '@/components/announcements';
+import { clearHistoryNotice } from '@/components/contacts/history-notice';
 import { linkClass } from '@/components/styles';
 import { loadSenderPage } from '@/functions/sending';
 import { adminPageHead } from '@/i18n/page-title';
 import type { AdminTitleContext } from '@/i18n/page-title';
 import { useT } from '@/i18n/use-t';
+import type { SelfTestResult } from '@/server/sending/open-transport';
 
 /**
  * One sender for admins: its form, the system sender mark, the self test and „Löschen“. A sender
@@ -25,6 +34,17 @@ export const Route = createFileRoute('/admin/sending/senders/$senderId')({
 		const data = useLoaderData({ from: '/admin/sending/senders/$senderId' });
 		const [announcement, announce] = useAnnouncer();
 		const email = data?.sender?.email ?? '';
+		const notice = useLocation({ select: (location) => location.state.sendingNotice });
+		const stateTest = useLocation({ select: (location) => location.state.sendingSelfTest });
+		// The self test a save ran (a new sender's, or a changed address or connection), then reruns.
+		const [result, setResult] = useState<SelfTestResult | null>(stateTest ?? null);
+		useEffect(() => {
+			if (notice?.kind === 'senderCreated') {
+				announce(t('sending.senderCreated', { name: notice.name }), 'status');
+				clearHistoryNotice(globalThis.history, 'sendingNotice');
+			}
+			clearHistoryNotice(globalThis.history, 'sendingSelfTest');
+		}, [announce, notice, t]);
 		const onDeleted = useCallback(() => {
 			startTransition(async () => {
 				await router.navigate({
@@ -48,12 +68,14 @@ export const Route = createFileRoute('/admin/sending/senders/$senderId')({
 					<h1 className="text-2xl font-bold">{sender.email}</h1>
 					<Announcements announcement={announcement} />
 				</div>
-				<SenderForm announce={announce} key={sender.version} page={data} />
+				<SenderForm announce={announce} key={sender.version} onSelfTest={setResult} page={data} />
 				<SystemSenderControl announce={announce} isSystem={sender.isSystem} senderId={sender.id} />
 				<SelfTest
 					announce={announce}
 					defaultProbe={data.adminEmail}
 					isGraph={sender.connectionKind === 'graph'}
+					onResult={setResult}
+					result={result}
 					senderId={sender.id}
 				/>
 				<div>

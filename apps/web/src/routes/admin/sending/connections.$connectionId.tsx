@@ -49,7 +49,7 @@ export const Route = createFileRoute('/admin/sending/connections/$connectionId')
 					<h1 className="text-2xl font-bold">{connection.name}</h1>
 					<Announcements announcement={announcement} />
 				</div>
-				<ConnectionForm announce={announce} connection={connection} key={connection.version} />
+				<ConnectionForm announce={announce} connection={connection} />
 				<div className="flex max-w-xl flex-col gap-2">
 					{connection.senders > 0 ? (
 						<p id={usageId}>{t('sending.connectionInUseNote', { count: connection.senders })}</p>

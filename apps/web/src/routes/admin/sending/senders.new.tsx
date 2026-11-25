@@ -9,6 +9,15 @@ import { adminPageHead } from '@/i18n/page-title';
 import type { AdminTitleContext } from '@/i18n/page-title';
 import { useT } from '@/i18n/use-t';
 
+/**
+ * A new sender is tested and shown on its own page, which it navigates to.
+ *
+ * @returns Nothing.
+ */
+function ignoreSelfTest(): void {
+	// nothing to do here
+}
+
 /** „Absender anlegen“ for admins: address, connection, limits and released areas. */
 export const Route = createFileRoute('/admin/sending/senders/new')({
 	// The name gives React a component (hooks rules, DevTools); TanStack Router names the property.
@@ -31,7 +40,7 @@ export const Route = createFileRoute('/admin/sending/senders/new')({
 				{data.connections.length === 0 ? (
 					<p>{t('sending.addSenderNeedsConnection')}</p>
 				) : (
-					<SenderForm announce={announce} page={data} />
+					<SenderForm announce={announce} onSelfTest={ignoreSelfTest} page={data} />
 				)}
 			</div>
 		);

@@ -870,7 +870,6 @@ export const de = {
 	'preview.preheader': 'Vorschautext',
 	'preview.ready': 'Die Vorschau ist aktualisiert.',
 	'preview.subject': 'Betreff',
-	'sending.actionsColumn': 'Aktionen',
 	'sending.addConnection': 'Anbindung anlegen',
 	'sending.addSender': 'Absender anlegen',
 	'sending.addSenderNeedsConnection':
@@ -889,6 +888,8 @@ export const de = {
 	'sending.back': 'Zurück zum Versand',
 	'sending.changed':
 		'Das wurde inzwischen von jemand anderem geändert. Lade die Seite neu und versuche es noch einmal.',
+	'sending.checkNotRun':
+		'Die Prüfung der Zugangsdaten konnte nicht laufen. Starte den Selbsttest eines Absenders von Hand.',
 	'sending.clientIdLabel': 'Client-ID',
 	'sending.clientSecretLabel': 'Client-Secret',
 	'sending.connectionColumn': 'Anbindung',
@@ -920,8 +921,6 @@ export const de = {
 	'sending.deleteSenderText': 'Der Absender wird endgültig gelöscht.',
 	'sending.deleteSenderTitle': '{name} löschen?',
 	'sending.displayNameLabel': 'Anzeigename',
-	'sending.edit': 'Bearbeiten',
-	'sending.editAria': '{name} bearbeiten',
 	'sending.emailInvalid': 'Bitte gib eine gültige E-Mail-Adresse ein.',
 	'sending.emailTaken': 'Einen Absender mit dieser Adresse gibt es schon.',
 	'sending.graphHelp': 'Das Ablaufdatum des Secrets trägst du von Hand ein, Graph verrät es nicht.',
@@ -1002,6 +1001,7 @@ export const de = {
 	'sending.testRestricted': 'Beschränkung wirkt: Das Lesen fremder Postfächer ist verboten.',
 	'sending.testTokenFailed': 'Zugangsdaten abgelehnt',
 	'sending.testTokenOk': 'Zugangsdaten in Ordnung',
+	'sending.testTokenUnchecked': 'Zugangsdaten nicht separat prüfbar, die Testmail entscheidet',
 	'sending.testUnknown':
 		'Beschränkung nicht prüfbar: Das Postfach fehlt oder antwortete anders als erwartet.',
 	'sending.title': 'Versand',

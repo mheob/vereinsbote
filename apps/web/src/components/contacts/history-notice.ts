@@ -5,7 +5,13 @@
  */
 
 /** A notice in the history state. */
-type HistoryNoticeKey = 'deletedContact' | 'partnerSaved' | 'sendingNotice' | 'templateNotice';
+type HistoryNoticeKey =
+	| 'deletedContact'
+	| 'partnerSaved'
+	| 'sendingCheck'
+	| 'sendingNotice'
+	| 'sendingSelfTest'
+	| 'templateNotice';
 
 /** The part of `window.history` a notice needs. */
 interface NoticeHistory {

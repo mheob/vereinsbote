@@ -6,15 +6,24 @@ import { auditLog, mailConnections } from '@/server/db/schema';
 import { createTestDb } from '@/server/db/test-db';
 import { ForbiddenError } from '@/server/permissions/principal';
 
+import { updateConnection } from './connections';
 import { SenderInvalidError, SenderNotFoundError } from './errors';
-import { openSenderTransport, runSelfTest } from './open-transport';
-import { fakeProviders, graphConnection, resendConnection, senderOn, testEnv } from './testing';
+import { checkConnectionCredentials, openSenderTransport, runSelfTest } from './open-transport';
+import {
+	fakeProviders,
+	graphConnection,
+	resendConnection,
+	senderOn,
+	testEnv,
+	testKey,
+} from './testing';
 
 const NOW = new Date('2026-11-25T10:00:00Z');
 const UNKNOWN_ID = '00000000-0000-4000-8000-000000000000';
 const HTTP_OK = 200;
 const HTTP_FORBIDDEN = 403;
 const HTTP_UNAUTHORIZED = 401;
+const HTTP_NOT_FOUND = 404;
 const DISTURBED_SINCE = new Date('2026-11-20T00:00:00Z');
 
 /**
@@ -198,7 +207,7 @@ describe(runSelfTest, () => {
 			fetch: failing.fetch,
 			now: () => NOW,
 		});
-		expect(outcome).toStrictEqual({ restriction: null, testMail: 'failed', token: 'ok' });
+		expect(outcome).toStrictEqual({ restriction: null, testMail: 'failed', token: 'unchecked' });
 	});
 
 	it('sends the test mail of a resend sender to the admin', async () => {
@@ -212,7 +221,7 @@ describe(runSelfTest, () => {
 			now: () => NOW,
 		});
 		const sent = working.calls.find((call) => call.url.endsWith('/emails'));
-		expect(outcome).toStrictEqual({ restriction: null, testMail: 'sent', token: 'ok' });
+		expect(outcome).toStrictEqual({ restriction: null, testMail: 'sent', token: 'unchecked' });
 		expect(sent?.body).toContain('"to":["admin@example.org"]');
 	});
 
@@ -242,5 +251,111 @@ describe(runSelfTest, () => {
 		await expect(runSelfTest(db, testEnv(), admin, senderId, 'nope', deps)).rejects.toThrow(
 			SenderInvalidError,
 		);
+	});
+});
+
+/**
+ * The dependencies of a test run whose restriction probe answers with a status.
+ *
+ * @param probe The status.
+ * @returns `fetch` and the clock.
+ */
+function probeDeps(probe: number): { fetch: typeof fetch; now: () => Date } {
+	return { fetch: fakeProviders({ probe }).fetch, now: () => NOW };
+}
+
+describe('restriction warning', () => {
+	it('stays when a later test cannot check the restriction', async () => {
+		const { admin, connectionId, db, senderId } = await disturbedGraphClub();
+		await runSelfTest(db, testEnv(), admin, senderId, null, probeDeps(HTTP_OK));
+		await runSelfTest(db, testEnv(), admin, senderId, null, probeDeps(HTTP_NOT_FOUND));
+		const [stored] = await db
+			.select()
+			.from(mailConnections)
+			.where(eq(mailConnections.id, connectionId));
+		expect(stored?.restriction).toBe('readable');
+	});
+
+	it('is replaced by a test that finds the restriction in place', async () => {
+		const { admin, connectionId, db, senderId } = await disturbedGraphClub();
+		await runSelfTest(db, testEnv(), admin, senderId, null, probeDeps(HTTP_OK));
+		await runSelfTest(db, testEnv(), admin, senderId, null, probeDeps(HTTP_FORBIDDEN));
+		const [stored] = await db
+			.select()
+			.from(mailConnections)
+			.where(eq(mailConnections.id, connectionId));
+		expect(stored?.restriction).toBe('restricted');
+	});
+});
+
+describe(checkConnectionCredentials, () => {
+	it('ends the disturbance of a graph connection whose token works', async () => {
+		const { admin, connectionId, db } = await disturbedGraphClub();
+		const result = await checkConnectionCredentials(db, testEnv(), admin, connectionId, {
+			fetch: fakeProviders().fetch,
+			now: () => NOW,
+		});
+		const [stored] = await db
+			.select()
+			.from(mailConnections)
+			.where(eq(mailConnections.id, connectionId));
+		expect(result).toBe('ok');
+		expect(stored?.disturbedSince).toBeNull();
+	});
+
+	it('marks a graph connection whose token is refused as disturbed', async () => {
+		const db = await createTestDb();
+		const { admin } = await setUpClub(db);
+		const connectionId = await graphConnection(db, admin);
+		const result = await checkConnectionCredentials(db, testEnv(), admin, connectionId, {
+			fetch: fakeProviders({ token: HTTP_UNAUTHORIZED }).fetch,
+			now: () => NOW,
+		});
+		const [stored] = await db
+			.select()
+			.from(mailConnections)
+			.where(eq(mailConnections.id, connectionId));
+		expect(result).toBe('failed');
+		expect(stored?.disturbedSince).toStrictEqual(NOW);
+	});
+
+	it('cannot check a resend connection', async () => {
+		const db = await createTestDb();
+		const { admin } = await setUpClub(db);
+		const connectionId = await resendConnection(db, admin);
+		const result = await checkConnectionCredentials(db, testEnv(), admin, connectionId, {
+			fetch: fakeProviders().fetch,
+			now: () => NOW,
+		});
+		expect(result).toBe('unchecked');
+	});
+});
+
+describe('secrets after an update', () => {
+	it('opens the transport with the replaced secret', async () => {
+		const db = await createTestDb();
+		const { admin } = await setUpClub(db);
+		const connectionId = await graphConnection(db, admin);
+		const senderId = await senderOn(db, admin, connectionId, 'verein@example.org');
+		await updateConnection(
+			db,
+			admin,
+			connectionId,
+			{
+				clientId: 'client-id-2',
+				clientSecret: 'a-new-secret',
+				kind: 'graph',
+				name: 'Renamed',
+				secretExpiresOn: '2028-01-31',
+				tenantId: 'tenant-1',
+			},
+			1,
+			await testKey(),
+		);
+		const opened = await openSenderTransport(db, testEnv(), senderId, {
+			fetch: fakeProviders().fetch,
+			now: () => NOW,
+		});
+		expect(opened.connectionId).toBe(connectionId);
 	});
 });

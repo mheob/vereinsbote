@@ -480,22 +480,28 @@ async function deleteSender(db: Db, actor: Principal, id: string): Promise<void>
  */
 async function setSystemSender(db: Db, actor: Principal, senderId: string | null): Promise<void> {
 	assertAdmin(actor);
-	await db.transaction(async (tx) => {
-		await tx.update(senders).set({ isSystem: false }).where(eq(senders.isSystem, true));
-		if (senderId !== null) {
-			const chosen = await tx
-				.update(senders)
-				.set({ isSystem: true })
-				.where(eq(senders.id, senderId))
-				.returning({ id: senders.id });
-			if (chosen.length === 0) throw new SenderNotFoundError();
-		}
-		await writeAudit(tx, {
-			action: 'sender.system_set',
-			actorUserId: actor.userId,
-			target: senderId === null ? undefined : `sender:${senderId}`,
+	try {
+		await db.transaction(async (tx) => {
+			await tx.update(senders).set({ isSystem: false }).where(eq(senders.isSystem, true));
+			if (senderId !== null) {
+				const chosen = await tx
+					.update(senders)
+					.set({ isSystem: true })
+					.where(eq(senders.id, senderId))
+					.returning({ id: senders.id });
+				if (chosen.length === 0) throw new SenderNotFoundError();
+			}
+			await writeAudit(tx, {
+				action: 'sender.system_set',
+				actorUserId: actor.userId,
+				target: senderId === null ? undefined : `sender:${senderId}`,
+			});
 		});
-	});
+	} catch (error) {
+		// Somebody chose another system sender at the same moment: the partial unique index refuses.
+		if (isUniqueViolation(error)) throw new SenderChangedError();
+		throw error;
+	}
 }
 
 /**

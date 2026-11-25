@@ -850,7 +850,6 @@ export const en: Record<keyof typeof de, string> = {
 	'preview.preheader': 'Preview text',
 	'preview.ready': 'The preview is updated.',
 	'preview.subject': 'Subject',
-	'sending.actionsColumn': 'Actions',
 	'sending.addConnection': 'Add a connection',
 	'sending.addSender': 'Add a sender',
 	'sending.addSenderNeedsConnection': 'Add a connection first, then you can add senders.',
@@ -866,6 +865,8 @@ export const en: Record<keyof typeof de, string> = {
 	'sending.areasLabel': 'Released areas',
 	'sending.back': 'Back to sending',
 	'sending.changed': 'Somebody else changed this in the meantime. Reload the page and try again.',
+	'sending.checkNotRun':
+		'The check of the credentials could not run. Start the self test of a sender by hand.',
 	'sending.clientIdLabel': 'Client ID',
 	'sending.clientSecretLabel': 'Client secret',
 	'sending.connectionColumn': 'Connection',
@@ -895,8 +896,6 @@ export const en: Record<keyof typeof de, string> = {
 	'sending.deleteSenderText': 'The sender is deleted for good.',
 	'sending.deleteSenderTitle': 'Delete {name}?',
 	'sending.displayNameLabel': 'Display name',
-	'sending.edit': 'Edit',
-	'sending.editAria': 'Edit {name}',
 	'sending.emailInvalid': 'Please enter a valid e-mail address.',
 	'sending.emailTaken': 'A sender with this address already exists.',
 	'sending.graphHelp': 'You enter the expiry date of the secret by hand; Graph does not tell it.',
@@ -975,6 +974,7 @@ export const en: Record<keyof typeof de, string> = {
 	'sending.testRestricted': 'Restriction works: reading other mailboxes is forbidden.',
 	'sending.testTokenFailed': 'Credentials were refused',
 	'sending.testTokenOk': 'Credentials are fine',
+	'sending.testTokenUnchecked': 'Credentials cannot be checked on their own, the test mail decides',
 	'sending.testUnknown':
 		'Restriction could not be checked: the mailbox is missing or answered unexpectedly.',
 	'sending.title': 'Sending',

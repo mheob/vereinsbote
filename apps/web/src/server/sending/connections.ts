@@ -5,8 +5,6 @@
  * only whether a secret is stored. A save with an empty secret keeps the stored one. A change runs
  * under a row lock and a version. The activity log names ids only.
  */
-import { randomUUID } from 'node:crypto';
-
 import { and, count, eq, sql } from 'drizzle-orm';
 
 import { writeAudit } from '@/server/audit/audit';
@@ -376,7 +374,7 @@ async function createConnection(
 	key: CryptoKey,
 ): Promise<{ id: string }> {
 	assertAdmin(actor);
-	const id = randomUUID();
+	const id = crypto.randomUUID();
 	const columns = await checkedColumns(input, id, true, key);
 	const { secretCiphertext } = columns;
 	if (secretCiphertext === undefined) throw new ConnectionInvalidError('secret');
@@ -427,23 +425,28 @@ async function updateConnection(
 	key: CryptoKey,
 ): Promise<{ version: number }> {
 	assertAdmin(actor);
-	const columns = await checkedColumns(input, id, false, key);
 	try {
 		return await db.transaction(async (tx) => {
 			const [row] = await tx
-				.select({ kind: mailConnections.kind, version: mailConnections.version })
+				.select({
+					id: mailConnections.id,
+					kind: mailConnections.kind,
+					version: mailConnections.version,
+				})
 				.from(mailConnections)
 				.where(eq(mailConnections.id, id))
 				.for('update');
 			if (row === undefined) throw new ConnectionNotFoundError();
 			if (row.version !== version) throw new ConnectionChangedError();
 			if (row.kind !== input.kind) throw new ConnectionInvalidError('kind');
+			// The secrets are bound to the id of the locked row, not to the id the client sent.
+			const columns = await checkedColumns(input, row.id, false, key);
 			const next = version + 1;
 			await tx
 				.update(mailConnections)
 				.set({ ...columns, updatedAt: new Date(), updatedByUserId: actor.userId, version: next })
-				.where(and(eq(mailConnections.id, id), eq(mailConnections.version, version)));
-			await logConnection(tx, 'connection.updated', actor, id, {
+				.where(and(eq(mailConnections.id, row.id), eq(mailConnections.version, version)));
+			await logConnection(tx, 'connection.updated', actor, row.id, {
 				secretChanged: columns.secretCiphertext !== undefined,
 			});
 			return { version: next };

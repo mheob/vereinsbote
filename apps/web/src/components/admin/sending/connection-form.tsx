@@ -1,5 +1,4 @@
-import { parseDate } from '@internationalized/date';
-import { useRouter } from '@tanstack/react-router';
+import { useLocation, useRouter } from '@tanstack/react-router';
 import { useServerFn } from '@tanstack/react-start';
 import {
 	startTransition,
@@ -13,31 +12,35 @@ import {
 import type { ReactNode } from 'react';
 import {
 	Button,
-	DateField,
-	DateInput,
-	DateSegment,
-	FieldError,
-	Input,
 	Label,
 	ListBox,
 	ListBoxItem,
 	Popover,
 	Select,
 	SelectValue,
-	Text,
-	TextField,
 } from 'react-aria-components';
 import type { Key } from 'react-aria-components';
 
+import {
+	ConnectionTextField,
+	GraphFields,
+	ResendFields,
+} from '@/components/admin/sending/connection-fields';
+import { ConnectionCheckOutcome } from '@/components/admin/sending/self-test-result';
 import type { Announce } from '@/components/announcements';
+import { clearHistoryNotice } from '@/components/contacts/history-notice';
 import { ChevronIcon } from '@/components/icons';
 import { PostForm } from '@/components/post-form';
 import { FAILED, settle } from '@/components/settle';
-import { inputClass, optionClass, popoverClass, selectButtonClass } from '@/components/styles';
+import { optionClass, popoverClass, selectButtonClass } from '@/components/styles';
 import { SubmitButton } from '@/components/submit-button';
 import { useFormSubmit } from '@/components/use-form-submit';
 import { submitCreateConnection, submitUpdateConnection } from '@/functions/sending';
-import type { CreatedResult, SavedResult } from '@/functions/sending';
+import type {
+	ConnectionCheck,
+	ConnectionCreatedResult,
+	ConnectionSavedResult,
+} from '@/functions/sending';
 import type { MessageKey } from '@/i18n/translate';
 import { useT } from '@/i18n/use-t';
 import type {
@@ -46,22 +49,13 @@ import type {
 	ConnectionKind,
 } from '@/server/sending/connections';
 import type { SendingFailure } from '@/server/sending/failures';
-import {
-	DEFAULT_RESEND_PER_MINUTE,
-	MAX_CREDENTIAL_LENGTH,
-	MAX_NAME_LENGTH,
-} from '@/server/sending/limits';
+import { MAX_NAME_LENGTH } from '@/server/sending/limits';
 
 const KINDS: readonly Readonly<{ id: ConnectionKind; label: MessageKey }>[] = [
 	{ id: 'graph', label: 'sending.kindGraph' },
 	{ id: 'resend', label: 'sending.kindResend' },
 ];
 const fieldClass = 'flex max-w-xl flex-col gap-1';
-const errorClass = 'text-sm text-red-700';
-const dateInputClass =
-	'flex w-fit rounded-md border border-gray-600 px-3 py-2 data-focus-within:outline-2 data-focus-within:outline-offset-2 data-focus-within:outline-blue-700 data-invalid:border-red-700';
-const segmentClass =
-	'rounded-sm px-0.5 tabular-nums outline-none data-focused:bg-blue-700 data-focused:text-white data-placeholder:text-gray-600';
 
 /** The form fields by their name in the form; the refused field of the server maps to one. */
 type FormField =
@@ -139,7 +133,7 @@ function inputOf(kind: ConnectionKind, formData: FormData): ConnectionInput {
 		dailyLimit: numberField(formData, 'dailyLimit'),
 		kind,
 		name,
-		perMinute: numberField(formData, 'perMinute') ?? Number.NaN,
+		perMinute: numberField(formData, 'perMinute') ?? 0,
 		webhookSecret: secretField(formData, 'webhookSecret'),
 	};
 }
@@ -171,57 +165,12 @@ function fieldErrors(
 	return entry === undefined ? {} : { [entry[0]]: entry[1] };
 }
 
-/**
- * A text field of the form. A secret field is a password field that is empty; a stored secret is
- * said in its description.
- *
- * @param props The props.
- * @param props.name The field name.
- * @param props.label The label.
- * @param props.defaultValue The stored value, or an empty string.
- * @param props.isRequired Whether the browser asks for a value.
- * @param props.isSecret Whether it is a secret.
- * @param props.help A description, or null.
- * @param props.maxLength The longest value.
- * @returns The field.
- */
-function ConnectionTextField({
-	defaultValue = '',
-	help = null,
-	isRequired = false,
-	isSecret = false,
-	label,
-	maxLength = MAX_CREDENTIAL_LENGTH,
-	name,
-}: Readonly<{
-	name: FormField;
-	label: string;
-	defaultValue?: string;
-	isRequired?: boolean;
-	isSecret?: boolean;
-	help?: string | null;
-	maxLength?: number;
-}>): ReactNode {
-	return (
-		<TextField
-			autoComplete="off"
-			className={fieldClass}
-			defaultValue={defaultValue}
-			isRequired={isRequired}
-			maxLength={maxLength}
-			name={name}
-			type={isSecret ? 'password' : 'text'}
-		>
-			<Label className="font-semibold">{label}</Label>
-			<Input className={inputClass} />
-			{help === null ? null : (
-				<Text className="text-sm" slot="description">
-					{help}
-				</Text>
-			)}
-			<FieldError className={errorClass} />
-		</TextField>
-	);
+/** What the save of a connection needs to know besides the connection. */
+interface SaveContext {
+	readonly kind: ConnectionKind;
+	readonly announce: Announce;
+	/** Called with what the check of new credentials found after a save. */
+	readonly onChecked: (check: ConnectionCheck) => void;
 }
 
 /** What saving a connection gave: the state of the form, its submit handler and whether it runs. */
@@ -232,15 +181,14 @@ type Save = readonly [FormState, ReturnType<typeof useFormSubmit>, boolean];
  * turns a refusal into the messages at the fields.
  *
  * @param connection The connection to change, or null for a new one.
- * @param kind The chosen kind.
- * @param announce Announces results in the page's live region.
+ * @param context The chosen kind, the live region and what to do with a check's result.
  * @returns The state of the form, its submit handler and whether a save runs.
  */
 function useConnectionSave(
 	connection: ConnectionDetail | null,
-	kind: ConnectionKind,
-	announce: Announce,
+	context: Readonly<SaveContext>,
 ): Save {
+	const { announce, kind, onChecked } = context;
 	const t = useT();
 	const router = useRouter();
 	const create = useServerFn(submitCreateConnection);
@@ -250,7 +198,7 @@ function useConnectionSave(
 	const [state, submitForm, isPending] = useActionState(
 		async (_previous: FormState, formData: FormData): Promise<FormState> => {
 			const input = inputOf(kind, formData);
-			const call: Promise<CreatedResult | SavedResult> =
+			const call: Promise<ConnectionCreatedResult | ConnectionSavedResult> =
 				connection === null
 					? create({ data: { input } })
 					: update({ data: { id: connection.id, input, version } });
@@ -268,13 +216,18 @@ function useConnectionSave(
 			if ('id' in result) {
 				startTransition(async () => {
 					await router.navigate({
-						state: { sendingNotice: { kind: 'connectionCreated', name: input.name.trim() } },
-						to: '/admin/sending',
+						params: { connectionId: result.id },
+						state: {
+							sendingCheck: result.check ?? 'none',
+							sendingNotice: { kind: 'connectionCreated', name: input.name.trim() },
+						},
+						to: '/admin/sending/connections/$connectionId',
 					});
 				});
 				return null;
 			}
 			setVersion(result.version);
+			if (result.check !== null) onChecked(result.check);
 			announce(t('sending.saved'), 'status');
 			startTransition(async () => router.invalidate());
 			return null;
@@ -339,103 +292,6 @@ function KindField({
 }
 
 /**
- * The fields of a Graph connection: tenant, client, secret and the day the secret expires.
- *
- * @param props The props.
- * @param props.connection The connection to change, or null for a new one.
- * @returns The fields.
- */
-function GraphFields({ connection }: Readonly<{ connection: ConnectionDetail | null }>): ReactNode {
-	const t = useT();
-	const expiresOn = connection?.secretExpiresOn ?? null;
-	return (
-		<>
-			<ConnectionTextField
-				defaultValue={connection?.tenantId ?? ''}
-				isRequired
-				label={t('sending.tenantLabel')}
-				name="tenantId"
-			/>
-			<ConnectionTextField
-				defaultValue={connection?.clientId ?? ''}
-				isRequired
-				label={t('sending.clientIdLabel')}
-				name="clientId"
-			/>
-			<ConnectionTextField
-				help={connection === null ? null : t('sending.secretSaved')}
-				isRequired={connection === null}
-				isSecret
-				label={t('sending.clientSecretLabel')}
-				name="clientSecret"
-			/>
-			<DateField
-				className={fieldClass}
-				defaultValue={expiresOn === null ? null : parseDate(expiresOn)}
-				isRequired
-				name="secretExpiresOn"
-			>
-				<Label className="font-semibold">{t('sending.secretExpiresLabel')}</Label>
-				<DateInput className={dateInputClass}>
-					{(segment) => <DateSegment className={segmentClass} segment={segment} />}
-				</DateInput>
-				<Text className="text-sm" slot="description">
-					{t('sending.graphHelp')}
-				</Text>
-				<FieldError className={errorClass} />
-			</DateField>
-		</>
-	);
-}
-
-/**
- * The fields of a Resend connection: API key, webhook secret and the limits of the account.
- *
- * @param props The props.
- * @param props.connection The connection to change, or null for a new one.
- * @returns The fields.
- */
-function ResendFields({
-	connection,
-}: Readonly<{ connection: ConnectionDetail | null }>): ReactNode {
-	const t = useT();
-	const dailyLimit = connection?.dailyLimit ?? null;
-	const savedHint = t('sending.secretSaved');
-	return (
-		<>
-			<ConnectionTextField
-				help={connection === null ? null : savedHint}
-				isRequired={connection === null}
-				isSecret
-				label={t('sending.apiKeyLabel')}
-				name="apiKey"
-			/>
-			<ConnectionTextField
-				help={connection?.hasWebhookSecret === true ? savedHint : t('sending.webhookSecretHelp')}
-				isSecret
-				label={t('sending.webhookSecretLabel')}
-				name="webhookSecret"
-			/>
-			<p className="text-sm">{t('sending.resendLimitsHelp')}</p>
-			<ConnectionTextField
-				defaultValue={String(connection?.perMinute ?? DEFAULT_RESEND_PER_MINUTE)}
-				isRequired
-				label={t('sending.perMinuteLabel')}
-				maxLength={6}
-				name="perMinute"
-			/>
-			<ConnectionTextField
-				defaultValue={dailyLimit === null ? '' : String(dailyLimit)}
-				help={t('sending.dailyLimitHelp')}
-				label={t('sending.dailyLimitLabel')}
-				maxLength={8}
-				name="dailyLimit"
-			/>
-		</>
-	);
-}
-
-/**
  * The form of a connection, to create one (with the choice of the provider) or to change one
  * (the provider stays). Secrets are empty fields that say „Gespeichert“ when one is stored; an
  * empty field keeps the stored secret. A refused value shows its message at its field.
@@ -452,7 +308,25 @@ export function ConnectionForm({
 	const t = useT();
 	const formRef = useRef<HTMLFormElement>(null);
 	const [kind, setKind] = useState<ConnectionKind>(connection?.kind ?? 'graph');
-	const [state, onSubmit, isPending] = useConnectionSave(connection, kind, announce);
+	// What the check of the credentials found, shown below the form until the next save.
+	const notice = useLocation({ select: (location) => location.state.sendingNotice });
+	const stateCheck = useLocation({ select: (location) => location.state.sendingCheck });
+	// A just created connection arrives with what its check found (in the history state).
+	const [checked, setChecked] = useState<ConnectionCheck | undefined>(() =>
+		stateCheck === 'none' ? null : stateCheck,
+	);
+	useEffect(() => {
+		if (notice?.kind === 'connectionCreated') {
+			announce(t('sending.connectionCreated', { name: notice.name }), 'status');
+			clearHistoryNotice(globalThis.history, 'sendingNotice');
+		}
+		clearHistoryNotice(globalThis.history, 'sendingCheck');
+	}, [announce, notice, t]);
+	const [state, onSubmit, isPending] = useConnectionSave(connection, {
+		announce,
+		kind,
+		onChecked: setChecked,
+	});
 	const validationErrors = useMemo(
 		(): Readonly<Record<string, string>> =>
 			Object.fromEntries(
@@ -466,30 +340,33 @@ export function ConnectionForm({
 		formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
 	}, [state]);
 	return (
-		<PostForm
-			className="flex max-w-xl flex-col gap-4"
-			onSubmit={onSubmit}
-			ref={formRef}
-			validationErrors={validationErrors}
-		>
-			<KindField isNew={connection === null} kind={kind} onChange={setKind} />
-			<ConnectionTextField
-				defaultValue={connection?.name}
-				isRequired
-				label={t('sending.nameLabel')}
-				maxLength={MAX_NAME_LENGTH}
-				name="name"
-			/>
-			{kind === 'graph' ? (
-				<GraphFields connection={connection} />
-			) : (
-				<ResendFields connection={connection} />
-			)}
-			<div>
-				<SubmitButton isPending={isPending}>
-					{t(connection === null ? 'sending.create' : 'sending.save')}
-				</SubmitButton>
-			</div>
-		</PostForm>
+		<>
+			<PostForm
+				className="flex max-w-xl flex-col gap-4"
+				onSubmit={onSubmit}
+				ref={formRef}
+				validationErrors={validationErrors}
+			>
+				<KindField isNew={connection === null} kind={kind} onChange={setKind} />
+				<ConnectionTextField
+					defaultValue={connection?.name}
+					isRequired
+					label={t('sending.nameLabel')}
+					maxLength={MAX_NAME_LENGTH}
+					name="name"
+				/>
+				{kind === 'graph' ? (
+					<GraphFields connection={connection} />
+				) : (
+					<ResendFields connection={connection} />
+				)}
+				<div>
+					<SubmitButton isPending={isPending}>
+						{t(connection === null ? 'sending.create' : 'sending.save')}
+					</SubmitButton>
+				</div>
+			</PostForm>
+			{checked === undefined ? null : <ConnectionCheckOutcome check={checked} />}
+		</>
 	);
 }

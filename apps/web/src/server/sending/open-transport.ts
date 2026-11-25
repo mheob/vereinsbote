@@ -4,8 +4,6 @@
  * run or one request) and never leave this module. Also the self test of a sender (Design 6.1):
  * token, test mail to the admin and, for Graph, the restriction test.
  */
-import { randomUUID } from 'node:crypto';
-
 import { eq } from 'drizzle-orm';
 
 import type { Locale } from '@/i18n/locale';
@@ -20,7 +18,7 @@ import type { Env } from '@/server/env';
 import { assertAdmin } from '@/server/permissions/principal';
 import type { Principal } from '@/server/permissions/principal';
 
-import { SenderInvalidError, SenderNotFoundError } from './errors';
+import { ConnectionNotFoundError, SenderInvalidError, SenderNotFoundError } from './errors';
 import { checkMailboxRestriction, createGraphTransport, graphEndpoints } from './graph';
 import type { GraphDeps, GraphSettings, RestrictionResult } from './graph';
 import { DEFAULT_GRAPH_PER_MINUTE, DEFAULT_RESEND_PER_MINUTE } from './limits';
@@ -28,7 +26,7 @@ import { createResendTransport, resendEndpoint } from './resend';
 import { isMailAddress, loadSender } from './senders';
 import type { SenderSummary } from './senders';
 import { newMessageId } from './transport';
-import type { Transport } from './transport';
+import type { SendResult, Transport } from './transport';
 
 /** What the outbox counts a send against: a Graph sender alone, a Resend connection as a whole. */
 type QuotaScope = `connection:${string}` | `sender:${string}`;
@@ -44,8 +42,8 @@ interface SenderTransport {
 }
 
 interface SelfTestResult {
-	/** Resend has no token to fetch, so its token counts as `ok`; the test mail decides. */
-	readonly token: 'failed' | 'ok';
+	/** Resend has no token to fetch: `unchecked`, and the test mail decides. */
+	readonly token: 'failed' | 'ok' | 'unchecked';
 	readonly testMail: 'failed' | 'sent';
 	/** Graph only, and only when the token was fetched. */
 	readonly restriction: RestrictionResult | null;
@@ -212,7 +210,7 @@ async function sendTestMail(
 		bcc: null,
 		from: { address: sender.email, name: sender.displayName },
 		html: `<p>${escapeHtml(text)}</p>`,
-		idempotencyKey: randomUUID(),
+		idempotencyKey: crypto.randomUUID(),
 		kind: 'regular',
 		listUnsubscribe: null,
 		messageId: newMessageId(sender.email),
@@ -237,9 +235,11 @@ async function performSelfTest(
 	target: Readonly<SelfTestTarget>,
 ): Promise<SelfTestResult> {
 	const { graph, graphDeps, result } = opened;
-	const probed = result.transport.probe === null ? null : await result.transport.probe();
-	if (probed !== null && !probed.ok)
-		return { restriction: null, testMail: 'failed', token: 'failed' };
+	if (result.transport.probe === null) {
+		return { restriction: null, testMail: await sendTestMail(opened, target), token: 'unchecked' };
+	}
+	const probed = await result.transport.probe();
+	if (!probed.ok) return { restriction: null, testMail: 'failed', token: 'failed' };
 	const testMail = await sendTestMail(opened, target);
 	const restriction =
 		graph === null ? null : await checkMailboxRestriction(graph, target.probe, graphDeps);
@@ -249,6 +249,8 @@ async function performSelfTest(
 /**
  * Stores what a self test found on the connection: the restriction result, and the end of a
  * disturbance when the credentials work again (Resend has no token, so its test mail decides).
+ * A stored warning (`readable`) stays until a later test finds the restriction in place or the
+ * mailboxes readable again; a test that cannot check does not replace it (Design 6.1).
  *
  * @param db The database.
  * @param opened The opened transport.
@@ -258,13 +260,19 @@ async function performSelfTest(
 // oxlint-disable-next-line max-params -- the database, the transport, the outcome and the time
 async function storeOutcome(
 	db: Db,
-	opened: Opened,
+	opened: Readonly<Opened>,
 	outcome: Readonly<SelfTestResult>,
 	now: Date,
 ): Promise<void> {
-	const { restriction } = outcome;
+	const { connectionId } = opened.result;
+	const [row] = await db
+		.select({ restriction: mailConnections.restriction })
+		.from(mailConnections)
+		.where(eq(mailConnections.id, connectionId));
+	const keepsWarning = outcome.restriction === 'unknown' && row?.restriction === 'readable';
+	const restriction = keepsWarning ? null : outcome.restriction;
 	const recovered =
-		outcome.token === 'ok' && (opened.graph !== null || outcome.testMail === 'sent');
+		outcome.token === 'ok' || (outcome.token === 'unchecked' && outcome.testMail === 'sent');
 	if (restriction === null && !recovered) return;
 	await db
 		.update(mailConnections)
@@ -272,7 +280,7 @@ async function storeOutcome(
 			...(restriction === null ? {} : { restriction, restrictionCheckedAt: now }),
 			...(recovered ? { disturbedCode: null, disturbedSince: null } : {}),
 		})
-		.where(eq(mailConnections.id, opened.result.connectionId));
+		.where(eq(mailConnections.id, connectionId));
 }
 
 /**
@@ -314,5 +322,83 @@ async function runSelfTest(
 	return outcome;
 }
 
-export { openSenderTransport, runSelfTest };
+/**
+ * Records the result of a token check on the connection: a working token ends the disturbance, a
+ * refused one starts it (and keeps the time of an earlier one).
+ *
+ * @param db The database.
+ * @param row The connection.
+ * @param row.id The id.
+ * @param row.disturbedSince When the disturbance began, or null.
+ * @param probed The result of the token fetch, or null when there was none.
+ * @param now The time of the check.
+ */
+// oxlint-disable-next-line max-params -- the database, the connection, the result and the time
+async function recordToken(
+	db: Db,
+	row: Readonly<{ id: string; disturbedSince: Date | null }>,
+	probed: Readonly<SendResult> | null,
+	now: Date,
+): Promise<void> {
+	const failed = probed?.ok !== true;
+	await db
+		.update(mailConnections)
+		.set(
+			failed
+				? {
+						disturbedCode: probed?.ok === false ? probed.code : 'unknown',
+						disturbedSince: row.disturbedSince ?? now,
+					}
+				: { disturbedCode: null, disturbedSince: null },
+		)
+		.where(eq(mailConnections.id, row.id));
+}
+
+/** The address a token check names as mailbox; fetching a token needs none. */
+const TOKEN_CHECK_MAILBOX = 'token-check@example.invalid';
+
+/**
+ * Checks the credentials of a connection after they were saved: a Graph connection fetches a
+ * token; the disturbance ends when it works and starts when it is refused. Resend has no way to
+ * check a key without sending, so nothing is checked and nothing changes (the self test of a
+ * sender sends the test mail).
+ *
+ * @param db The database.
+ * @param env The environment.
+ * @param actor Who checks; an admin.
+ * @param connectionId The connection.
+ * @param deps `fetch` and the clock.
+ * @returns `ok`, `failed`, or `unchecked` for Resend.
+ * @throws {ForbiddenError} For anybody but an admin.
+ * @throws {ConnectionNotFoundError} When no connection has the id.
+ * @throws {SecretDecryptError} When the secret does not decrypt.
+ */
+// oxlint-disable-next-line max-params -- the database, the environment, the admin, the connection and the deps
+async function checkConnectionCredentials(
+	db: Db,
+	env: Env,
+	actor: Principal,
+	connectionId: string,
+	deps: OpenDeps,
+): Promise<SelfTestResult['token']> {
+	assertAdmin(actor);
+	const [row] = await db.select().from(mailConnections).where(eq(mailConnections.id, connectionId));
+	if (row === undefined) throw new ConnectionNotFoundError();
+	if (row.kind !== 'graph') return 'unchecked';
+	const clientSecret = await decryptSecret(
+		row.secretCiphertext,
+		await deriveSecretsKey(env.appSecret),
+		secretAad('mail_connections', row.id, 'secret_ciphertext'),
+	);
+	const transport = createGraphTransport(
+		{ clientId: row.clientId ?? '', clientSecret, tenantId: row.tenantId ?? '' },
+		TOKEN_CHECK_MAILBOX,
+		{ endpoints: graphEndpoints(env), fetch: deps.fetch, now: deps.now },
+	);
+	const probed = (await transport.probe?.()) ?? null;
+	await recordToken(db, row, probed, deps.now());
+	return probed?.ok === true ? 'ok' : 'failed';
+}
+
+export { checkConnectionCredentials, openSenderTransport, runSelfTest };
 export type { QuotaScope, SelfTestResult, SenderTransport };
