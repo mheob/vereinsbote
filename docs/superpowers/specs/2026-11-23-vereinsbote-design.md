@@ -222,7 +222,7 @@ Ein Assistent führt durch die Einrichtung:
 5. Testmail an sich selbst schicken.
 6. Versenden, sofort oder zu einem geplanten Zeitpunkt. Vorher erscheint ein Bestätigungsdialog mit der Empfängerzahl. **[Claude]** „Sofort“ verschickt das erste Paket direkt aus der Anfrage heraus. Der Rest folgt über den Postausgang.
 
-**[Claude] Doppelte Adressen:** Bei Mails an eine Gruppe (z. B. Einladungen) geht pro E-Mail-Adresse nur eine Mail raus, auch wenn sich mehrere Kontakte eine Adresse teilen (z. B. Familien). Persönliche Anlässe wie Geburtstage gehen weiterhin pro Person. *(Teilplan 4: gesteuert über die Art des Anlasses; die Mail trägt die Werte des ersten Kontakts der Adresse. Die Testmail trägt die Werte des Kontakts in der Vorschau. Anhänge: PDF, JPEG, PNG, höchstens 4 MB pro Datei und 20 MB pro Mail, über Graph rund 3 MB pro Mail.)*
+**[Claude] Doppelte Adressen:** Bei Mails an eine Gruppe (z. B. Einladungen) geht pro E-Mail-Adresse nur eine Mail raus, auch wenn sich mehrere Kontakte eine Adresse teilen (z. B. Familien). Persönliche Anlässe wie Geburtstage gehen weiterhin pro Person. *(Teilplan 4: gesteuert über die Art des Anlasses; die Mail trägt die Werte des ersten Kontakts der Adresse. Die Testmail trägt die Werte des Kontakts in der Vorschau. Anhänge: PDF, JPEG, PNG, höchstens 4 MB pro Datei und 20 MB pro Mail, über Graph rund 2 MB pro Mail.)*
 
 **Rechnungen**
 
@@ -311,7 +311,7 @@ Ein Assistent führt durch die Einrichtung:
 - **Versand:**
   - Mails werden im Ordner „Gesendet“ gespeichert.
   - Anhänge über 3 MB laufen über eine Upload-Session.
-  - *(Teilplan 4: Die Rechte bleiben `Mail.Send` und `Mail.Read`. Eine Upload-Session bräuchte `Mail.ReadWrite`; sie entfällt. Jede Mail geht als ein MIME-Aufruf (nur so lassen sich `List-Unsubscribe` und eine eigene Message-ID setzen), Anhänge sind über Graph auf rund 3 MB pro Mail begrenzt. Systemmails gehen ohne Ablage in „Gesendet“, damit Anmeldelinks nicht im Postfach liegen.)*
+  - *(Teilplan 4: Die Rechte bleiben `Mail.Send` und `Mail.Read`. Eine Upload-Session bräuchte `Mail.ReadWrite`; sie entfällt. Jede Mail geht als ein MIME-Aufruf (nur so lassen sich `List-Unsubscribe` und eine eigene Message-ID setzen), Anhänge sind über Graph auf rund 2 MB pro Mail begrenzt (die Anfrage darf höchstens 4 MB groß sein und ist die Base64-kodierte MIME-Nachricht). Systemmails gehen ohne Ablage in „Gesendet“, damit Anmeldelinks nicht im Postfach liegen.)*
 - **Ablauf des Secrets:**
   - Die App kennt das Ablaufdatum des Secrets.
   - Sie warnt 30 Tage vorher in der Oberfläche und per Mail an die Admins.

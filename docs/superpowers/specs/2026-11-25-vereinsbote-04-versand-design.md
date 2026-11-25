@@ -83,7 +83,7 @@ Im Gespräch am 2026-11-25 festgelegt:
 6. **Abmeldeseite mit zwei Wahlen:** „nur dieser Anlass“ (vorausgewählt) oder „alle Mails aus diesem Bereich“. Die Ein-Klick-Abmeldung des Mailprogramms gilt nur für den Anlass.
 7. **Getestet wird mit Nachbau-Servern** für Graph und Resend, die an Mailpit zustellen (5.3).
 8. **Ein Design, zwei PRs** (4a, 4b; siehe 19).
-9. **Graph-Rechte bleiben `Mail.Send` und `Mail.Read`** (6.4). Über Graph geht jede Mail als ein MIME-Aufruf; Anhänge sind dort auf rund 3 MB pro Mail begrenzt, Upload-Sessions entfallen.
+9. **Graph-Rechte bleiben `Mail.Send` und `Mail.Read`** (6.4). Über Graph geht jede Mail als ein MIME-Aufruf; Anhänge sind dort auf rund 2 MB pro Mail begrenzt, Upload-Sessions entfallen.
 
 Im Gespräch vorgeschlagen und ohne Widerspruch geblieben: Anbindung als eigenes Objekt; Ablauf des manuellen Versands; erneute Prüfung vor jedem Versand; Welle stoppen; Wiederholung mit wachsenden Abständen und Zustand „unklar“; Systemmails am Postausgang vorbei; Tageslimit für Anmeldelinks und Bestätigungsseite; „Einladung erneut senden“; nur harte Rückläufer markieren; Versandübersicht pro Bereich; Graph-Versand über MIME.
 
@@ -156,12 +156,12 @@ Die Spec nannte die Rechte `Mail.Send` und `Mail.Read` und zugleich „Anhänge 
 | | **A) `Mail.Send` + `Mail.Read` (gewählt)** | B) zusätzlich `Mail.ReadWrite` |
 |---|---|---|
 | Versand | ein MIME-Aufruf pro Mail, höchstens 4 MB | Entwurf aus MIME, Upload-Session, Senden (drei Aufrufe) |
-| Anhänge über Graph | rund 3 MB pro Mail (nach Base64) | bis 20 MB pro Mail |
+| Anhänge über Graph | rund 2 MB pro Mail (die Anfrage ist die Base64-kodierte MIME-Nachricht, Anhänge sind darin ein zweites Mal Base64-kodiert) | bis 20 MB pro Mail |
 | Rechte im Postfach | die App kann dort nichts ändern | die App dürfte Mails in den Absenderpostfächern ändern oder löschen |
 
-**Gewählt: A** (Entscheidung 9). Ein weitreichenderes Recht lässt sich später kaum wieder einschränken, und ein Flyer passt fast immer unter 3 MB.
+**Gewählt: A** (Entscheidung 9). Ein weitreichenderes Recht lässt sich später kaum wieder einschränken, und ein komprimierter Flyer passt meist unter 2 MB.
 
-- **[Claude]** Die Grenze gilt für die ganze MIME-Nachricht (4 MB). Das Bestätigen einer Welle und die Testmail prüfen, ob die Mail mit ihren Anhängen bei einem Graph-Absender darunter bleibt, und nennen sonst die Grenze; das Hochladen warnt schon, wenn die Anhänge bei Graph zu groß werden. Bei Resend gilt die Grenze aus 10.2.
+- **[Claude]** Die Grenze gilt für die ganze Anfrage (4 MB; sie ist die Base64-kodierte MIME-Nachricht samt Anhängen). Das Bestätigen einer Welle und die Testmail prüfen, ob die Mail mit ihren Anhängen bei einem Graph-Absender darunter bleibt, und nennen sonst die Grenze; das Hochladen warnt schon, wenn die Anhänge bei Graph zu groß werden. Bei Resend gilt die Grenze aus 10.2.
 
 ---
 
@@ -410,7 +410,7 @@ Im selben Schritt wie dieses Design:
 
 - **Spec 5:** Anlass mit Art (persönlich/Rundschreiben) und Abmeldelink; Anbindung als eigenes Objekt; Absender mit Bereichsfreigabe und Systemabsender; Zustände des Postausgangs um „übersprungen“, „abgebrochen“ und „unklar“ ergänzt; Markierung „E-Mail ungültig“.
 - **Spec 6.4:** Zusammenlegen über die Art des Anlasses; Testmail mit den Werten des Vorschau-Kontakts; Anhänge (Typen, Grenzen).
-- **Spec 6.6:** Graph-Versand über MIME mit nur `Mail.Send` und `Mail.Read`; „Anhänge über 3 MB über eine Upload-Session“ entfällt, über Graph sind Anhänge auf rund 3 MB pro Mail begrenzt (6.4); Systemmails ohne Ablage in „Gesendete Elemente“; Abmeldeseite mit Wahl Anlass/Bereich; nur harte Rückläufer markieren; Systemmails über den Systemabsender im CD-Layout; Wiederholung und „unklar“.
+- **Spec 6.6:** Graph-Versand über MIME mit nur `Mail.Send` und `Mail.Read`; „Anhänge über 3 MB über eine Upload-Session“ entfällt, über Graph sind Anhänge auf rund 2 MB pro Mail begrenzt (6.4); Systemmails ohne Ablage in „Gesendete Elemente“; Abmeldeseite mit Wahl Anlass/Bereich; nur harte Rückläufer markieren; Systemmails über den Systemabsender im CD-Layout; Wiederholung und „unklar“.
 - **Spec 6.7:** Absender pro Bereich freigegeben.
 - **Fahrplan:** Teilplan 4 in zwei PRs (4a, 4b); die Pflichtpunkte aus Teilplan 1 und 3 als erledigt markieren, sobald gemergt; für Teilplan 5: Datumsregel als zweiter Auslöser des Anlasses, persönliche Art, Dashboard zeigt „unklar“, „fehlgeschlagen“ und Rückläufer; für Teilplan 6: Rechnung erzwingt Abmeldelink „aus“ und nutzt die Anhänge; für Teilplan 7: Löschfristen für Postausgang, Anhänge, verarbeitete Rückläufer- und Webhook-IDs; für Teilplan 8: Anleitung zu RBAC for Applications, Secret-Ablauf, Resend-Key und Webhook.
 
