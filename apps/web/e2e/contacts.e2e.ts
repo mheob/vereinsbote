@@ -4,13 +4,15 @@ import { memberExportRows, memberExportXlsx, XLSX_MIME } from './fixtures/member
 import type { MemberExportRow } from './fixtures/member-export';
 import { partnerExportCsv } from './fixtures/partner-export';
 import { expectNoA11yViolations } from './helpers/a11y';
+import { newAdminContext } from './helpers/admin-session';
 import { signIn } from './helpers/sign-in';
 import { expect, test } from './helpers/test';
 
 /*
  * The contacts, as the admin and a reader of another area see them. Runs after the project
- * `fundament`, which set the club up (admin@verein.test, areas „Mitglieder“ and „Finanzen“). The
- * tests build on each other and share the pages of the signed-in users.
+ * `fundament`, which set the club up (admin@verein.test, areas „Mitglieder“ and „Finanzen“) and
+ * saved the admin's session. The tests build on each other and share the pages of the signed-in
+ * users.
  */
 test.describe.configure({ mode: 'serial' });
 
@@ -21,11 +23,13 @@ let admin: Page;
 // oxlint-disable-next-line init-declarations -- set by a serial test, closed in `afterAll`
 let uliPage: Page | undefined;
 
-test.beforeAll(async ({ browser }) => {
+test.beforeAll(async ({ browser }, testInfo) => {
 	// Far from UTC: a date that went through the local time zone anywhere would be a day off here.
-	const context = await browser.newContext({ locale: 'de-DE', timezoneId: 'Pacific/Honolulu' });
+	const context = await newAdminContext(browser, testInfo, {
+		locale: 'de-DE',
+		timezoneId: 'Pacific/Honolulu',
+	});
 	admin = await context.newPage();
-	await signIn(admin, 'admin@verein.test');
 });
 
 test.afterAll(async () => {

@@ -5,57 +5,23 @@ import type { Locator, Page } from '@playwright/test';
 
 import { E2E_SERVER_ENV } from './env';
 import { expectNoA11yViolations } from './helpers/a11y';
+import { newAdminContext } from './helpers/admin-session';
 import { deleteAllMessages, listMessages, messageHtml, supportedShare } from './helpers/mailpit';
-import { signIn } from './helpers/sign-in';
 import { expect, test } from './helpers/test';
 
 /*
  * The design of the mails, as the admin sees it. Runs after the project `fundament`, which set the
- * club up (admin@verein.test). The tests build on each other and share the pages of the admin.
+ * club up (admin@verein.test) and saved the admin's session. The tests build on each other and share
+ * the pages of the admin.
  */
 test.describe.configure({ mode: 'serial' });
 
 // oxlint-disable-next-line init-declarations -- signed in once in `beforeAll`, shared by the serial tests
 let admin: Page;
 
-/** The server sends one sign-in link per address and minute (`LOGIN_LINK_WINDOW_SECONDS`). */
-const LINK_WINDOW_MS = 15_000;
-const SIGN_IN_ATTEMPTS = 5;
-const BEFORE_ALL_TIMEOUT_MS = 120_000;
-
-/**
- * Signs the admin in. The project `contacts` signed the same address in shortly before; a request
- * inside the minute sends no mail, so the sign-in waits and asks again.
- *
- * @param page The page of the admin's context.
- */
-// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Playwright's page is a handle on the browser, mutable by design
-async function signInAdmin(page: Page): Promise<void> {
-	for (let attempt = 1; ; attempt += 1) {
-		try {
-			// oxlint-disable-next-line no-await-in-loop -- each attempt waits for the previous one
-			await signIn(page, 'admin@verein.test');
-			return;
-		} catch (error) {
-			if (attempt >= SIGN_IN_ATTEMPTS) throw error;
-			// oxlint-disable-next-line no-await-in-loop -- see above
-			await page.waitForTimeout(LINK_WINDOW_MS);
-		}
-	}
-}
-
-test.beforeAll(async ({ browser }) => {
-	test.setTimeout(BEFORE_ALL_TIMEOUT_MS);
-	// An address of its own for the proxy header: `contacts` used the sign-in link requests that the
-	// server allows per address and minute.
-	const context = await browser.newContext({
-		extraHTTPHeaders: { 'x-forwarded-for': '127.0.0.2' },
-		locale: 'de-DE',
-	});
+test.beforeAll(async ({ browser }, testInfo) => {
+	const context = await newAdminContext(browser, testInfo);
 	admin = await context.newPage();
-	// Without older mails, the newest sign-in link is certainly the one of this request.
-	await deleteAllMessages();
-	await signInAdmin(admin);
 });
 
 test.afterAll(async () => {

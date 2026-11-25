@@ -2,6 +2,7 @@ import type { Page, Request } from '@playwright/test';
 
 import { E2E_SETUP_TOKEN, E2E_URL } from './env';
 import { expectNoA11yViolations } from './helpers/a11y';
+import { saveAdminSession } from './helpers/admin-session';
 import { latestLink } from './helpers/mailpit';
 import { expect, test } from './helpers/test';
 
@@ -180,6 +181,34 @@ test('sends a nonce-based Content Security Policy with pages', async ({ page }) 
 	await expect(page.locator('meta[property="csp-nonce"]')).toHaveAttribute('content', nonce ?? '');
 });
 
+/** An address that never resolves: the policy blocks the request before it would leave. */
+const FOREIGN_IMAGE = 'https://images.invalid/logo.png';
+
+// The watch of `helpers/test.ts` must fail this test: a page of a context the test opened itself
+// loads an image from a foreign host, which the page policy (`img-src 'self' blob: data:`) blocks.
+test('fails a test on a CSP violation in a context it opened', async ({ browser }) => {
+	test.fail();
+	const context = await browser.newContext();
+	try {
+		const page = await context.newPage();
+		await page.goto('/login');
+		// The violation is reported before the image fails to load.
+		const failed = await page.evaluate(async (source) => {
+			const image = new Image();
+			image.src = source;
+			try {
+				await image.decode();
+				return false;
+			} catch {
+				return true;
+			}
+		}, FOREIGN_IMAGE);
+		expect(failed).toBe(true);
+	} finally {
+		await context.close();
+	}
+});
+
 test('sends the security headers with API responses and built assets', async ({
 	page,
 	request,
@@ -197,4 +226,11 @@ test('sends the security headers with API responses and built assets', async ({
 	const asset = await request.get(stylesheet ?? '/assets/missing.css');
 	expect(asset.status()).toBe(HTTP_OK);
 	expect(asset.headers()).toMatchObject(BASE_HEADERS);
+});
+
+// The last step of the club's setup: `contacts` and `design` run after this project and share the
+// session it saves (one sign-in link per address and minute).
+test('signs the admin in by link for the later projects', async ({ page }, testInfo) => {
+	await saveAdminSession(page, testInfo);
+	await expect(page.getByRole('button', { name: 'Abmelden' })).toBeVisible();
 });
