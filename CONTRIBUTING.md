@@ -7,13 +7,13 @@ Thank you for helping. This guide covers the workflow; [README.md](README.md) ha
 - Node.js 26 (`.node-version`)
 - pnpm 12 (`packageManager` in `package.json`)
 - [Vite+](https://viteplus.dev) with its CLI `vp`
-- Docker, for PostgreSQL and Mailpit
+- Docker, for PostgreSQL, Mailpit and SeaweedFS (S3 storage for images)
 
 ## Setup
 
 ```sh
 pnpm install
-docker compose -f docker/compose.dev.yml up -d
+docker compose -f docker/compose.dev.yml up -d   # PostgreSQL, Mailpit and SeaweedFS
 cp apps/web/.env.example apps/web/.env   # fill in, see the README
 set -a; . apps/web/.env; set +a
 vp run --filter web db:migrate
@@ -25,9 +25,11 @@ vp dev                                    # http://localhost:3000
 ## Development workflow
 
 1. Create a branch from `main`.
-2. Write the failing test first (TDD), then the code. Database tests use PGlite through `createTestDb()`, called inside the test; it closes the database when the test ends. Tests that need real PostgreSQL concurrency (`*.postgres.test.ts`) run when `TEST_POSTGRES_URL` is set, e.g. `TEST_POSTGRES_URL=postgres://vereinsbote:vereinsbote@localhost:5432/vereinsbote vp test`; CI always runs them.
+2. Write the failing test first (TDD), then the code. Database tests use PGlite through `createTestDb()`, called inside the test; it closes the database when the test ends. Tests that need real PostgreSQL concurrency (`*.postgres.test.ts`) run when `TEST_POSTGRES_URL` is set, e.g. `TEST_POSTGRES_URL=postgres://vereinsbote:vereinsbote@localhost:5432/vereinsbote vp test`; CI always runs them. The S3 storage test needs SeaweedFS from the same Compose file: `TEST_S3_URL=http://vereinsbote:vereinsbote-dev-secret@localhost:8333/vereinsbote vp test`.
+   - The mail snapshots (`apps/web/src/mail/render/__snapshots__`) pin the HTML of the layout. Update them only on purpose with `vp test -u`, and read the diff before you commit: it is the mail every club sends.
+   - To see mails as clients show them, run `vp run --filter web mail:sample` (needs `DEV_SMTP_URL`, see the README): four sample mails land in Mailpit, and the [README](README.md#sample-mails-and-the-mailpit-relay) explains how to relay them to real mailboxes with `docker/compose.relay.yml` and a local, never committed `docker/mailpit-relay.yaml`.
 3. Run `vp check` (format, lint, types; it must report 0 errors and 0 warnings) and `vp test`. After a dependency change also run `pnpm check:catalog`, `pnpm check:vite-plus` and `pnpm cve` (dependency advisories; the `pre-push` hook and CI run it too).
-4. For pages and flows, run the E2E tests: `vp run --filter web e2e` (Playwright, files `*.e2e.ts`). Each file is a Playwright project of its own in `apps/web/playwright.config.ts`; a new file needs a project entry, with `dependencies` when it builds on another file's data (like `contacts` on `fundament`), or it does not run.
+4. For pages and flows, run the E2E tests: `vp run --filter web e2e` (Playwright, files `*.e2e.ts`). Each file is a Playwright project of its own in `apps/web/playwright.config.ts` and imports `test` from `apps/web/e2e/helpers/test.ts` (it fails on a Content Security Policy violation); a new file needs a project entry, with `dependencies` when it builds on another file's data (like `contacts` on `fundament`), or it does not run.
 5. For a user-facing change, add a changeset: `pnpm changeset`, pick `web`, choose the bump (`patch` for a fix, `minor` for a feature, `major` for a breaking change) and write the changelog text in English. Commit the file in `.changeset/` with the change. Docs, tests, CI and dependency updates need none; for them `pnpm changeset --empty` satisfies the `pre-push` hook.
 6. Commit and open a pull request.
 
