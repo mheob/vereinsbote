@@ -12,20 +12,21 @@ import {
 import type { Color } from 'react-aria-components';
 
 import { inputClass } from '@/components/styles';
+import type { ContrastFinding } from '@/mail/brand/contrast';
 
 import { ContrastNotice } from './contrast-notice';
 
 /**
  * A colour as a hex value with a swatch beside it. The value only changes when the typed hex is
- * complete and valid (React Aria commits it on blur or Enter); a weak contrast shows below the
- * field and is part of its description.
+ * complete and valid (React Aria commits it on blur or Enter); each weak pair of the colour shows
+ * below the field and is part of its description.
  *
  * @param props The props.
  * @param props.name The field name, which refused values are reported under.
  * @param props.label The visible label.
  * @param props.help What the colour is used for.
  * @param props.value The colour as `#rrggbb`.
- * @param props.ratio The contrast ratio when the colour's pair is below 4.5:1, else null.
+ * @param props.warnings The pairs of the colour that are below 4.5:1, with their ratio.
  * @param props.onChange Called with the new `#rrggbb` colour.
  * @returns The field.
  */
@@ -34,17 +35,18 @@ export function BrandColorField({
 	label,
 	name,
 	onChange,
-	ratio,
 	value,
+	warnings,
 }: Readonly<{
 	name: string;
 	label: string;
 	help: string;
 	value: string;
-	ratio: number | null;
+	warnings: readonly ContrastFinding[];
 	onChange: (value: string) => void;
 }>): ReactNode {
 	const noticeId = useId();
+	const notices = warnings.map((finding) => ({ finding, id: `${noticeId}-${finding.pair}` }));
 	const change = useCallback(
 		(color: Readonly<Color> | null) => {
 			if (color !== null) onChange(color.toString('hex').toLowerCase());
@@ -54,7 +56,7 @@ export function BrandColorField({
 	return (
 		<ColorPicker onChange={change} value={value}>
 			<ColorField
-				aria-describedby={ratio === null ? undefined : noticeId}
+				aria-describedby={notices.length === 0 ? undefined : notices.map(({ id }) => id).join(' ')}
 				className="flex flex-col gap-1"
 				name={name}
 			>
@@ -66,7 +68,9 @@ export function BrandColorField({
 				<Text className="text-sm text-gray-700" slot="description">
 					{help}
 				</Text>
-				{ratio === null ? null : <ContrastNotice id={noticeId} ratio={ratio} />}
+				{notices.map(({ finding, id }) => (
+					<ContrastNotice finding={finding} id={id} key={id} />
+				))}
 				<FieldError className="text-sm text-red-700" />
 			</ColorField>
 		</ColorPicker>

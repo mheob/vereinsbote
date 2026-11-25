@@ -142,7 +142,7 @@ export function BrandForm({ page }: Readonly<{ page: Readonly<BrandPage> }>): Re
 				onChange={setDraft}
 				storageReady={page.storageReady}
 			/>
-			<ColorsSection colors={draft.colors} onChange={setDraft} />
+			<ColorsSection announce={announceStatus} colors={draft.colors} onChange={setDraft} />
 			<FontsSection fonts={draft.fonts} onChange={setDraft} />
 			<FooterSection announce={announceStatus} draft={draft} onChange={setDraft} />
 			<div className="flex flex-col gap-3">

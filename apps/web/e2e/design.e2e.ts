@@ -86,11 +86,33 @@ test('an admin sets up the brand', async () => {
 	await expect.poll(async () => isLoaded(logo)).toBe(true);
 	const logoPath = new URL((await logo.getAttribute('src')) ?? '').pathname;
 
-	// A weak text colour is flagged at its field; saving stays possible.
+	// A weak text colour is flagged at both fields of the pair, and a screen reader hears it once
+	// the colour is committed; saving stays possible.
+	const status = admin.getByRole('status').filter({ hasText: 'auf Hintergrund' });
+	const textWarning = /Text auf Hintergrund: Kontrast 4,4\d:1, empfohlen mindestens 4,5:1\./u;
 	const textColor = admin.getByLabel('Textfarbe');
+	const background = admin.getByLabel('Hintergrundfarbe');
+	const linkColor = admin.getByLabel('Linkfarbe');
 	await textColor.fill('#777777');
 	await textColor.blur();
-	await expect(admin.getByText(/Kontrast 4,4\d:1, empfohlen mindestens 4,5:1/u)).toBeVisible();
+	await expect(status).toHaveText(textWarning);
+	await expect(textColor).toHaveAccessibleDescription(textWarning);
+	await expect(background).toHaveAccessibleDescription(textWarning);
+	await expect(linkColor).not.toHaveAccessibleDescription(/Kontrast/u);
+	// A dark background weakens the links as well: both warnings at the background, one announcement.
+	await background.fill('#555555');
+	await background.blur();
+	await expect(status).toHaveText(
+		/^Text auf Hintergrund: Kontrast 1,\d\d:1, [^.]+\. Links auf Hintergrund: Kontrast 1,\d\d:1, [^.]+\.$/u,
+	);
+	await expect(background).toHaveAccessibleDescription(/Text auf .+ Links auf Hintergrund/u);
+	await expect(linkColor).toHaveAccessibleDescription(/Links auf Hintergrund: Kontrast 1,\d\d:1/u);
+	await background.fill('#ffffff');
+	await background.blur();
+	await expect(status).toHaveText(
+		/^Text auf Hintergrund: Kontrast 4,4\d:1, [^.]+\. Links auf Hintergrund: Kontrast jetzt ausreichend\.$/u,
+	);
+	await expect(linkColor).not.toHaveAccessibleDescription(/Kontrast/u);
 
 	// A link to Instagram can be shown as an icon, others only as text.
 	await admin.getByRole('button', { name: 'Link hinzufügen' }).click();

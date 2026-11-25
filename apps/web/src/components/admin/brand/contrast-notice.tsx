@@ -1,29 +1,27 @@
 import type { ReactNode } from 'react';
 
-import { useLocale, useT } from '@/i18n/use-t';
+import { useLocale } from '@/i18n/use-t';
+import type { ContrastFinding } from '@/mail/brand/contrast';
 
-const RATIO_DIGITS = 2;
-const RATIO_SCALE = 100;
+import { contrastWarningText } from './brand-draft';
 
 /**
- * The warning at a colour field: its pair is below 4.5:1. Saving stays possible (Design 7). The
- * ratio is cut, not rounded, so 4.496 is never shown as 4.50 next to "below 4.5".
+ * The warning at a colour field: a pair the colour belongs to is below 4.5:1. It names the pair,
+ * so it reads right at both of its fields. Saving stays possible (Design 7).
  *
  * @param props The props.
  * @param props.id The id the field names in `aria-describedby`.
- * @param props.ratio The contrast ratio.
+ * @param props.finding The weak pair and its ratio.
  * @returns The warning.
  */
-export function ContrastNotice({ id, ratio }: Readonly<{ id: string; ratio: number }>): ReactNode {
-	const t = useT();
+export function ContrastNotice({
+	finding,
+	id,
+}: Readonly<{ id: string; finding: ContrastFinding }>): ReactNode {
 	const locale = useLocale();
-	const shown = (Math.floor(ratio * RATIO_SCALE) / RATIO_SCALE).toLocaleString(locale, {
-		maximumFractionDigits: RATIO_DIGITS,
-		minimumFractionDigits: RATIO_DIGITS,
-	});
 	return (
 		<p className="text-sm font-semibold text-amber-900" id={id}>
-			{t('brand.contrast', { ratio: shown })}
+			{contrastWarningText(locale, finding)}
 		</p>
 	);
 }

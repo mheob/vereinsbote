@@ -3,6 +3,8 @@
  * admin typed), `brandFromDraft` turns them into a brand with the same schema the server checks,
  * and names each refused field with the message to show at it.
  */
+import type { Locale } from '@/i18n/locale';
+import { translate } from '@/i18n/translate';
 import type { MessageKey } from '@/i18n/translate';
 import { brandSchema, MAX_FOOTER_LINKS } from '@/mail/brand/brand-schema';
 import type { Brand, BrandLogo, FontStackId, IconVariant } from '@/mail/brand/brand-schema';
@@ -319,29 +321,111 @@ function updateFooterText(field: FooterTextField, value: string): DraftUpdate {
 	return (draft) => ({ ...draft, footer: { ...draft.footer, [field]: value } });
 }
 
-/** The colour whose field carries the warning of a weak pair. */
-const PAIR_FIELD: Readonly<Record<ContrastFinding['pair'], ColorKey>> = {
-	buttonText: 'primary',
-	footerText: 'secondary',
-	linkOnBackground: 'link',
-	textOnBackground: 'text',
+/** The colours of each pair: both fields of a pair show its warning (Design 7). */
+const PAIR_FIELDS: Readonly<Record<ContrastFinding['pair'], readonly ColorKey[]>> = {
+	// The button and footer text is black or white, whichever reads better: only one colour to change.
+	buttonText: ['primary'],
+	footerText: ['secondary'],
+	linkOnBackground: ['link', 'background'],
+	textOnBackground: ['text', 'background'],
 };
 
+/** The pairs in the order of the layout (and of `contrastFindings`). */
+const LAYOUT_PAIRS: readonly ContrastFinding['pair'][] = [
+	'textOnBackground',
+	'linkOnBackground',
+	'buttonText',
+	'footerText',
+];
+
 /**
- * The weak colour pairs, by the colour whose field shows the warning (Design 7).
+ * The warnings of the weak colour pairs, at each colour of a pair (Design 7): the background can
+ * carry two, one for the text and one for the links.
  *
  * @param colors The colours.
- * @returns The ratio per colour; a colour without a weak pair is missing.
+ * @returns The weak pairs per colour, in the order of the layout; a colour without one is missing.
  */
-function weakRatios(colors: Readonly<Brand['colors']>): Partial<Record<ColorKey, number>> {
-	return Object.fromEntries(
-		contrastFindings(colors).map(({ pair, ratio }) => [PAIR_FIELD[pair], ratio]),
+function contrastWarnings(
+	colors: Readonly<Brand['colors']>,
+): Partial<Record<ColorKey, ContrastFinding[]>> {
+	const warnings: Partial<Record<ColorKey, ContrastFinding[]>> = {};
+	for (const finding of contrastFindings(colors)) {
+		for (const key of PAIR_FIELDS[finding.pair]) (warnings[key] ??= []).push(finding);
+	}
+	return warnings;
+}
+
+const RATIO_DIGITS = 2;
+const RATIO_SCALE = 100;
+
+/**
+ * A ratio as the page shows it: cut, not rounded, so 4.496 is never shown as 4.50 next to "below
+ * 4.5".
+ *
+ * @param ratio The contrast ratio.
+ * @param locale The language of the number.
+ * @returns For example `4,49`.
+ */
+function shownRatio(ratio: number, locale: Locale): string {
+	return (Math.floor(ratio * RATIO_SCALE) / RATIO_SCALE).toLocaleString(locale, {
+		maximumFractionDigits: RATIO_DIGITS,
+		minimumFractionDigits: RATIO_DIGITS,
+	});
+}
+
+/**
+ * The warning of a weak pair, at its fields and in the announcement: it names the pair, so it is
+ * clear at whichever field it appears.
+ *
+ * @param locale The language.
+ * @param finding The weak pair and its ratio.
+ * @returns For example „Text auf Hintergrund: Kontrast 4,47:1, empfohlen mindestens 4,5:1.“
+ */
+function contrastWarningText(locale: Locale, finding: Readonly<ContrastFinding>): string {
+	return translate(locale, 'brand.contrast', {
+		pair: translate(locale, `brand.contrastPair.${finding.pair}`),
+		ratio: shownRatio(finding.ratio, locale),
+	});
+}
+
+/**
+ * What a screen reader hears when a colour change changes the weak pairs: each pair that became
+ * weak or shows another ratio now, and each pair that reads well again, in the order of the
+ * layout. The warnings under the fields are no live region, so without this a colour committed
+ * by tabbing out would warn silently.
+ *
+ * @param locale The language.
+ * @param before The colours before the change.
+ * @param after The colours after it.
+ * @returns The announcement, or null when the warnings stay as they are.
+ */
+function contrastAnnouncement(
+	locale: Locale,
+	before: Readonly<Brand['colors']>,
+	after: Readonly<Brand['colors']>,
+): string | null {
+	const previous = new Map(
+		contrastFindings(before).map((finding) => [finding.pair, contrastWarningText(locale, finding)]),
 	);
+	const current = new Map(
+		contrastFindings(after).map((finding) => [finding.pair, contrastWarningText(locale, finding)]),
+	);
+	const sentences = LAYOUT_PAIRS.filter((pair) => previous.get(pair) !== current.get(pair)).map(
+		(pair) =>
+			current.get(pair) ??
+			translate(locale, 'brand.contrastSufficient', {
+				pair: translate(locale, `brand.contrastPair.${pair}`),
+			}),
+	);
+	return sentences.length === 0 ? null : sentences.join(' ');
 }
 
 export {
 	brandFromDraft,
 	COLOR_KEYS,
+	contrastAnnouncement,
+	contrastWarnings,
+	contrastWarningText,
 	draftFromBrand,
 	recommendsLegalLinks,
 	updateColor,
@@ -349,7 +433,6 @@ export {
 	updateFonts,
 	updateFooter,
 	updateFooterText,
-	weakRatios,
 };
 export type {
 	BrandDraft,

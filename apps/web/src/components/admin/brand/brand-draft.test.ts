@@ -5,13 +5,15 @@ import type { BrandLogo } from '@/mail/brand/brand-schema';
 
 import {
 	brandFromDraft,
+	contrastAnnouncement,
+	contrastWarnings,
+	contrastWarningText,
 	draftFromBrand,
 	recommendsLegalLinks,
 	updateColor,
 	updateDraft,
 	updateFonts,
 	updateFooter,
-	weakRatios,
 } from './brand-draft';
 import type { BrandDraft } from './brand-draft';
 
@@ -190,24 +192,99 @@ describe('the updates', () => {
 	});
 });
 
-describe(weakRatios, () => {
+const GREY_TEXT = { ...DEFAULT_BRAND.colors, text: '#777777' };
+
+describe(contrastWarnings, () => {
 	it('has nothing to say about the default colours', () => {
-		expect(weakRatios(DEFAULT_BRAND.colors)).toStrictEqual({});
+		expect(contrastWarnings(DEFAULT_BRAND.colors)).toStrictEqual({});
 	});
 
-	it('names the colour whose field shows the warning', () => {
-		const ratios = weakRatios({ ...DEFAULT_BRAND.colors, text: '#777777' });
-		expect(Object.keys(ratios)).toStrictEqual(['text']);
-		expect(ratios.text).toBeCloseTo(4.48, 1);
+	it('warns at both fields of a weak pair', () => {
+		const warnings = contrastWarnings(GREY_TEXT);
+		expect(Object.keys(warnings).toSorted()).toStrictEqual(['background', 'text']);
+		expect(warnings.text).toStrictEqual(warnings.background);
+		expect(warnings.text?.map(({ pair }) => pair)).toStrictEqual(['textOnBackground']);
+		expect(warnings.text?.[0]?.ratio).toBeCloseTo(4.48, 1);
 	});
 
-	it('flags a link colour that reads badly on the background', () => {
-		const ratios = weakRatios({ ...DEFAULT_BRAND.colors, link: '#cccccc' });
-		expect(Object.keys(ratios)).toStrictEqual(['link']);
+	it('names both pairs at the background when it weakens text and links', () => {
+		const warnings = contrastWarnings({ ...DEFAULT_BRAND.colors, background: '#555555' });
+		expect(warnings.background?.map(({ pair }) => pair)).toStrictEqual([
+			'textOnBackground',
+			'linkOnBackground',
+		]);
+		expect(warnings.text?.map(({ pair }) => pair)).toStrictEqual(['textOnBackground']);
+		expect(warnings.link?.map(({ pair }) => pair)).toStrictEqual(['linkOnBackground']);
 	});
 
 	it('never flags the primary and secondary colour: their text is black or white', () => {
 		const grey = { ...DEFAULT_BRAND.colors, primary: '#777777', secondary: '#777777' };
-		expect(weakRatios(grey)).toStrictEqual({});
+		expect(contrastWarnings(grey)).toStrictEqual({});
+	});
+});
+
+describe(contrastWarningText, () => {
+	it('names the pair and the ratio, cut to two digits, in the language', () => {
+		const finding = { pair: 'textOnBackground', ratio: 4.4999 } as const;
+		expect(contrastWarningText('de', finding)).toBe(
+			'Text auf Hintergrund: Kontrast 4,49:1, empfohlen mindestens 4,5:1.',
+		);
+		expect(contrastWarningText('en', finding)).toBe(
+			'Text on background: contrast 4.49:1, at least 4.5:1 recommended.',
+		);
+	});
+
+	it('has a name for every pair', () => {
+		expect(contrastWarningText('de', { pair: 'linkOnBackground', ratio: 3 })).toMatch(
+			/^Links auf Hintergrund: /u,
+		);
+		expect(contrastWarningText('de', { pair: 'buttonText', ratio: 3 })).toMatch(
+			/^Buttonschrift auf Primärfarbe: /u,
+		);
+		expect(contrastWarningText('de', { pair: 'footerText', ratio: 3 })).toMatch(
+			/^Fußzeilenschrift auf Sekundärfarbe: /u,
+		);
+	});
+});
+
+describe(contrastAnnouncement, () => {
+	it('says nothing while the weak pairs stay as they are', () => {
+		expect(contrastAnnouncement('de', DEFAULT_BRAND.colors, DEFAULT_BRAND.colors)).toBeNull();
+		expect(
+			contrastAnnouncement('de', DEFAULT_BRAND.colors, {
+				...DEFAULT_BRAND.colors,
+				primary: '#123456',
+			}),
+		).toBeNull();
+	});
+
+	it('announces a pair that became weak, with its ratio', () => {
+		expect(contrastAnnouncement('de', DEFAULT_BRAND.colors, GREY_TEXT)).toMatch(
+			/^Text auf Hintergrund: Kontrast 4,4\d:1, empfohlen mindestens 4,5:1\.$/u,
+		);
+	});
+
+	it('announces a new ratio of a pair that stays weak, but not a change it does not show', () => {
+		const greyer = { ...GREY_TEXT, text: '#888888' };
+		expect(contrastAnnouncement('de', GREY_TEXT, greyer)).toMatch(
+			/^Text auf Hintergrund: Kontrast 3,5\d:1/u,
+		);
+		expect(contrastAnnouncement('de', GREY_TEXT, { ...GREY_TEXT, text: '#777778' })).toBeNull();
+	});
+
+	it('announces a pair that reads well again', () => {
+		expect(contrastAnnouncement('en', GREY_TEXT, DEFAULT_BRAND.colors)).toBe(
+			'Text on background: contrast now sufficient.',
+		);
+	});
+
+	it('names every changed pair of one change, in the order of the layout', () => {
+		const dark = { ...DEFAULT_BRAND.colors, background: '#555555' };
+		expect(contrastAnnouncement('de', DEFAULT_BRAND.colors, dark)).toMatch(
+			/^Text auf Hintergrund: .+\. Links auf Hintergrund: .+\.$/u,
+		);
+		expect(contrastAnnouncement('de', dark, DEFAULT_BRAND.colors)).toBe(
+			'Text auf Hintergrund: Kontrast jetzt ausreichend. Links auf Hintergrund: Kontrast jetzt ausreichend.',
+		);
 	});
 });

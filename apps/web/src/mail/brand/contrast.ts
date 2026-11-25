@@ -23,8 +23,8 @@ const MAX_CHANNEL = 255;
 type Pair = 'textOnBackground' | 'linkOnBackground' | 'buttonText' | 'footerText';
 
 interface ContrastFinding {
-	pair: Pair;
-	ratio: number;
+	readonly pair: Pair;
+	readonly ratio: number;
 }
 
 function channel(hex: string, start: number): number {
