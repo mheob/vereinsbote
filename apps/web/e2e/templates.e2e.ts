@@ -696,6 +696,13 @@ const DIRTY_MAIL = [
 	'</body></html>',
 ].join('');
 
+/** HTML as Word saves it, in Windows-1252 (the test writes it as Latin-1, which is the same here). */
+const WORD_HTML = [
+	'<html><head>',
+	'<meta http-equiv=Content-Type content="text/html; charset=windows-1252">',
+	'</head><body><p>Grüße vom Sommerfest, Straße und Café inklusive</p></body></html>',
+].join('');
+
 /**
  * Chooses a file in the import: the hidden file input of React Aria's file trigger.
  *
@@ -735,6 +742,14 @@ test('an editor imports html with a script and sees it removed', async () => {
 		name: 'zu-gross.html',
 	});
 	await expect(eva.getByText('Das HTML ist zu groß (höchstens 500 KB).')).toBeVisible();
+
+	// Word and older Outlook versions save HTML in Windows-1252: the umlauts stay umlauts.
+	await eva.locator('input[type="file"]').setInputFiles({
+		buffer: Buffer.from(WORD_HTML, 'latin1'),
+		mimeType: 'text/html',
+		name: 'word.htm',
+	});
+	await expect(eva.getByLabel('HTML', { exact: true })).toHaveValue(WORD_HTML);
 
 	await chooseHtmlFile(eva, { name: 'rundbrief.html', text: DIRTY_MAIL });
 	await expect(eva.getByRole('button', { name: 'Übernehmen' })).toBeDisabled();
