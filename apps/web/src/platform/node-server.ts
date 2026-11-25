@@ -6,6 +6,7 @@ import { openDb } from '@/server/db/client';
 import { EnvError, parseEnv } from '@/server/env';
 import type { Env } from '@/server/env';
 import { errorLabel, errorLabelWithCause } from '@/server/error-label';
+import { openStorage } from '@/server/storage/open-storage';
 import { startTickInterval } from '@/server/tick/interval';
 import { tickSteps } from '@/server/tick/steps';
 import { runTick } from '@/server/tick/tick';
@@ -71,11 +72,13 @@ export default definePlugin(async (nitroApp) => {
 		process.exit(1);
 	}
 	const pool = createTickPool(async () => openDb(env.databaseUrl, 'pg'));
+	// The S3 bucket of the attachments, as the requests open it (null when not set up).
+	const storage = await openStorage(env, null);
 	const stop = startTickInterval({
 		intervalMs: env.tickIntervalMs,
 		async run() {
 			const { db } = await pool.open();
-			return runTick({ db, env, steps: tickSteps });
+			return runTick({ db, env, steps: tickSteps, storage });
 		},
 	});
 	// oxlint-disable-next-line typescript/strict-void-return -- Nitro awaits a promise a `close` hook returns, though the hook type says void

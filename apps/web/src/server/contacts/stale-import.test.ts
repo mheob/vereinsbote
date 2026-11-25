@@ -48,6 +48,7 @@ async function tickAt(
 		env,
 		now: () => at,
 		steps: [createStaleImportWarningStep(() => mailer)],
+		storage: null,
 	});
 }
 
@@ -132,14 +133,14 @@ describe(createStaleImportWarningStep, () => {
 		});
 		await lastImportedWeeksAgo(db, 9);
 		const step = createStaleImportWarningStep(createSystemMailer);
-		const report = await runTick({ db, env, now: () => NOW, steps: [step] });
+		const report = await runTick({ db, env, now: () => NOW, steps: [step], storage: null });
 		expect(report).toMatchObject({ steps: [{ name: 'stale-import-warning', outcome: 'done' }] });
 		const [entry] = await warningEntries(db);
 		expect(entry).toMatchObject({
 			action: 'import.stale_warning',
 			details: { error: 'MailerNotConfiguredError', failed: 2, sent: 0 },
 		});
-		await runTick({ db, env, now: () => daysAfter(NOW, 0.1), steps: [step] });
+		await runTick({ db, env, now: () => daysAfter(NOW, 0.1), steps: [step], storage: null });
 		await expect(warningEntries(db)).resolves.toHaveLength(1);
 	});
 

@@ -20,8 +20,8 @@ async function handleTick({ request }: Readonly<{ request: Request }>): Promise<
 		env,
 		platform,
 		async run() {
-			const { db } = await getAppContext();
-			return runTick({ db, env, steps: tickSteps });
+			const { db, storage } = await getAppContext();
+			return runTick({ db, env, steps: tickSteps, storage });
 		},
 	});
 }

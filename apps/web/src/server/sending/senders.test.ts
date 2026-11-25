@@ -2,13 +2,14 @@ import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vite-plus/test';
 
 import { setUpClub, userWith } from '@/server/contacts/testing';
-import { auditLog, senders } from '@/server/db/schema';
+import { auditLog, outboxEntries, senders } from '@/server/db/schema';
 import { createTestDb } from '@/server/db/test-db';
 import { ForbiddenError } from '@/server/permissions/principal';
 
 import {
 	SenderChangedError,
 	SenderEmailTakenError,
+	SenderInUseError,
 	SenderInvalidError,
 	SenderNotFoundError,
 } from './errors';
@@ -246,5 +247,46 @@ describe('sender management', () => {
 		await deleteSender(db, admin, id);
 		await expect(sendersForArea(db, membersAreaId)).resolves.toStrictEqual([]);
 		await expect(deleteSender(db, admin, id)).rejects.toThrow(SenderNotFoundError);
+	});
+
+	it.each(['planned', 'sending', 'uncertain'] as const)(
+		'refuses to delete a sender with a %s outbox entry',
+		async (status) => {
+			const db = await createTestDb();
+			const { admin } = await setUpClub(db);
+			const id = await senderOn(db, admin, await graphConnection(db, admin), 'v@example.org');
+			await db.insert(outboxEntries).values({
+				priority: 'group',
+				senderId: id,
+				source: 'wave',
+				sourceId: UNKNOWN_ID,
+				status,
+			});
+			await expect(deleteSender(db, admin, id)).rejects.toThrow(SenderInUseError);
+			await expect(deleteSender(db, admin, id)).rejects.toMatchObject({ reason: 'entries' });
+			await expect(listSenders(db, admin)).resolves.toHaveLength(1);
+		},
+	);
+
+	it('deletes a sender whose entries are done and keeps their history', async () => {
+		const db = await createTestDb();
+		const { admin } = await setUpClub(db);
+		const id = await senderOn(db, admin, await graphConnection(db, admin), 'v@example.org');
+		const done = ['sent', 'bounced', 'failed', 'skipped', 'cancelled'] as const;
+		await db.insert(outboxEntries).values(
+			done.map((status) => ({
+				priority: 'group' as const,
+				senderId: id,
+				source: 'wave' as const,
+				sourceId: UNKNOWN_ID,
+				status,
+			})),
+		);
+		await deleteSender(db, admin, id);
+		const rows = await db
+			.select({ senderId: outboxEntries.senderId, status: outboxEntries.status })
+			.from(outboxEntries);
+		expect(rows).toHaveLength(done.length);
+		expect(rows.every((row) => row.senderId === null)).toBe(true);
 	});
 });

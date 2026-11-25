@@ -1,9 +1,24 @@
 import { pruneAuthRecords } from '@/server/auth/prune';
 import { staleImportWarning } from '@/server/contacts/stale-import';
+import { createOutboxStep } from '@/server/sending/outbox-step';
 
 import type { TickStep } from './tick';
 
-/** The steps of every tick, in order. Later plans add theirs here. */
-const tickSteps: readonly TickStep[] = [pruneAuthRecords, staleImportWarning];
+/** Sends the due mails of the outbox. Sub-plan 4b adds the preparer of waves. */
+const outbox = createOutboxStep({
+	fetch: async (input, init) => fetch(input, init),
+	preparers: {},
+	sleep: async (ms) =>
+		// oxlint-disable-next-line promise/avoid-new -- `setTimeout` takes a callback; Node's timer promises are not on every platform
+		new Promise((resolve) => {
+			setTimeout(resolve, ms);
+		}),
+});
+
+/**
+ * The steps of every tick, in order (plan decision 20: sending, bounces, deletions, warnings).
+ * Later tasks add theirs at their place.
+ */
+const tickSteps: readonly TickStep[] = [pruneAuthRecords, outbox, staleImportWarning];
 
 export { tickSteps };

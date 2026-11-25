@@ -2,6 +2,7 @@ import {
 	boolean,
 	check,
 	date,
+	index,
 	integer,
 	pgTable,
 	primaryKey,
@@ -14,6 +15,22 @@ import { sql } from 'drizzle-orm/sql';
 
 import { areas } from './areas';
 import { user } from './auth';
+
+/** Where an outbox entry comes from: a wave of sub-plan 4b (`source_id` is the wave). */
+const OUTBOX_SOURCES = ['wave'] as const;
+/** `personal` mails go before `group` mails and keep their reserve of the daily limit (decision 5). */
+const OUTBOX_PRIORITIES = ['personal', 'group'] as const;
+/** The states of an entry (Design 8.1). */
+const OUTBOX_STATUSES = [
+	'planned',
+	'sending',
+	'sent',
+	'bounced',
+	'failed',
+	'skipped',
+	'cancelled',
+	'uncertain',
+] as const;
 
 /**
  * The credentials for one mail provider (Design 6): Microsoft Graph or Resend. Several senders
@@ -108,4 +125,59 @@ export const senderAreas = pgTable(
 			.references(() => senders.id, { onDelete: 'cascade' }),
 	},
 	(table) => [primaryKey({ columns: [table.senderId, table.areaId] })],
+);
+
+/**
+ * One mail to one recipient (Design 8). The outbox step takes an entry with one statement
+ * (`sending`), sends it and stores the outcome. `message_id` is made at the first take and kept
+ * for every retry (Resend's idempotency, bounce matching); `recipient` is the address the mail went
+ * to. The sender may be deleted once no entry is open (`deleteSender`); sent entries keep their
+ * history without it.
+ */
+export const outboxEntries = pgTable(
+	'outbox_entries',
+	{
+		attempts: integer('attempts').notNull().default(0),
+		claimedAt: timestamp('claimed_at', { withTimezone: true }),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		id: uuid('id').primaryKey().defaultRandom(),
+		lastErrorCode: text('last_error_code'),
+		messageId: text('message_id'),
+		nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }),
+		notBefore: timestamp('not_before', { withTimezone: true }).notNull().defaultNow(),
+		priority: text('priority', { enum: OUTBOX_PRIORITIES }).notNull(),
+		providerId: text('provider_id'),
+		recipient: text('recipient'),
+		senderId: uuid('sender_id').references(() => senders.id, { onDelete: 'set null' }),
+		sentAt: timestamp('sent_at', { withTimezone: true }),
+		source: text('source', { enum: OUTBOX_SOURCES }).notNull(),
+		sourceId: uuid('source_id').notNull(),
+		status: text('status', { enum: OUTBOX_STATUSES }).notNull().default('planned'),
+	},
+	(table) => [
+		check('outbox_entries_source_check', sql`${table.source} in ('wave')`),
+		check('outbox_entries_priority_check', sql`${table.priority} in ('personal', 'group')`),
+		check(
+			'outbox_entries_status_check',
+			sql`${table.status} in ('planned', 'sending', 'sent', 'bounced', 'failed', 'skipped', 'cancelled', 'uncertain')`,
+		),
+		index('outbox_entries_status_not_before_idx').on(table.status, table.notBefore),
+		index('outbox_entries_sender_status_idx').on(table.senderId, table.status),
+		uniqueIndex('outbox_entries_message_id_idx').on(table.messageId),
+		index('outbox_entries_provider_id_idx').on(table.providerId),
+	],
+);
+
+/**
+ * The mails a quota scope sent per club day (decision 4): `sender:<id>` for Graph, `connection:<id>`
+ * for Resend. Counted when the provider accepts a mail, system and test mails included.
+ */
+export const sendQuotaDays = pgTable(
+	'send_quota_days',
+	{
+		count: integer('count').notNull().default(0),
+		day: date('day', { mode: 'string' }).notNull(),
+		scope: text('scope').notNull(),
+	},
+	(table) => [primaryKey({ columns: [table.scope, table.day] })],
 );

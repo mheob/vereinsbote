@@ -3,6 +3,7 @@ import handler from '@tanstack/react-start/server-entry';
 import { openDb } from '@/server/db/client';
 import { parseEnv } from '@/server/env';
 import { errorLabel } from '@/server/error-label';
+import { openStorage } from '@/server/storage/open-storage';
 import { tickSteps } from '@/server/tick/steps';
 import { runTick } from '@/server/tick/tick';
 
@@ -31,11 +32,12 @@ interface ExecutionContext {
 async function handleCronEvent(bindings: Bindings): Promise<void> {
 	try {
 		const env = parseEnv(variablesOf(bindings));
+		const storage = await openStorage(env, bindings);
 		const { db, end } = await openDb(env.databaseUrl, 'neon', {
 			devNeonWsProxy: env.devNeonWsProxy,
 		});
 		try {
-			await runScheduledTicks(async () => runTick({ db, env, steps: tickSteps }));
+			await runScheduledTicks(async () => runTick({ db, env, steps: tickSteps, storage }));
 		} finally {
 			await end();
 		}

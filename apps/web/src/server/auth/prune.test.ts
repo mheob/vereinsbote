@@ -19,7 +19,7 @@ const env = parseEnv({
 const HOUR_MS = 3_600_000;
 
 function context(db: Db, now: () => Date = () => new Date()): TickContext {
-	return { db, deadline: Date.now() + HOUR_MS, env, now };
+	return { db, deadline: Date.now() + HOUR_MS, env, now, storage: null };
 }
 
 /**
@@ -180,7 +180,13 @@ describe('prune-auth-records', () => {
 		await insertVerifications(db, [-1, -2, -3]);
 		await insertWindows(db, [61]);
 		const deadline = Date.now() + HOUR_MS;
-		const ctx = { db, deadline, env, now: clockReachingDeadlineAfterOneBatch(deadline) };
+		const ctx = {
+			db,
+			deadline,
+			env,
+			now: clockReachingDeadlineAfterOneBatch(deadline),
+			storage: null,
+		};
 		await expect(createPruneAuthRecordsStep(2).run(ctx)).resolves.toStrictEqual({ moreWork: true });
 		await expect(verificationIds(db)).resolves.toHaveLength(1);
 		await expect(windowHashes(db)).resolves.toHaveLength(1);
@@ -194,7 +200,13 @@ describe('prune-auth-records', () => {
 		await insertRateLimits(db, [3600]);
 		const deadline = Date.now() + HOUR_MS;
 		const step = createPruneAuthRecordsStep(2);
-		await step.run({ db, deadline, env, now: clockReachingDeadlineAfterOneBatch(deadline) });
+		await step.run({
+			db,
+			deadline,
+			env,
+			now: clockReachingDeadlineAfterOneBatch(deadline),
+			storage: null,
+		});
 		await expect(step.run(context(db))).resolves.toStrictEqual({ moreWork: false });
 		await expect(verificationIds(db)).resolves.toStrictEqual([]);
 		await expect(windowHashes(db)).resolves.toStrictEqual([]);

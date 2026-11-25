@@ -12,7 +12,14 @@ import type { AuditAction } from '@/server/audit/audit';
 import { normalizeEmail } from '@/server/auth/email';
 import type { Db } from '@/server/db/client';
 import { isUniqueViolation } from '@/server/db/errors';
-import { areas, mailConnections, senderAreas, senders, user } from '@/server/db/schema';
+import {
+	areas,
+	mailConnections,
+	outboxEntries,
+	senderAreas,
+	senders,
+	user,
+} from '@/server/db/schema';
 import { assertAdmin } from '@/server/permissions/principal';
 import type { Principal } from '@/server/permissions/principal';
 import { isValidUserEmail } from '@/server/users/form';
@@ -21,6 +28,7 @@ import type { ConnectionKind } from './connections';
 import {
 	SenderChangedError,
 	SenderEmailTakenError,
+	SenderInUseError,
 	SenderInvalidError,
 	SenderNotFoundError,
 } from './errors';
@@ -446,24 +454,40 @@ async function updateSender(
 }
 
 /**
- * Deletes a sender and its area releases.
+ * Deletes a sender and its area releases. Refused while outbox entries of the sender are open
+ * (planned, sending or uncertain); entries that are done keep their history without the sender.
+ * The row lock waits for a transaction that is adding entries for the sender, so their check
+ * sees them.
  *
  * @param db The database.
  * @param actor Who deletes it; an admin.
  * @param id The sender.
  * @throws {ForbiddenError} For anybody but an admin.
  * @throws {SenderNotFoundError} When no sender has the id.
+ * @throws {SenderInUseError} When open outbox entries hang on the sender (`entries`).
  */
 async function deleteSender(db: Db, actor: Principal, id: string): Promise<void> {
 	assertAdmin(actor);
-	// Task 7 hooks in here: planned, sending or uncertain outbox entries refuse it
-	// (SenderInUseError 'entries'); Task 12: so does an occasion that uses the sender ('occasions').
 	await db.transaction(async (tx) => {
-		const deleted = await tx
-			.delete(senders)
+		const [row] = await tx
+			.select({ id: senders.id })
+			.from(senders)
 			.where(eq(senders.id, id))
-			.returning({ id: senders.id });
-		if (deleted.length === 0) throw new SenderNotFoundError();
+			.for('update');
+		if (row === undefined) throw new SenderNotFoundError();
+		const [open] = await tx
+			.select({ id: outboxEntries.id })
+			.from(outboxEntries)
+			.where(
+				and(
+					eq(outboxEntries.senderId, id),
+					inArray(outboxEntries.status, ['planned', 'sending', 'uncertain']),
+				),
+			)
+			.limit(1);
+		if (open !== undefined) throw new SenderInUseError('entries');
+		// Task 12 hooks in here: an occasion that uses the sender refuses it ('occasions').
+		await tx.delete(senders).where(eq(senders.id, id));
 		await logSender(tx, 'sender.deleted', actor, id);
 	});
 }

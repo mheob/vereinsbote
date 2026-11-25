@@ -3,10 +3,11 @@ import { describe, expect, it, vi } from 'vite-plus/test';
 
 import { createTestDb } from '@/server/db/test-db';
 import { parseEnv } from '@/server/env';
+import { createMemoryStorage } from '@/server/storage/memory';
 import { getState, setState } from '@/server/system-state';
 
 import { getLastTick, runTick, TICK_BUDGET_MS } from './tick';
-import type { CompletedTick, TickContext, TickReport, TickStep } from './tick';
+import type { CompletedTick, RunTickDeps, TickContext, TickReport, TickStep } from './tick';
 
 const env = parseEnv({
 	APP_SECRET: Buffer.alloc(32, 5).toString('base64'),
@@ -83,6 +84,16 @@ function expiryOf(lock: Lock | null): number {
 	return lock === null ? Number.NaN : Date.parse(lock.expiresAt);
 }
 
+/**
+ * Runs a tick without object storage, which these steps do not use.
+ *
+ * @param deps The deps of `runTick` but the storage.
+ * @returns The report.
+ */
+async function tick(deps: Readonly<Omit<RunTickDeps, 'storage'>>): Promise<TickReport> {
+	return runTick({ ...deps, storage: null });
+}
+
 describe(runTick, () => {
 	it('runs steps in order and stores the report', async () => {
 		const db = await createTestDb();
@@ -93,7 +104,7 @@ describe(runTick, () => {
 				order.push(name);
 				return noWork(ctx);
 			};
-		const report = await runTick({
+		const report = await tick({
 			db,
 			env,
 			steps: [step('a', record('a')), step('b', record('b'))],
@@ -110,16 +121,17 @@ describe(runTick, () => {
 		await expect(getLastTick(db)).resolves.toStrictEqual(report);
 	});
 
-	it('hands each step the database, the env, the clock and the deadline', async () => {
+	it('hands each step the database, the env, the clock, the deadline and the storage', async () => {
 		const db = await createTestDb();
 		const now = (): Date => new Date(START);
+		const storage = createMemoryStorage();
 		const seen: TickContext[] = [];
 		const capture = async (ctx: TickContext): Promise<StepResult> => {
 			seen.push(ctx);
 			return noWork(ctx);
 		};
-		await runTick({ budgetMs: 1000, db, env, now, steps: [step('a', capture)] });
-		expect(seen).toStrictEqual([{ db, deadline: START + 1000, env, now }]);
+		await runTick({ budgetMs: 1000, db, env, now, steps: [step('a', capture)], storage });
+		expect(seen).toStrictEqual([{ db, deadline: START + 1000, env, now, storage }]);
 	});
 
 	it('records start and finish time from the clock', async () => {
@@ -129,7 +141,7 @@ describe(runTick, () => {
 			current += 5000;
 			return noWork(ctx);
 		};
-		const report = await runTick({
+		const report = await tick({
 			db,
 			env,
 			now: () => new Date(current),
@@ -145,7 +157,7 @@ describe(runTick, () => {
 		const db = await createTestDb();
 		const log = vi.spyOn(console, 'error').mockReturnValue();
 		const report = completedTick(
-			await runTick({ db, env, steps: [step('a', broken), step('b', noWork)] }),
+			await tick({ db, env, steps: [step('a', broken), step('b', noWork)] }),
 		);
 		expect(report.steps).toStrictEqual([
 			{ error: 'kaputt', name: 'a', outcome: 'error' },
@@ -159,7 +171,7 @@ describe(runTick, () => {
 	it('reports only the first line of an error message', async () => {
 		const db = await createTestDb();
 		const log = vi.spyOn(console, 'error').mockReturnValue();
-		const report = completedTick(await runTick({ db, env, steps: [step('a', brokenQuery)] }));
+		const report = completedTick(await tick({ db, env, steps: [step('a', brokenQuery)] }));
 		expect(report.steps).toStrictEqual([
 			{ error: 'Failed query: select 1', name: 'a', outcome: 'error' },
 		]);
@@ -175,7 +187,7 @@ describe(runTick, () => {
 			return noWork(ctx);
 		};
 		const late = vi.fn<TickStep['run']>().mockResolvedValue({ moreWork: false });
-		const report = await runTick({
+		const report = await tick({
 			db,
 			env,
 			now: () => new Date(current),
@@ -194,7 +206,7 @@ describe(runTick, () => {
 
 	it('propagates moreWork from a step', async () => {
 		const db = await createTestDb();
-		const report = await runTick({ db, env, steps: [step('a', moreWork), step('b', noWork)] });
+		const report = await tick({ db, env, steps: [step('a', moreWork), step('b', noWork)] });
 		expect(report).toMatchObject({ moreWork: true, status: 'completed' });
 	});
 
@@ -206,14 +218,14 @@ describe(runTick, () => {
 			started.resolve('started');
 			return gate.promise;
 		};
-		const first = runTick({ db, env, holderId: 'A', steps: [step('slow', slow)] });
+		const first = tick({ db, env, holderId: 'A', steps: [step('slow', slow)] });
 		await started.promise;
-		await expect(runTick({ db, env, holderId: 'B', steps: [] })).resolves.toStrictEqual({
+		await expect(tick({ db, env, holderId: 'B', steps: [] })).resolves.toStrictEqual({
 			status: 'locked',
 		});
 		gate.resolve({ moreWork: false });
 		await expect(first).resolves.toMatchObject({ status: 'completed' });
-		await expect(runTick({ db, env, holderId: 'B', steps: [] })).resolves.toMatchObject({
+		await expect(tick({ db, env, holderId: 'B', steps: [] })).resolves.toMatchObject({
 			status: 'completed',
 		});
 	});
@@ -223,9 +235,9 @@ describe(runTick, () => {
 		const lock = lockExpiringIn('X', ONE_MINUTE_MS);
 		await setState(db, 'tick_lock', lock);
 		const work = vi.fn<TickStep['run']>().mockResolvedValue({ moreWork: false });
-		await expect(
-			runTick({ db, env, holderId: 'B', steps: [step('a', work)] }),
-		).resolves.toStrictEqual({ status: 'locked' });
+		await expect(tick({ db, env, holderId: 'B', steps: [step('a', work)] })).resolves.toStrictEqual(
+			{ status: 'locked' },
+		);
 		expect(work).not.toHaveBeenCalled();
 		await expect(getLastTick(db)).resolves.toBeNull();
 		await expect(getState(db, 'tick_lock')).resolves.toStrictEqual(lock);
@@ -234,7 +246,7 @@ describe(runTick, () => {
 	it('takes over an expired lock', async () => {
 		const db = await createTestDb();
 		await setState(db, 'tick_lock', lockExpiringIn('X', -ONE_MINUTE_MS));
-		await expect(runTick({ db, env, holderId: 'B', steps: [] })).resolves.toMatchObject({
+		await expect(tick({ db, env, holderId: 'B', steps: [] })).resolves.toMatchObject({
 			status: 'completed',
 		});
 	});
@@ -242,7 +254,7 @@ describe(runTick, () => {
 	it('takes over a lock without a readable expiry', async () => {
 		const db = await createTestDb();
 		await setState(db, 'tick_lock', { holderId: 'X' });
-		await expect(runTick({ db, env, holderId: 'B', steps: [] })).resolves.toMatchObject({
+		await expect(tick({ db, env, holderId: 'B', steps: [] })).resolves.toMatchObject({
 			status: 'completed',
 		});
 	});
@@ -255,7 +267,7 @@ describe(runTick, () => {
 			return noWork(ctx);
 		};
 		const before = Date.now();
-		await runTick({ budgetMs: 1000, db, env, holderId: 'A', steps: [step('peek', peek)] });
+		await tick({ budgetMs: 1000, db, env, holderId: 'A', steps: [step('peek', peek)] });
 		const [lock = null] = seen;
 		expect(lock).toMatchObject({ holderId: 'A' });
 		expect(expiryOf(lock)).toBeGreaterThanOrEqual(before + 1000 + ONE_MINUTE_MS - CLOCK_SLACK_MS);
@@ -264,7 +276,7 @@ describe(runTick, () => {
 
 	it('releases the lock after the tick', async () => {
 		const db = await createTestDb();
-		await runTick({ db, env, holderId: 'A', steps: [] });
+		await tick({ db, env, holderId: 'A', steps: [] });
 		await expect(getState(db, 'tick_lock')).resolves.toBeNull();
 	});
 
@@ -280,7 +292,7 @@ describe(runTick, () => {
 		await db.execute(sql`
 			create trigger reject_last_tick before insert or update on system_state
 			for each row execute function reject_last_tick()`);
-		await expect(runTick({ db, env, holderId: 'A', steps: [] })).rejects.toMatchObject({
+		await expect(tick({ db, env, holderId: 'A', steps: [] })).rejects.toMatchObject({
 			cause: { message: 'report rejected' },
 		});
 		await expect(getState(db, 'tick_lock')).resolves.toBeNull();
@@ -293,7 +305,7 @@ describe(runTick, () => {
 			await setState(db, 'tick_lock', stolen);
 			return noWork(ctx);
 		};
-		await runTick({ db, env, holderId: 'A', steps: [step('steal', steal)] });
+		await tick({ db, env, holderId: 'A', steps: [step('steal', steal)] });
 		await expect(getState(db, 'tick_lock')).resolves.toStrictEqual(stolen);
 	});
 
@@ -301,7 +313,7 @@ describe(runTick, () => {
 		const db = await createTestDb();
 		const fetchFn = vi.fn<typeof fetch>().mockRejectedValue(new Error('offline'));
 		const log = vi.spyOn(console, 'error').mockReturnValue();
-		const report = await runTick({
+		const report = await tick({
 			db,
 			env: { ...env, heartbeatUrl: HEARTBEAT_URL },
 			fetchFn,
@@ -318,7 +330,7 @@ describe(runTick, () => {
 		const db = await createTestDb();
 		const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 503 }));
 		const log = vi.spyOn(console, 'error').mockReturnValue();
-		const report = await runTick({
+		const report = await tick({
 			db,
 			env: { ...env, heartbeatUrl: HEARTBEAT_URL },
 			fetchFn,
@@ -332,9 +344,9 @@ describe(runTick, () => {
 	it('pings no heartbeat without a URL or while locked', async () => {
 		const db = await createTestDb();
 		const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(new Response());
-		await runTick({ db, env, fetchFn, steps: [] });
+		await tick({ db, env, fetchFn, steps: [] });
 		await setState(db, 'tick_lock', lockExpiringIn('X', ONE_MINUTE_MS));
-		await runTick({ db, env: { ...env, heartbeatUrl: HEARTBEAT_URL }, fetchFn, steps: [] });
+		await tick({ db, env: { ...env, heartbeatUrl: HEARTBEAT_URL }, fetchFn, steps: [] });
 		expect(fetchFn).not.toHaveBeenCalled();
 	});
 });
