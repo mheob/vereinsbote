@@ -4,20 +4,21 @@ import { FieldError, Input, Label, Text, TextField } from 'react-aria-components
 
 import { inputClass } from '@/components/styles';
 import { useT } from '@/i18n/use-t';
-import { isAllowedHref } from '@/mail/blocks/text-doc';
+
+import { hrefDraft } from './href-draft';
 
 /** The longest link the schema allows. */
 const MAX_HREF_LENGTH = 2000;
 
 /**
  * A link field of a block. The template only takes an address it may use (`https:`, `mailto:`,
- * `tel:`) or none; anything else stays in the field with a message once the field is left, so
- * the editor never holds a link the server would refuse.
+ * `tel:`) or none; anything else stays in the field with a message at once and clears the block's
+ * link, so the editor never holds a link the server would refuse nor a stale one.
  *
  * @param props The props.
  * @param props.label The visible label.
  * @param props.value The stored address, `''` for none.
- * @param props.onChange Called with a usable address, or `''` when the field is empty.
+ * @param props.onChange Called with a usable address, or `''` when the field is empty or its text is no usable address.
  * @param props.isRequired Whether the block needs a link.
  * @param props.isReadOnly Whether the field is read-only.
  * @param props.error The message of a refusal of the save checks, or null.
@@ -43,25 +44,16 @@ export function HrefField({
 }>): ReactNode {
 	const t = useT();
 	const [draft, setDraft] = useState(value);
-	const [invalid, setInvalid] = useState(false);
+	const { invalid } = hrefDraft(draft);
 	const change = useCallback(
 		(text: string) => {
 			setDraft(text);
-			const trimmed = text.trim();
-			if (trimmed === '') {
-				setInvalid(false);
-				onChange('');
-			} else if (isAllowedHref(trimmed)) {
-				setInvalid(false);
-				onChange(trimmed);
-			}
+			// Text that is no usable address clears the block's link: the block never keeps the
+			// previous valid address behind a field that shows something else.
+			onChange(hrefDraft(text).href);
 		},
 		[onChange],
 	);
-	const blur = useCallback(() => {
-		const trimmed = draft.trim();
-		setInvalid(trimmed !== '' && !isAllowedHref(trimmed));
-	}, [draft]);
 	const message = invalid ? t('editor.hrefInvalid') : error;
 	return (
 		<TextField
@@ -71,7 +63,6 @@ export function HrefField({
 			isReadOnly={isReadOnly}
 			isRequired={isRequired}
 			maxLength={MAX_HREF_LENGTH}
-			onBlur={blur}
 			onChange={change}
 			type="url"
 			validationBehavior="aria"
