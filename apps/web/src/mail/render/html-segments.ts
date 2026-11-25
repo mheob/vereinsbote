@@ -22,6 +22,8 @@ const STYLE_OPEN = '<style';
 const STYLE_CLOSE = '</style';
 const HEAD_CLOSE = '</head';
 const NOT_FOUND = -1;
+/** What stands in front of an image path of the app: an `src` attribute or a CSS `url()`. */
+const IMAGE_PREFIXES = ["src='", 'src="', 'url(', "url('", 'url("'];
 /** What may stand in a value inside `<style>`: letters, digits, space and `# , . % _ - "`. */
 const NOT_CSS_SAFE = /[^\p{L}\p{N} #,.%_"-]/gu;
 
@@ -73,7 +75,7 @@ function cssValue(value: string): string {
 }
 
 /**
- * Gives the images of the app in the text the origin of the app: an import writes them as
+ * Gives the images of the app in the text (`src` and CSS `url()`) the origin of the app: an import writes them as
  * `/media/<file>`, a mail needs the address.
  *
  * @param text The fixed text of an import.
@@ -81,9 +83,11 @@ function cssValue(value: string): string {
  * @returns The text with absolute image addresses.
  */
 function withImageOrigin(text: string, origin: string): string {
-	return text
-		.replaceAll("src='/media/", `src='${origin}/media/`)
-		.replaceAll('src="/media/', `src="${origin}/media/`);
+	let result = text;
+	for (const prefix of IMAGE_PREFIXES) {
+		result = result.replaceAll(`${prefix}/media/`, `${prefix}${origin}/media/`);
+	}
+	return result;
 }
 
 /** What to write for a placeholder of an import. */

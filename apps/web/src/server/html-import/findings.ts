@@ -37,7 +37,7 @@ type ImportFinding =
 	| { readonly kind: 'langAdded' };
 
 /** The collector the cleaning writes to; it is the CSS report too. */
-interface FindingsCollector extends CssReport {
+interface FindingsCollector extends Omit<CssReport, 'mediaUrl'> {
 	/** Something was removed. */
 	readonly remove: (what: RemovedWhat, count?: number) => void;
 	/** An image from another host. */

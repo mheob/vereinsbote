@@ -160,5 +160,18 @@ function findUnsafe(html: string): string[] {
 	return found;
 }
 
-export { findingsOf, findUnsafe, htmlOf, imported, refusalsOf };
+/**
+ * How many comments a document has, as a browser counts them.
+ *
+ * @param html The HTML.
+ * @returns The number of comment nodes.
+ */
+function commentCount(html: string): number {
+	const count = (node: Nodes): number =>
+		('children' in node ? node.children.reduce((sum, child) => sum + count(child), 0) : 0) +
+		(node.type === 'comment' ? 1 : 0);
+	return count(fromHtml(html));
+}
+
+export { commentCount, findingsOf, findUnsafe, htmlOf, imported, refusalsOf };
 export type { Imported };

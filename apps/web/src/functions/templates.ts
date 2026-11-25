@@ -162,6 +162,7 @@ const submitTemplate = createServerFn({ method: 'POST' })
 				data.id,
 				data.input,
 				data.version,
+				context.env.appUrl.origin,
 			);
 			return { ok: true, version: saved.version };
 		} catch (error) {
@@ -188,7 +189,13 @@ const submitCreateTemplate = createServerFn({ method: 'POST' })
 		try {
 			const created =
 				start === 'empty'
-					? await templates.createTemplate(context.db, principal, areaId, emptyTemplate(names))
+					? await templates.createTemplate(
+							context.db,
+							principal,
+							areaId,
+							emptyTemplate(names),
+							context.env.appUrl.origin,
+						)
 					: await templates.createFromStarter(context.db, principal, areaId, start, names);
 			return { id: created.id, ok: true };
 		} catch (error) {
@@ -217,6 +224,7 @@ const submitDuplicate = createServerFn({ method: 'POST' })
 				id,
 				targetAreaId,
 				name,
+				context.env.appUrl.origin,
 			);
 			return { id: copy.id, ok: true };
 		} catch (error) {

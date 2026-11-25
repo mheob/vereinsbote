@@ -17,8 +17,9 @@ import type { Schema } from 'hast-util-sanitize';
 import { toHtml } from 'hast-util-to-html';
 
 import { cleanDeclarations, cleanStyleSheet } from './css';
+import type { CssReport } from './css';
 import type { FindingsCollector, RemovedWhat } from './findings';
-import { judgeUrl } from './media-refs';
+import { appMedia, judgeUrl, readUrl } from './media-refs';
 import type { UrlAttribute } from './media-refs';
 import type { Place, PlaceholderTokens } from './placeholders';
 
@@ -30,6 +31,8 @@ interface CleanContext {
 	readonly origin: string;
 	/** The images of the app the mail shows; filled while cleaning. */
 	readonly mediaIds: Set<string>;
+	/** Whether the cleaning is inside a conditional comment. */
+	readonly inComment: boolean;
 }
 
 /** Elements that go with everything inside them, and what the finding calls them. */
@@ -276,6 +279,26 @@ function cleanUrlAttribute(
 }
 
 /**
+ * The report the CSS cleaning writes to: the findings, and the images of the app it names.
+ *
+ * @param context The cleaning context.
+ * @returns The report.
+ */
+function cssReport(context: CleanContext): CssReport {
+	const { findings } = context;
+	return {
+		externalHost: findings.externalHost,
+		mediaUrl: (url) => {
+			const media = appMedia(readUrl(url), context.origin);
+			if (media !== null) context.mediaIds.add(media.id);
+			return media?.path ?? null;
+		},
+		outlook: findings.outlook,
+		removed: findings.removed,
+	};
+}
+
+/**
  * Cleans a `style` attribute.
  *
  * @param value The declarations.
@@ -283,9 +306,9 @@ function cleanUrlAttribute(
  * @returns The cleaned declarations, or undefined when nothing stays.
  */
 function cleanStyleAttribute(value: string, context: CleanContext): string | undefined {
-	const { findings, tokens } = context;
+	const { tokens } = context;
 	const css = tokens.protectCss(value, { kind: 'attribute', name: 'style' });
-	const cleaned = tokens.cssToTokens(cleanDeclarations(css, findings));
+	const cleaned = tokens.cssToTokens(cleanDeclarations(css, cssReport(context)));
 	return cleaned.trim() === '' ? undefined : cleaned;
 }
 
@@ -323,6 +346,17 @@ function cleanTextProperty(
 }
 
 /**
+ * Whether an attribute value has a `<` or `>`. Inside a conditional comment such a value could
+ * become markup if anything ever ended the comment early, so it goes.
+ *
+ * @param value The value.
+ * @returns True when it has one.
+ */
+function hasAngleBracket(value: Properties[string]): boolean {
+	return /[<>]/u.test(propertyText(value));
+}
+
+/**
  * Cleans one attribute: event handlers go, a text is checked (`cleanTextProperty`), placeholders
  * in a list of classes must be brand values.
  *
@@ -343,6 +377,7 @@ function cleanProperty(
 		context.findings.remove('eventHandler');
 		return undefined;
 	}
+	if (context.inComment && hasAngleBracket(value)) return undefined;
 	const place: Place = { kind: 'attribute', name: attributeName(name) };
 	if (Array.isArray(value)) {
 		return value.map((item) =>
@@ -387,9 +422,9 @@ function textOfChildren(element: Element): string {
  * @returns Whether the element stays.
  */
 function cleanStyleElement(element: Element, context: CleanContext): boolean {
-	const { findings, tokens } = context;
+	const { tokens } = context;
 	const css = tokens.protectCss(textOfChildren(element), { kind: 'style' });
-	const cleaned = tokens.cssToTokens(cleanStyleSheet(css, findings));
+	const cleaned = tokens.cssToTokens(cleanStyleSheet(css, cssReport(context)));
 	if (cleaned.trim() === '') return false;
 	element.properties = {};
 	element.children = [{ type: 'text', value: cleaned }];
@@ -495,7 +530,10 @@ function asRoot(node: ReturnType<typeof sanitize>): Root {
  */
 function cleanConditionalContent(inner: string, context: CleanContext): string | null {
 	const fragment = fromHtml(inner, { fragment: true });
-	fragment.children = cleanNodes(fragment.children, { kind: 'text' }, context);
+	const inside = { ...context, inComment: true };
+	fragment.children = context.tokens.withinComment(() =>
+		cleanNodes(fragment.children, { kind: 'text' }, inside),
+	);
 	const html = writeTree(asRoot(sanitize(fragment, SCHEMA)));
 	// A comment ends at `-->` and `--!>`; none may be in what is written into one, and `<!--`
 	// would open a comment of its own.
@@ -586,5 +624,5 @@ function cleanDocument(source: string, context: CleanContext): Root {
 	return cleaned;
 }
 
-export { cleanDocument, writeTree };
+export { cleanDocument, SCHEMA, writeTree };
 export type { CleanContext };

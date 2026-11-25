@@ -147,17 +147,15 @@ function judgePlainUrl(url: string, context: UrlContext): UrlVerdict {
 
 /**
  * Whether a value that starts with a placeholder may stay: its value comes from the brand when
- * the mail is compiled, so only an address brand value may stand there, and its fallback has to
- * be a URL the attribute takes itself.
+ * the mail is compiled (the brand schema allows `https:` and `mailto:` addresses only), so only an
+ * address brand value may stand there. The placeholder is the whole value and has no fallback;
+ * `placeholders.ts` makes sure of that.
  *
  * @param ref The placeholder the value starts with.
- * @param context The attribute and the app.
  * @returns Whether the value may stay.
  */
-function leadingPlaceholderFits(ref: Readonly<PlaceholderRef>, context: UrlContext): boolean {
-	if (!URL_BRAND_KEYS.has(ref.key)) return false;
-	if (ref.fallback === null || ref.fallback === '') return true;
-	return judgePlainUrl(readUrl(ref.fallback), context).kind === 'keep';
+function leadingPlaceholderFits(ref: Readonly<PlaceholderRef>): boolean {
+	return URL_BRAND_KEYS.has(ref.key) && ref.fallback === null;
 }
 
 /**
@@ -176,7 +174,7 @@ function judgeUrl(
 	const url = readUrl(value);
 	if (url === '') return DROP;
 	if (leading === null) return judgePlainUrl(url, context);
-	return leadingPlaceholderFits(leading, context) ? { kind: 'keep', value: url } : DROP;
+	return leadingPlaceholderFits(leading) ? { kind: 'keep', value: url } : DROP;
 }
 
 /**
@@ -245,5 +243,5 @@ function swapHtmlMediaIds(html: string, copies: ReadonlyMap<string, string>): st
 	return result;
 }
 
-export { htmlMediaIds, judgeUrl, swapHtmlMediaIds, URL_BRAND_KEYS };
+export { appMedia, htmlMediaIds, judgeUrl, readUrl, swapHtmlMediaIds, URL_BRAND_KEYS };
 export type { UrlAttribute, UrlContext, UrlVerdict };

@@ -23,7 +23,8 @@ import { UnknownAreaError } from '@/server/contacts/errors';
 import type { Db } from '@/server/db/client';
 import { isUniqueViolation } from '@/server/db/errors';
 import { areas, layouts, media, templateMedia, templates, user } from '@/server/db/schema';
-import { htmlMediaIds, swapHtmlMediaIds } from '@/server/html-import/media-refs';
+import { importedMediaIds } from '@/server/html-import/import-html';
+import { swapHtmlMediaIds } from '@/server/html-import/media-refs';
 import { mediaStorageKey, newMediaId } from '@/server/media/ids';
 import { assertArea, canAccessArea } from '@/server/permissions/principal';
 import type { Principal } from '@/server/permissions/principal';
@@ -68,6 +69,8 @@ interface WriteContext {
 	readonly actor: Principal;
 	readonly areaId: string;
 	readonly allowed: AllowedPlaceholders;
+	/** The origin of the app (`APP_URL`); an empty text when the caller has none. */
+	readonly appOrigin: string;
 }
 
 /** The copy of each image of another area: source id to copy id. */
@@ -77,13 +80,14 @@ type ImageCopies = ReadonlyMap<string, string>;
  * The images a body shows: those of its blocks, of its HTML and of its own HTML layout.
  *
  * @param body The body.
+ * @param appOrigin The origin of the app (`APP_URL`), so an image written with its address counts.
  * @returns The media ids, each once.
  */
-function mediaIdsOf(body: TemplateBody): string[] {
-	if (body.kind === 'html') return htmlMediaIds(body.html);
+function mediaIdsOf(body: TemplateBody, appOrigin: string): string[] {
+	if (body.kind === 'html') return importedMediaIds(body.html, appOrigin);
 	const ids = collectMediaIds(body.blocks);
 	return body.layout.kind === 'own'
-		? [...new Set([...ids, ...htmlMediaIds(body.layout.html)])]
+		? [...new Set([...ids, ...importedMediaIds(body.layout.html, appOrigin)])]
 		: ids;
 }
 
@@ -185,8 +189,12 @@ async function assertSavable(
 	input: TemplateInput,
 ): Promise<TemplateInput> {
 	await lockLayout(tx, sharedLayoutIdOf(input.body));
-	const areaMediaIds = await lockAreaMedia(tx, context.areaId, mediaIdsOf(input.body));
-	const checked = prepareTemplateForSave(input, context.allowed, areaMediaIds);
+	const areaMediaIds = await lockAreaMedia(
+		tx,
+		context.areaId,
+		mediaIdsOf(input.body, context.appOrigin),
+	);
+	const checked = prepareTemplateForSave(input, context.allowed, areaMediaIds, context.appOrigin);
 	if (checked.problems.length > 0) throw new TemplateInvalidError(checked.problems);
 	return checked.input;
 }
@@ -221,10 +229,17 @@ function rowValues(
  * @param tx The transaction.
  * @param templateId The template.
  * @param body Its body.
+ * @param appOrigin The origin of the app.
  */
-async function linkMedia(tx: Db, templateId: string, body: TemplateBody): Promise<void> {
+// oxlint-disable-next-line max-params -- the transaction, the template, its body and the origin
+async function linkMedia(
+	tx: Db,
+	templateId: string,
+	body: TemplateBody,
+	appOrigin: string,
+): Promise<void> {
 	await tx.delete(templateMedia).where(eq(templateMedia.templateId, templateId));
-	const ids = mediaIdsOf(body);
+	const ids = mediaIdsOf(body, appOrigin);
 	if (ids.length > 0) {
 		await tx.insert(templateMedia).values(ids.map((mediaId) => ({ mediaId, templateId })));
 	}
@@ -249,7 +264,7 @@ async function insertTemplate(
 		.values({ ...rowValues(input, actor.userId), areaId, createdByUserId: actor.userId })
 		.returning({ id: templates.id });
 	if (row === undefined) throw new Error('Inserting the template returned no row.');
-	await linkMedia(tx, row.id, input.body);
+	await linkMedia(tx, row.id, input.body, context.appOrigin);
 	return row.id;
 }
 
@@ -393,6 +408,7 @@ async function getTemplate(db: Db, actor: Principal, id: string): Promise<Templa
  * @param actor Who creates it; needs `edit` in the area.
  * @param areaId The area.
  * @param input The template.
+ * @param appOrigin The origin of the app (`APP_URL`), to recognize its images; empty when unknown.
  * @returns The id of the new template.
  * @throws {ForbiddenError} Without `edit` in the area.
  * @throws {z.ZodError} When the input does not pass `templateInputSchema` (callers validate first).
@@ -407,12 +423,14 @@ async function createTemplate(
 	actor: Principal,
 	areaId: string,
 	input: TemplateInput,
+	appOrigin = '',
 ): Promise<{ id: string }> {
 	assertArea(actor, areaId, 'edit');
 	const parsed = templateInputSchema.parse(input);
 	const context: WriteContext = {
 		actor,
 		allowed: await allowedTemplatePlaceholders(db, areaId),
+		appOrigin,
 		areaId,
 	};
 	return withUniqueName(async () =>
@@ -473,6 +491,7 @@ async function createFromStarter(
  * @param id The template.
  * @param input The template as edited.
  * @param version The version the editor loaded.
+ * @param appOrigin The origin of the app (`APP_URL`), to recognize its images; empty when unknown.
  * @returns The new version.
  * @throws {TemplateNotFoundError} When no template has the id.
  * @throws {ForbiddenError} Without `edit` in the area.
@@ -489,6 +508,7 @@ async function saveTemplate(
 	id: string,
 	input: TemplateInput,
 	version: number,
+	appOrigin = '',
 ): Promise<{ version: number }> {
 	const areaId = await areaOfTemplate(db, id);
 	assertArea(actor, areaId, 'edit');
@@ -496,6 +516,7 @@ async function saveTemplate(
 	const context: WriteContext = {
 		actor,
 		allowed: await allowedTemplatePlaceholders(db, areaId),
+		appOrigin,
 		areaId,
 	};
 	return withUniqueName(async () =>
@@ -507,7 +528,7 @@ async function saveTemplate(
 				.update(templates)
 				.set({ ...rowValues(checked, actor.userId), version: next })
 				.where(eq(templates.id, id));
-			await linkMedia(tx, id, checked.body);
+			await linkMedia(tx, id, checked.body, context.appOrigin);
 			await logTemplate(tx, {
 				action: 'template.updated',
 				actor,
@@ -650,18 +671,26 @@ async function insertImageCopies(
  *
  * @param source The template.
  * @param name The name of the copy.
- * @param allowed The placeholders of the target area.
+ * @param target The placeholders of the target area and the origin of the app.
+ * @param target.allowed The placeholders.
+ * @param target.appOrigin The origin.
  * @returns The copy.
  * @throws {TemplateInvalidError} When the copy does not pass the save checks.
  */
 function checkedCopy(
 	source: TemplateRecord,
 	name: string,
-	allowed: AllowedPlaceholders,
+	target: Readonly<{ allowed: AllowedPlaceholders; appOrigin: string }>,
 ): TemplateInput {
+	const { allowed, appOrigin } = target;
 	const { body, preheader, salutationForm, salutationTexts, subject } = source;
 	const input: TemplateInput = { body, name, preheader, salutationForm, salutationTexts, subject };
-	const problems = checkTemplateForSave(input, allowed, new Set(mediaIdsOf(body)));
+	const problems = checkTemplateForSave(
+		input,
+		allowed,
+		new Set(mediaIdsOf(body, appOrigin)),
+		appOrigin,
+	);
 	if (problems.length > 0) throw new TemplateInvalidError(problems);
 	return input;
 }
@@ -709,6 +738,7 @@ async function insertCopy(
  * @param id The template.
  * @param targetAreaId The area of the copy.
  * @param name The name of the copy.
+ * @param appOrigin The origin of the app (`APP_URL`), to recognize its images; empty when unknown.
  * @returns The id of the copy.
  * @throws {TemplateNotFoundError} When no template has the id.
  * @throws {ForbiddenError} Without `read` in the source or `edit` in the target area.
@@ -725,6 +755,7 @@ async function duplicateTemplate(
 	id: string,
 	targetAreaId: string,
 	name: string,
+	appOrigin = '',
 ): Promise<{ id: string }> {
 	const source = await loadTemplate(db, id);
 	assertArea(actor, source.areaId, 'read');
@@ -732,13 +763,14 @@ async function duplicateTemplate(
 	const context: WriteContext = {
 		actor,
 		allowed: await allowedTemplatePlaceholders(db, targetAreaId),
+		appOrigin,
 		areaId: targetAreaId,
 	};
-	const input = checkedCopy(source, name, context.allowed);
+	const input = checkedCopy(source, name, context);
 	// Within the area the copy shares the images; into another one they are copied.
 	const copies = await copyObjects(
 		storage,
-		targetAreaId === source.areaId ? [] : mediaIdsOf(input.body),
+		targetAreaId === source.areaId ? [] : mediaIdsOf(input.body, appOrigin),
 	);
 	try {
 		return await withUniqueName(async () =>

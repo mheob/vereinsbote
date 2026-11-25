@@ -17,6 +17,7 @@ function record(): {
 		externalHost: (host) => {
 			seen.hosts.push(host);
 		},
+		mediaUrl: () => null,
 		outlook: (name) => {
 			seen.outlook.push(name);
 		},

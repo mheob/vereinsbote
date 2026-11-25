@@ -355,6 +355,8 @@ export const de = {
 		'Das Layout braucht den Platzhalter „Inhalt“ genau einmal, als eigenen Textabschnitt.',
 	'editor.problem.contentRepeated':
 		'Das Layout darf den Platzhalter „Inhalt“ nur einmal enthalten.',
+	'editor.problem.fallbackNotAllowed':
+		'Der Platzhalter „{name}“ darf in „{attribute}“ keinen Ersatztext haben.',
 	'editor.problem.linkMissing': 'Bitte gib einen Link ein.',
 	'editor.problem.mediaForeign':
 		'Das Bild gehört nicht zur Bildersammlung dieses Bereichs. Bitte wähle ein anderes.',
@@ -364,6 +366,8 @@ export const de = {
 		'Der Platzhalter „{name}“ ist in diesem Bereich nicht erlaubt.',
 	'editor.problem.placeholderInAttribute':
 		'Der Platzhalter „{name}“ darf nicht in „{attribute}“ stehen; dort sind nur Werte aus dem CD erlaubt.',
+	'editor.problem.placeholderInComment':
+		'Der Platzhalter „{name}“ darf nicht in einem Outlook-Kommentar stehen.',
 	'editor.problem.placeholderUnknown': 'Den Platzhalter „{name}“ gibt es nicht.',
 	'editor.problem.preheaderTooLong': 'Der Vorschautext darf höchstens 200 Zeichen lang sein.',
 	'editor.problem.subjectEmpty': 'Bitte gib einen Betreff ein.',
@@ -371,6 +375,7 @@ export const de = {
 	'editor.problem.syntax':
 		'Der Text enthält geschweifte Klammern, die kein gültiger Platzhalter sind.',
 	'editor.problem.tooBig': 'Die Vorlage ist zu groß (höchstens 256 KB). Bitte kürze sie.',
+	'editor.problem.tooDeep': 'Das HTML ist zu tief verschachtelt. Bitte vereinfache es.',
 	'editor.problemsOnLoad':
 		'Die Vorlage passt nicht mehr zu den Einstellungen des Vereins. Bitte prüfe die markierten Stellen.',
 	'editor.readOnly': 'Du kannst diese Vorlage nur ansehen.',

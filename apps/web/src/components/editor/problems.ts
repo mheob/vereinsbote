@@ -103,7 +103,7 @@ function fieldPlace(
  * @returns The place, or null for a problem of the whole template.
  */
 function problemPlace(problem: SaveProblem, blocks: readonly Block[]): ProblemPlace | null {
-	if (problem.kind === 'tooBig') return null;
+	if (problem.kind === 'tooBig' || problem.kind === 'tooDeep') return null;
 	switch (problem.kind) {
 		case 'nameEmpty':
 		case 'subjectEmpty':
@@ -120,8 +120,10 @@ function problemPlace(problem: SaveProblem, blocks: readonly Block[]): ProblemPl
 		case 'linkMissing': {
 			return blockField('href', problem.blockId);
 		}
+		case 'fallbackNotAllowed':
 		case 'placeholderForbidden':
 		case 'placeholderInAttribute':
+		case 'placeholderInComment':
 		case 'placeholderUnknown':
 		case 'syntax': {
 			return placeOfWhere(problem.where);
@@ -153,8 +155,11 @@ function problemMessage(
 	if (problem.kind === 'placeholderForbidden' || problem.kind === 'placeholderUnknown') {
 		return t(`editor.problem.${problem.kind}`, { name: label(problem.key) });
 	}
-	if (problem.kind === 'placeholderInAttribute') {
-		return t('editor.problem.placeholderInAttribute', {
+	if (problem.kind === 'placeholderInComment') {
+		return t('editor.problem.placeholderInComment', { name: label(problem.key) });
+	}
+	if (problem.kind === 'placeholderInAttribute' || problem.kind === 'fallbackNotAllowed') {
+		return t(`editor.problem.${problem.kind}`, {
 			attribute: problem.attribute,
 			name: label(problem.key),
 		});

@@ -46,6 +46,14 @@ type SaveProblem =
 			readonly attribute: string;
 			readonly where: string;
 	  }
+	| { readonly kind: 'placeholderInComment'; readonly key: string; readonly where: string }
+	| {
+			readonly kind: 'fallbackNotAllowed';
+			readonly key: string;
+			readonly attribute: string;
+			readonly where: string;
+	  }
+	| { readonly kind: 'tooDeep' }
 	| { readonly kind: 'contentMissing' }
 	| { readonly kind: 'contentRepeated' }
 	| { readonly kind: 'syntax'; readonly where: string }
@@ -197,9 +205,11 @@ function problemOfRefusal(refusal: ImportRefusal, where: HtmlPlace): SaveProblem
 	if (refusal.kind === 'placeholderUnknown' || refusal.kind === 'placeholderForbidden') {
 		return { key: refusal.key, kind: refusal.kind, where };
 	}
-	if (refusal.kind === 'placeholderInAttribute') {
+	if (refusal.kind === 'placeholderInAttribute' || refusal.kind === 'fallbackNotAllowed') {
 		return { attribute: refusal.attribute, key: refusal.key, kind: refusal.kind, where };
 	}
+	if (refusal.kind === 'placeholderInComment')
+		return { key: refusal.key, kind: refusal.kind, where };
 	if (refusal.kind === 'mediaForeign') return { kind: refusal.kind, mediaId: refusal.mediaId };
 	return refusal.kind === 'syntax' ? { kind: 'syntax', where } : { kind: refusal.kind };
 }
@@ -220,14 +230,19 @@ interface CheckedHtml {
  * @param area What the area allows.
  * @param area.allowed The placeholders of the area.
  * @param area.areaMediaIds The images of the area's library.
+ * @param area.appOrigin The origin of the app (`APP_URL`), to recognize its images.
  * @returns The cleaned HTML (the input when there are problems) and the problems.
  */
 function checkHtml(
 	html: string,
 	where: HtmlPlace,
-	area: Readonly<{ allowed: AllowedPlaceholders; areaMediaIds: ReadonlySet<string> }>,
+	area: Readonly<{
+		allowed: AllowedPlaceholders;
+		areaMediaIds: ReadonlySet<string>;
+		appOrigin: string;
+	}>,
 ): CheckedHtml {
-	const { allowed, areaMediaIds } = area;
+	const { allowed, appOrigin, areaMediaIds } = area;
 	const kind: ImportKind =
 		where === 'html'
 			? { allowed, areaMediaIds, kind: 'template' }
@@ -236,8 +251,7 @@ function checkHtml(
 					areaMediaIds,
 					kind: 'ownLayout',
 				};
-	// The images the template shows are `/media/<file>` paths, so the app's origin is not needed.
-	const result = importHtml(html, kind, '');
+	const result = importHtml(html, kind, appOrigin);
 	return result.ok
 		? { html: result.html, problems: [] }
 		: { html, problems: result.refusals.map((refusal) => problemOfRefusal(refusal, where)) };
@@ -255,15 +269,18 @@ interface CheckedBody {
  * @param body The body.
  * @param allowed The placeholders of the area.
  * @param areaMediaIds The images of the area's library.
+ * @param appOrigin The origin of the app (`APP_URL`).
  * @returns The body with cleaned HTML and the problems in document order.
  */
+// oxlint-disable-next-line max-params -- the body, what the area allows and the origin of the app
 function checkBody(
 	body: TemplateBody,
 	allowed: AllowedPlaceholders,
 	areaMediaIds: ReadonlySet<string>,
+	appOrigin: string,
 ): CheckedBody {
 	if (body.kind === 'html') {
-		const checked = checkHtml(body.html, 'html', { allowed, areaMediaIds });
+		const checked = checkHtml(body.html, 'html', { allowed, appOrigin, areaMediaIds });
 		return { body: { ...body, html: checked.html }, problems: checked.problems };
 	}
 	const leaves = body.blocks.flatMap((block: Block): ColumnBlock[] =>
@@ -271,7 +288,7 @@ function checkBody(
 	);
 	const problems = leaves.flatMap((block) => leafProblems(block, allowed, areaMediaIds));
 	if (body.layout.kind !== 'own') return { body, problems };
-	const layout = checkHtml(body.layout.html, 'layout', { allowed, areaMediaIds });
+	const layout = checkHtml(body.layout.html, 'layout', { allowed, appOrigin, areaMediaIds });
 	return {
 		body: { ...body, layout: { ...body.layout, html: layout.html } },
 		problems: [...problems, ...layout.problems],
@@ -297,17 +314,20 @@ function unique(problems: readonly SaveProblem[]): SaveProblem[] {
  * @param input The template.
  * @param allowed The placeholders of its area (`allowedTemplatePlaceholders`).
  * @param areaMediaIds The images of its area's library.
+ * @param appOrigin The origin of the app (`APP_URL`), so an image written with its address is an image of the app.
  * @returns The template to store, and the problems, each once, in the order of the editor.
  */
+// oxlint-disable-next-line max-params -- the template, what the area allows and the origin of the app
 function prepareTemplateForSave(
 	input: TemplateInput,
 	allowed: AllowedPlaceholders,
 	areaMediaIds: ReadonlySet<string>,
+	appOrigin = '',
 ): { input: TemplateInput; problems: SaveProblem[] } {
 	if (encoder.encode(JSON.stringify(input)).byteLength > MAX_TEMPLATE_JSON_BYTES) {
 		return { input, problems: [{ kind: 'tooBig' }] };
 	}
-	const checked = checkBody(input.body, allowed, areaMediaIds);
+	const checked = checkBody(input.body, allowed, areaMediaIds, appOrigin);
 	const problems = unique([
 		...fieldProblems(input),
 		...textProblems(input.subject, 'subject', allowed),
@@ -328,14 +348,17 @@ function prepareTemplateForSave(
  * @param input The template.
  * @param allowed The placeholders of its area (`allowedTemplatePlaceholders`).
  * @param areaMediaIds The images of its area's library.
+ * @param appOrigin The origin of the app (`APP_URL`).
  * @returns The problems, each once, in the order of the editor; empty when it may be stored.
  */
+// oxlint-disable-next-line max-params -- the template, what the area allows and the origin of the app
 function checkTemplateForSave(
 	input: TemplateInput,
 	allowed: AllowedPlaceholders,
 	areaMediaIds: ReadonlySet<string>,
+	appOrigin = '',
 ): SaveProblem[] {
-	return prepareTemplateForSave(input, allowed, areaMediaIds).problems;
+	return prepareTemplateForSave(input, allowed, areaMediaIds, appOrigin).problems;
 }
 
 export {

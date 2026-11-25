@@ -587,6 +587,35 @@ describe('images of templates', () => {
 		await expect(c.db.delete(media).where(eq(media.id, imageId))).resolves.toBeDefined();
 	});
 
+	it('knows an image written with the address of the app as an image of the area (R23)', async () => {
+		const c = await club();
+		const imageId = await libraryImage(c, c.membersAreaId);
+		const origin = 'https://verein.example.org';
+		const body = {
+			html: `<img src="${origin}/media/${imageId}.png" alt="a">`,
+			kind: 'html',
+		} as const;
+		const { id } = await createTemplate(c.db, c.editor, c.membersAreaId, input({ body }), origin);
+		await expect(c.db.select().from(templateMedia)).resolves.toStrictEqual([
+			{ mediaId: imageId, templateId: id },
+		]);
+		await expect(c.db.delete(media).where(eq(media.id, imageId))).rejects.toThrow();
+	});
+
+	it('refuses the address of the app with an image of another area (R23)', async () => {
+		const c = await club();
+		const imageId = await libraryImage(c, c.eventsAreaId);
+		const origin = 'https://verein.example.org';
+		const body = {
+			html: `<img src="${origin}/media/${imageId}.png" alt="">`,
+			kind: 'html',
+		} as const;
+		const error = await failureOf(
+			createTemplate(c.db, c.editor, c.membersAreaId, input({ body }), origin),
+		);
+		expect(error).toMatchObject({ problems: [{ kind: 'mediaForeign', mediaId: imageId }] });
+	});
+
 	it('refuses an image of another area in an HTML template', async () => {
 		const c = await club();
 		const imageId = await libraryImage(c, c.eventsAreaId);

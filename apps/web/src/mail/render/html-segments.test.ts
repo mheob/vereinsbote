@@ -53,6 +53,16 @@ describe(joinHtml, () => {
 		);
 	});
 
+	it('gives the images of a style the origin too', () => {
+		expect(
+			write(
+				'<p style=\'background:url(/media/a.png)\'></p><style>p{background:url("/media/b.png")}</style>',
+			),
+		).toBe(
+			'<p style=\'background:url(https://verein.example/media/a.png)\'></p><style>p{background:url("https://verein.example/media/b.png")}</style>',
+		);
+	});
+
 	it('writes the content as it is, and the images with the origin', () => {
 		const html = joinHtml(segmentsOf("<img src='/media/x.png'>{{content}}"), {
 			content: '<b>x</b>',

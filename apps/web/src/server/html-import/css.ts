@@ -22,6 +22,11 @@ interface CssReport {
 	readonly outlook: (name: string) => void;
 	/** The host of an external `https:` URL the CSS loads. */
 	readonly externalHost: (host: string) => void;
+	/**
+	 * Takes an image of the app a `url()` names (it is then checked and recorded as used).
+	 * Returns the relative path to write, or null when the URL is no image of the app.
+	 */
+	readonly mediaUrl: (url: string) => string | null;
 }
 
 /** At-rules a mail keeps; everything else (`@import`, `@font-face`, `@keyframes`, …) goes. */
@@ -30,13 +35,13 @@ const KEPT_AT_RULES: ReadonlySet<string> = new Set(['media', 'supports']);
 const FORBIDDEN_PROPERTY_PARTS = ['behavior', 'binding'];
 /** Functions that load or run something other than a checked `url()`. */
 const FORBIDDEN_FUNCTIONS: ReadonlySet<string> = new Set([
-	'-moz-element',
 	'element',
 	'expression',
 	'image',
 	'image-set',
 	'paint',
 	'src',
+	'var',
 ]);
 /** Text that must not be in the result, after escapes and white space are gone. */
 const FORBIDDEN_TEXT = [
@@ -47,6 +52,9 @@ const FORBIDDEN_TEXT = [
 	'javascript:',
 	'vbscript:',
 ];
+
+/** A vendor prefix in front of a name, `-webkit-` in `-webkit-image-set`. */
+const VENDOR_PREFIX = /^-[a-z]+-/u;
 
 const OUTLOOK_PROPERTIES: ReadonlySet<string> = new Set(outlook.properties);
 const OUTLOOK_FUNCTIONS: ReadonlySet<string> = new Set(outlook.functions);
@@ -136,12 +144,47 @@ interface Verdict {
 }
 
 /**
+ * Whether a function has a string in it. A string in a function can be an address (`image-set`
+ * takes `"a.png" 1x`), and no function of a mail's CSS needs one.
+ *
+ * @param node The function.
+ * @returns True when a string stands anywhere inside it.
+ */
+function hasString(node: CssNode): boolean {
+	let found = false;
+	walk(node, (inner) => {
+		if (inner.type === 'String') found = true;
+	});
+	return found;
+}
+
+/**
+ * Judges a `url()`: an image of the app is written relative and recorded, any other address must
+ * be `https:`.
+ *
+ * @param node The `url()` node.
+ * @param verdict What the value turned out to be so far.
+ * @param report The report.
+ */
+function inspectUrl(node: CssNode & { type: 'Url' }, verdict: Verdict, report: CssReport): void {
+	const path = report.mediaUrl(node.value);
+	if (path !== null) {
+		node.value = path;
+		return;
+	}
+	const host = httpsHost(normalize(node.value));
+	if (host === null) verdict.safe = false;
+	else verdict.hosts.push(host);
+}
+
+/**
  * Looks into a declaration's value: URLs, functions and text.
  *
  * @param value The value node.
+ * @param report The report, which takes the images of the app.
  * @returns Whether it is safe, the hosts it loads from, the functions it calls and its words.
  */
-function inspectValue(value: CssNode): Verdict {
+function inspectValue(value: CssNode, report: CssReport): Verdict {
 	const text = generate(value);
 	const verdict: Verdict = {
 		functions: [],
@@ -151,12 +194,11 @@ function inspectValue(value: CssNode): Verdict {
 	};
 	walk(value, (node) => {
 		if (node.type === 'Url') {
-			const host = httpsHost(normalize(node.value));
-			if (host === null) verdict.safe = false;
-			else verdict.hosts.push(host);
+			inspectUrl(node, verdict, report);
 		} else if (node.type === 'Function') {
 			const name = normalize(node.name);
-			if (FORBIDDEN_FUNCTIONS.has(name)) verdict.safe = false;
+			const unprefixed = name.replace(VENDOR_PREFIX, '');
+			if (FORBIDDEN_FUNCTIONS.has(unprefixed) || hasString(node)) verdict.safe = false;
 			verdict.functions.push(name);
 		} else if (node.type === 'Raw' && hasForbiddenText(node.value)) {
 			verdict.safe = false;
@@ -190,8 +232,13 @@ function reportOutlook(property: string, verdict: Verdict, report: CssReport): v
  */
 function keepDeclaration(declaration: Declaration, report: CssReport): boolean {
 	const property = normalize(declaration.property);
-	if (FORBIDDEN_PROPERTY_PARTS.some((part) => property.includes(part))) return false;
-	const verdict = inspectValue(declaration.value);
+	if (
+		property.startsWith('--') ||
+		FORBIDDEN_PROPERTY_PARTS.some((part) => property.includes(part))
+	) {
+		return false;
+	}
+	const verdict = inspectValue(declaration.value, report);
 	if (!verdict.safe) return false;
 	for (const host of verdict.hosts) report.externalHost(host);
 	reportOutlook(property, verdict, report);

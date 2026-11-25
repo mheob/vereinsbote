@@ -54,6 +54,13 @@ type ImportRefusal =
 			readonly key: string;
 			readonly attribute: string;
 	  }
+	| { readonly kind: 'placeholderInComment'; readonly key: string }
+	| {
+			readonly kind: 'fallbackNotAllowed';
+			readonly key: string;
+			readonly attribute: string;
+	  }
+	| { readonly kind: 'tooDeep' }
 	| { readonly kind: 'contentMissing' }
 	| { readonly kind: 'contentRepeated' }
 	| { readonly kind: 'mediaForeign'; readonly mediaId: string }
@@ -136,7 +143,13 @@ function clean(source: string, kind: ImportKind, appOrigin: string): Cleaned {
 	const findings = createFindings();
 	const mediaIds = new Set<string>();
 	const origin = originOf(appOrigin);
-	const root = cleanDocument(stripPrivateUse(source), { findings, mediaIds, origin, tokens });
+	const root = cleanDocument(stripPrivateUse(source), {
+		findings,
+		inComment: false,
+		mediaIds,
+		origin,
+		tokens,
+	});
 	return { findings, mediaIds, root, tokens };
 }
 
@@ -190,10 +203,37 @@ function importHtml(source: string, kind: ImportKind, appOrigin: string): Import
 	if (encoder.encode(source).byteLength > MAX_IMPORT_BYTES) {
 		return { ok: false, refusals: [{ kind: 'tooLarge' }] };
 	}
-	const cleaned = clean(source, kind, appOrigin);
-	const refusals = refusalsOf(kind, cleaned);
-	return refusals.length > 0 ? { ok: false, refusals } : accept(cleaned);
+	try {
+		const cleaned = clean(source, kind, appOrigin);
+		const refusals = refusalsOf(kind, cleaned);
+		return refusals.length > 0 ? { ok: false, refusals } : accept(cleaned);
+	} catch (error) {
+		// The parsers and the cleaning recurse, so a hostile nesting overflows the stack.
+		if (error instanceof RangeError) return { ok: false, refusals: [{ kind: 'tooDeep' }] };
+		throw error;
+	}
 }
 
-export { GMAIL_CLIP_BYTES, importHtml, MAX_IMPORT_BYTES };
+/**
+ * The images of the app an HTML shows, whatever else is wrong with it (the save locks them before
+ * it checks the HTML against the library).
+ *
+ * @param html The HTML.
+ * @param appOrigin The origin of the app (`APP_URL`).
+ * @returns The ids of the images the HTML shows; none when it is too large or too deep.
+ */
+function importedMediaIds(html: string, appOrigin: string): string[] {
+	const everything: ImportKind = {
+		allowed: { keys: new Set(), known: new Set() },
+		areaMediaIds: new Set(),
+		kind: 'template',
+	};
+	const result = importHtml(html, everything, appOrigin);
+	if (result.ok) return [...result.mediaIds];
+	return result.refusals.flatMap((refusal) =>
+		refusal.kind === 'mediaForeign' ? [refusal.mediaId] : [],
+	);
+}
+
+export { GMAIL_CLIP_BYTES, importedMediaIds, importHtml, MAX_IMPORT_BYTES };
 export type { ImportFinding, ImportKind, ImportRefusal, ImportResult };

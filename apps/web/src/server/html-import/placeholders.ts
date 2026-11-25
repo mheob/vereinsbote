@@ -15,6 +15,7 @@ import { formatPlaceholder, parsePlaceholders } from '@/mail/placeholders/syntax
 import type { PlaceholderRef, TextSegment } from '@/mail/placeholders/syntax';
 
 import type { ImportRefusal } from './import-html';
+import { URL_BRAND_KEYS } from './media-refs';
 
 /** The keys a template or layout may use. */
 interface PlaceholderKeys {
@@ -62,6 +63,34 @@ const FALLBACK_REFERENCE = /[\w#]/u;
 const BRAND_KEYS: ReadonlySet<string> = new Set(
 	BUILTIN_PLACEHOLDERS.filter(({ context }) => context === 'attribute').map(({ key }) => key),
 );
+
+/** The brand values a style attribute and a style sheet take: colours and font stacks. */
+const CSS_BRAND_KEYS: ReadonlySet<string> = new Set([
+	'brand.primaryColor',
+	'brand.secondaryColor',
+	'brand.textColor',
+	'brand.backgroundColor',
+	'brand.linkColor',
+	'brand.fontFamily',
+	'brand.headingFontFamily',
+]);
+
+/** What a place takes: text takes what the area allows, an address attribute only address brand values. */
+type PlaceRule = 'text' | 'url' | 'css' | 'free';
+
+/**
+ * What kind of values a place takes.
+ *
+ * @param place The place.
+ * @returns `url` for `href` and `src`, `css` for CSS, `free` for the other attributes and the title.
+ */
+function ruleOf(place: Place): PlaceRule {
+	if (place.kind === 'text') return 'text';
+	if (place.kind === 'style') return 'css';
+	if (place.kind === 'title') return 'free';
+	if (place.name === 'href' || place.name === 'src') return 'url';
+	return place.name === 'style' ? 'css' : 'free';
+}
 
 /**
  * Removes the compiler's markers and the import's tokens from a source, so no text can forge one.
@@ -123,6 +152,8 @@ interface State {
 	readonly refusals: Map<string, ImportRefusal>;
 	/** How often `{{content}}` stood in a text, and how often as a text node of its own. */
 	content: { own: number; total: number };
+	/** Whether the cleaning is inside a conditional comment, where no placeholder may stand. */
+	inComment: boolean;
 }
 
 /**
@@ -150,27 +181,64 @@ function judgeInText(state: State, key: string): void {
 	});
 }
 
+/** Where a placeholder stands and whether it is the whole value of its attribute. */
+interface Site {
+	readonly place: Place;
+	readonly whole: boolean;
+}
+
 /**
- * Judges a placeholder: in text it must be allowed in the area, elsewhere it must be a brand
- * value.
+ * The brand keys a kind of place takes.
+ *
+ * @param rule The kind of place.
+ * @returns The keys.
+ */
+function keysFor(rule: PlaceRule): ReadonlySet<string> {
+	if (rule === 'url') return URL_BRAND_KEYS;
+	return rule === 'css' ? CSS_BRAND_KEYS : BRAND_KEYS;
+}
+
+/**
+ * Judges a placeholder outside text. An address attribute takes an address brand value as its
+ * whole value, CSS takes a colour or font brand value, any other attribute and the title any brand
+ * value. A fallback is written into the mail as it is, so an address and CSS take none.
  *
  * @param state The state.
  * @param ref The placeholder.
- * @param place Where it stands.
+ * @param site Where it stands.
  */
-function judge(state: State, ref: Readonly<PlaceholderRef>, place: Place): void {
+function judgeOutsideText(state: State, ref: Readonly<PlaceholderRef>, site: Site): void {
 	const { key } = ref;
-	if (ref.fallback !== null && !fallbackFits(ref.fallback, place)) {
-		refuse(state, { kind: 'syntax' });
-	} else if (place.kind === 'text') {
-		judgeInText(state, key);
-	} else if (!BRAND_KEYS.has(key)) {
+	const rule = ruleOf(site.place);
+	if (!keysFor(rule).has(key) || (rule === 'url' && !site.whole)) {
 		refuse(
 			state,
-			state.allowed.known.has(key)
-				? { attribute: placeName(place), key, kind: 'placeholderInAttribute' }
+			state.allowed.known.has(key) || BRAND_KEYS.has(key)
+				? { attribute: placeName(site.place), key, kind: 'placeholderInAttribute' }
 				: { key, kind: 'placeholderUnknown' },
 		);
+	} else if (ref.fallback !== null && rule !== 'free') {
+		refuse(state, { attribute: placeName(site.place), key, kind: 'fallbackNotAllowed' });
+	}
+}
+
+/**
+ * Judges a placeholder: none stands in a conditional comment, in text it must be allowed in the
+ * area, elsewhere it must be a brand value that fits its place.
+ *
+ * @param state The state.
+ * @param ref The placeholder.
+ * @param site Where it stands.
+ */
+function judge(state: State, ref: Readonly<PlaceholderRef>, site: Site): void {
+	if (state.inComment) {
+		refuse(state, { key: ref.key, kind: 'placeholderInComment' });
+	} else if (ref.fallback !== null && !fallbackFits(ref.fallback, site.place)) {
+		refuse(state, { kind: 'syntax' });
+	} else if (site.place.kind === 'text') {
+		judgeInText(state, ref.key);
+	} else {
+		judgeOutsideText(state, ref, site);
 	}
 }
 
@@ -195,6 +263,20 @@ function isOwnContent(segments: readonly TextSegment[]): boolean {
 }
 
 /**
+ * Whether a text is one placeholder and white space only.
+ *
+ * @param segments The segments of the text.
+ * @returns True when it is.
+ */
+function isWholeValue(segments: readonly TextSegment[]): boolean {
+	const placeholders = segments.filter((segment) => segment.kind === 'placeholder');
+	return (
+		placeholders.length === 1 &&
+		segments.every((segment) => segment.kind === 'placeholder' || segment.value.trim() === '')
+	);
+}
+
+/**
  * Replaces the placeholders of a text by names and judges them.
  *
  * @param state The state.
@@ -215,9 +297,10 @@ function replace(
 		refuse(state, { kind: 'syntax' });
 		return text;
 	}
+	const whole = isWholeValue(parsed.segments);
 	const pieces = parsed.segments.map((segment) => {
 		if (segment.kind === 'text') return segment.value;
-		judge(state, segment.ref, place);
+		judge(state, segment.ref, { place, whole });
 		state.refs.push(segment.ref);
 		return name(state.refs.length - 1);
 	});
@@ -257,6 +340,8 @@ interface PlaceholderTokens {
 	readonly restore: (html: string) => string;
 	/** The placeholder a value starts with, or null. */
 	readonly leading: (value: string) => Readonly<PlaceholderRef> | null;
+	/** Runs a cleaning inside a conditional comment, where every placeholder is refused. */
+	readonly withinComment: <T>(clean: () => T) => T;
 	/** The refusals so far, each once. */
 	readonly refusals: () => ImportRefusal[];
 	/** How many `{{content}}` stand as a text node of their own, and how many in a text at all. */
@@ -270,7 +355,13 @@ interface PlaceholderTokens {
  * @returns The tokens.
  */
 function createPlaceholderTokens(allowed: PlaceholderKeys): PlaceholderTokens {
-	const state: State = { allowed, content: { own: 0, total: 0 }, refs: [], refusals: new Map() };
+	const state: State = {
+		allowed,
+		content: { own: 0, total: 0 },
+		inComment: false,
+		refs: [],
+		refusals: new Map(),
+	};
 	const refAt = (index: string): PlaceholderRef | undefined => state.refs[Number(index)];
 	return {
 		contentCounts: () => state.content,
@@ -290,6 +381,15 @@ function createPlaceholderTokens(allowed: PlaceholderKeys): PlaceholderTokens {
 				const ref = refAt(index);
 				return ref === undefined ? match : formatPlaceholder(ref);
 			}),
+		withinComment: (clean) => {
+			const before = state.inComment;
+			state.inComment = true;
+			try {
+				return clean();
+			} finally {
+				state.inComment = before;
+			}
+		},
 	};
 }
 

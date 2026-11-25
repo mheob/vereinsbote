@@ -262,6 +262,26 @@ const CASES: readonly Case[] = [
 		name: 'an HTML template with an image of the area',
 	},
 	{
+		expected: [{ key: 'brand.name', kind: 'placeholderInComment', where: 'html' }],
+		input: withBody({ html: '<!--[if mso]><p>{{brand.name}}</p><![endif]-->', kind: 'html' }),
+		name: 'a placeholder in a conditional comment',
+	},
+	{
+		expected: [
+			{ attribute: 'style', key: 'brand.primaryColor', kind: 'fallbackNotAllowed', where: 'html' },
+		],
+		input: withBody({
+			html: '<p style=\'color:{{brand.primaryColor | "red"}}\'>x</p>',
+			kind: 'html',
+		}),
+		name: 'a fallback in a style attribute',
+	},
+	{
+		expected: [{ kind: 'tooDeep' }],
+		input: withBody({ html: '<div>'.repeat(5000), kind: 'html' }),
+		name: 'HTML that is nested too deeply',
+	},
+	{
 		expected: [{ kind: 'contentMissing' }],
 		input: withBody({
 			blocks: [],

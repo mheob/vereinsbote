@@ -105,12 +105,10 @@ describe('placeholders in text', () => {
 describe('placeholders outside text', () => {
 	it('allows a brand value in a style attribute and in a style sheet', () => {
 		const html = importedHtml(
-			'<style>p{color:{{brand.primaryColor}}}</style><p style=\'color:{{brand.primaryColor}};font-family:{{brand.fontFamily | "Arial"}}\'>x</p>',
+			"<style>p{color:{{brand.primaryColor}}}</style><p style='color:{{brand.primaryColor}};font-family:{{brand.fontFamily}}'>x</p>",
 		);
 		expect(html).toContain('<style>p{color:{{brand.primaryColor}}}</style>');
-		expect(html).toContain(
-			`style='color:{{brand.primaryColor}};font-family:{{brand.fontFamily | "Arial"}}'`,
-		);
+		expect(html).toContain(`style='color:{{brand.primaryColor}};font-family:{{brand.fontFamily}}'`);
 	});
 
 	it('allows a brand value in an attribute and in the title', () => {
@@ -220,24 +218,20 @@ describe('{{content}} in a layout', () => {
 	});
 });
 
-describe('a URL that starts with a placeholder', () => {
-	it('stays for an address brand value', () => {
-		expect(importedHtml('<a href="{{brand.website}}/impressum">x</a>')).toContain(
-			"href='{{brand.website}}/impressum'",
-		);
+describe('a URL with a placeholder', () => {
+	it('stays for an address brand value as the whole value', () => {
+		expect(importedHtml('<a href="{{brand.website}}">x</a>')).toContain("href='{{brand.website}}'");
 	});
 
 	it.each([
 		['a brand value that is no address', '<a href="{{brand.name}}">x</a>'],
 		['a fallback with a script', '<a href=\'{{brand.website | "javascript:alert(1)"}}\'>x</a>'],
-		['a fallback with another scheme', '<a href=\'{{brand.website | "data:text/html,x"}}\'>x</a>'],
-	])('is dropped for %s', (_name, body) => {
-		expect(importedHtml(body)).not.toContain('href=');
-	});
-
-	it('keeps a fallback with an https address', () => {
-		expect(importedHtml('<a href=\'{{brand.website | "https://example.org"}}\'>x</a>')).toContain(
-			'https://example.org',
-		);
+		[
+			'a fallback with an https address',
+			'<a href=\'{{brand.website | "https://example.org"}}\'>x</a>',
+		],
+		['a suffix', '<a href="{{brand.website}}/impressum">x</a>'],
+	])('is refused for %s', (_name, body) => {
+		expect(refusalsOf(run(body))).not.toStrictEqual([]);
 	});
 });

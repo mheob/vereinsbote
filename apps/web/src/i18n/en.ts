@@ -346,6 +346,8 @@ export const en: Record<keyof typeof de, string> = {
 	'editor.problem.contentMissing':
 		'The layout needs the placeholder “Content” exactly once, as a text section of its own.',
 	'editor.problem.contentRepeated': 'The layout may contain the placeholder “Content” only once.',
+	'editor.problem.fallbackNotAllowed':
+		'The placeholder “{name}” must not have a fallback text in “{attribute}”.',
 	'editor.problem.linkMissing': 'Please enter a link.',
 	'editor.problem.mediaForeign':
 		'The image is not in the library of this area. Please choose another one.',
@@ -354,12 +356,15 @@ export const en: Record<keyof typeof de, string> = {
 	'editor.problem.placeholderForbidden': 'The placeholder “{name}” is not allowed in this area.',
 	'editor.problem.placeholderInAttribute':
 		'The placeholder “{name}” must not stand in “{attribute}”; only values from the brand are allowed there.',
+	'editor.problem.placeholderInComment':
+		'The placeholder “{name}” must not stand in an Outlook comment.',
 	'editor.problem.placeholderUnknown': 'The placeholder “{name}” does not exist.',
 	'editor.problem.preheaderTooLong': 'The preview text may be at most 200 characters long.',
 	'editor.problem.subjectEmpty': 'Please enter a subject.',
 	'editor.problem.subjectTooLong': 'The subject may be at most 200 characters long.',
 	'editor.problem.syntax': 'The text contains curly braces that are no valid placeholder.',
 	'editor.problem.tooBig': 'The template is too large (at most 256 KB). Please shorten it.',
+	'editor.problem.tooDeep': 'The HTML is nested too deeply. Please simplify it.',
 	'editor.problemsOnLoad':
 		'The template no longer fits the club’s settings. Please check the marked places.',
 	'editor.readOnly': 'You can only view this template.',
