@@ -168,7 +168,7 @@ export interface OutgoingMail {
   readonly attachments: readonly MailAttachment[]
   readonly idempotencyKey: string | null
 }
-export type SendFailureClass = 'transient' | 'rejected' | 'unauthorized' | 'quota'
+export type SendFailureClass = 'transient' | 'rejected' | 'unauthorized' | 'quota' | 'uncertain'   // uncertain: Anfrage ging raus, Ergebnis unbekannt (Ruling R2)
 export type SendResult =
   | { ok: true; providerId: string | null }
   | { ok: false; failure: SendFailureClass; code: string; retryAfterMs: number | null }
@@ -498,7 +498,7 @@ interface TickContext { /* … */ readonly storage: ObjectStorage | null }
 
 **Regeln:**
 - Der Schritt: `markUncertain`, dann für jeden Absender mit fälligen Einträgen (gestörte Anbindungen ausgenommen, außer dem Prüfversuch aus Entscheidung 9) Einträge übernehmen (`update … set status='sending', claimed_at=now() where id in (select … for update skip locked limit n) returning`), vorbereiten, senden, Ergebnis speichern.
-- Ergebnis: `ok` → `sent`, `countSent`, `message_id`/`provider_id`; `transient` → `planned` mit `next_attempt_at` oder `failed` nach `MAX_ATTEMPTS`; `rejected` → `failed`; `unauthorized` → zurück auf `planned` ohne Versuch, Anbindung `disturbed_since` setzen; `quota` → zurück auf `planned` mit `not_before` = Beginn des nächsten Tages (Europe/Berlin), ohne Versuch.
+- Ergebnis: `ok` → `sent`, `countSent`, `message_id`/`provider_id`; `uncertain` → sofort `uncertain` (nie automatisch erneut, Design 8.5); `transient` → `planned` mit `next_attempt_at` oder `failed` nach `MAX_ATTEMPTS`; `rejected` → `failed`; `unauthorized` → zurück auf `planned` ohne Versuch, Anbindung `disturbed_since` setzen; `quota` → zurück auf `planned` mit `not_before` = Beginn des nächsten Tages (Europe/Berlin), ohne Versuch.
 - Vorrang und Reserve nach Entscheidung 5; Drosselung nach Entscheidung 6; Grenze der Unteranfragen: höchstens 40 Sendungen pro Lauf und Absender auf Cloudflare (`platformName() === 'cloudflare'`), sonst durch Budget und Drosselung begrenzt.
 - `moreWork`, solange fällige Einträge übrig sind, die nicht am Limit oder an einer Störung hängen.
 - `tickSteps` = `[pruneAuthRecords, staleImportWarning, outbox]`; in 4a ist `preparers` leer (keine Quelle), Task 16 setzt `wave`.
