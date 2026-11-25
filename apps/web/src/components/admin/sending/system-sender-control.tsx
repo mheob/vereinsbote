@@ -42,7 +42,10 @@ export function SystemSenderControl({
 			if (result.ok) {
 				announce(t(isSystem ? 'sending.systemClearDone' : 'sending.systemSetDone'), 'status');
 			} else {
-				announce(t('sending.senderGone'), 'alert');
+				announce(
+					t(result.failure === 'changed' ? 'sending.changed' : 'sending.senderGone'),
+					'alert',
+				);
 			}
 			startTransition(async () => router.invalidate());
 		});

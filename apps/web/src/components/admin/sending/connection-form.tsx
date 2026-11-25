@@ -171,6 +171,10 @@ interface SaveContext {
 	readonly announce: Announce;
 	/** Called with what the check of new credentials found after a save. */
 	readonly onChecked: (check: ConnectionCheck) => void;
+	/** Called when a save starts, so the result of an earlier check is not shown any more. */
+	readonly onStart: () => void;
+	/** Called after a successful save of an existing connection, so typed secrets are dropped. */
+	readonly onSaved: () => void;
 }
 
 /** What saving a connection gave: the state of the form, its submit handler and whether it runs. */
@@ -188,7 +192,7 @@ function useConnectionSave(
 	connection: ConnectionDetail | null,
 	context: Readonly<SaveContext>,
 ): Save {
-	const { announce, kind, onChecked } = context;
+	const { announce, kind, onChecked, onSaved, onStart } = context;
 	const t = useT();
 	const router = useRouter();
 	const create = useServerFn(submitCreateConnection);
@@ -197,6 +201,7 @@ function useConnectionSave(
 	const [version, setVersion] = useState(connection?.version ?? 1);
 	const [state, submitForm, isPending] = useActionState(
 		async (_previous: FormState, formData: FormData): Promise<FormState> => {
+			onStart();
 			const input = inputOf(kind, formData);
 			const call: Promise<ConnectionCreatedResult | ConnectionSavedResult> =
 				connection === null
@@ -227,6 +232,7 @@ function useConnectionSave(
 				return null;
 			}
 			setVersion(result.version);
+			onSaved();
 			if (result.check !== null) onChecked(result.check);
 			announce(t('sending.saved'), 'status');
 			startTransition(async () => router.invalidate());
@@ -307,6 +313,11 @@ export function ConnectionForm({
 }: Readonly<{ announce: Announce; connection: ConnectionDetail | null }>): ReactNode {
 	const t = useT();
 	const formRef = useRef<HTMLFormElement>(null);
+	// A new round remounts the fields, so a typed secret is not kept (and re-sent) after a save.
+	const [round, setRound] = useState(0);
+	const nextRound = useCallback(() => {
+		setRound((current) => current + 1);
+	}, []);
 	const [kind, setKind] = useState<ConnectionKind>(connection?.kind ?? 'graph');
 	// What the check of the credentials found, shown below the form until the next save.
 	const notice = useLocation({ select: (location) => location.state.sendingNotice });
@@ -322,10 +333,15 @@ export function ConnectionForm({
 		}
 		clearHistoryNotice(globalThis.history, 'sendingCheck');
 	}, [announce, notice, t]);
+	const clearCheck = useCallback(() => {
+		setChecked(undefined);
+	}, []);
 	const [state, onSubmit, isPending] = useConnectionSave(connection, {
 		announce,
 		kind,
 		onChecked: setChecked,
+		onSaved: nextRound,
+		onStart: clearCheck,
 	});
 	const validationErrors = useMemo(
 		(): Readonly<Record<string, string>> =>
@@ -356,9 +372,9 @@ export function ConnectionForm({
 					name="name"
 				/>
 				{kind === 'graph' ? (
-					<GraphFields connection={connection} />
+					<GraphFields connection={connection} key={round} />
 				) : (
-					<ResendFields connection={connection} />
+					<ResendFields connection={connection} key={round} />
 				)}
 				<div>
 					<SubmitButton isPending={isPending}>
