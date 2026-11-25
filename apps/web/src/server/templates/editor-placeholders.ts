@@ -104,5 +104,21 @@ function placeholderLabel(
 	return key.startsWith(CUSTOM_PREFIX) ? key.slice(CUSTOM_PREFIX.length) : key;
 }
 
-export { editorPlaceholders, placeholderLabel };
+/**
+ * The names of several placeholders in one line, as the preview says what a contact lacks.
+ *
+ * @param keys The placeholder keys.
+ * @param offered The placeholders the editor offers (their custom fields give their own names).
+ * @param t The translation function.
+ * @returns The names, comma separated.
+ */
+function placeholderNames(
+	keys: readonly string[],
+	offered: readonly EditorPlaceholder[],
+	t: (key: MessageKey) => string,
+): string {
+	return keys.map((key) => placeholderLabel(key, offered, t)).join(', ');
+}
+
+export { editorPlaceholders, placeholderLabel, placeholderNames };
 export type { EditorPlaceholder, EditorPlaceholderGroup };

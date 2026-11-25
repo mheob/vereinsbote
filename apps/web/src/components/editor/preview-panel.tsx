@@ -22,6 +22,7 @@ import { FAILED, settle } from '@/components/settle';
 import {
 	optionClass,
 	popoverClass,
+	secondaryButtonClass,
 	segmentedButtonClass,
 	selectButtonClass,
 } from '@/components/styles';
@@ -36,6 +37,8 @@ import type { PreviewContact } from '@/server/templates/preview-values';
 import { PreviewContactPicker } from './preview-contact-picker';
 import { sampleValues } from './preview-source';
 import type { previewSource } from './preview-source';
+import { contactValuesState } from './preview-values-state';
+import type { ContactValuesResult, ContactValuesState } from './preview-values-state';
 
 type PreviewChoice = 'sample' | 'real';
 
@@ -59,12 +62,6 @@ const SAMPLE_LABELS = {
 
 const NO_VALUES: ReadonlyMap<string, string> = new Map();
 
-/** The values of one real contact, as loaded for the salutation texts of that moment. */
-interface LoadedValues {
-	readonly contactId: string;
-	readonly values: ReadonlyMap<string, string>;
-}
-
 /**
  * Loads the placeholder values of the picked contact, again when the salutation texts change
  * (after a pause in typing). A contact that is gone ends the choice: the panel falls back to the
@@ -76,7 +73,7 @@ interface LoadedValues {
  * @param handlers What happens when the contact is gone or a call fails.
  * @param handlers.onGone Called when the server no longer finds the contact.
  * @param handlers.onFailed Called when the call failed.
- * @returns The values of the picked contact; null until they are loaded.
+ * @returns The state of the picked contact's values, and `retry`, which loads them again.
  */
 // oxlint-disable-next-line max-params -- the hook's inputs are distinct and few
 function useContactValues(
@@ -84,29 +81,57 @@ function useContactValues(
 	contact: Readonly<PreviewContact> | null,
 	texts: SalutationTexts,
 	handlers: Readonly<{ onGone: () => void; onFailed: () => void }>,
-): ReadonlyMap<string, string> | null {
+): Readonly<{ state: ContactValuesState; retry: () => void }> {
 	const load = useServerFn(loadPreviewValues);
-	const [loaded, setLoaded] = useState<LoadedValues | null>(null);
+	const [loaded, setLoaded] = useState<ContactValuesResult | null>(null);
+	const [attempt, setAttempt] = useState(0);
 	const salutation = useDebouncedValue(texts, VALUES_DELAY_MS);
 	const contactId = contact?.id ?? null;
 	const { onFailed, onGone } = handlers;
+	// A new object per contact and per retry: the effect below runs again for either.
+	const request = useMemo(
+		() => (contactId === null ? null : { attempt, contactId }),
+		[attempt, contactId],
+	);
 	useEffect(() => {
 		let current = true;
 		async function run(id: string): Promise<void> {
 			const result = await settle(load({ data: { contactId: id, salutation, templateId } }));
 			if (!current || result === undefined) return;
-			if (result === FAILED) onFailed();
-			else if (result.ok)
+			if (result === FAILED) {
+				setLoaded({ contactId: id, failed: true });
+				onFailed();
+			} else if (result.ok) {
 				setLoaded({ contactId: id, values: new Map(Object.entries(result.values)) });
-			else onGone();
+			} else {
+				onGone();
+			}
 		}
 		// oxlint-disable-next-line no-void -- `run` never rejects: `settle` catches a failed call
-		if (contactId !== null) void run(contactId);
+		if (request !== null) void run(request.contactId);
 		return () => {
 			current = false;
 		};
-	}, [contactId, load, onFailed, onGone, salutation, templateId]);
-	return loaded?.contactId === contactId ? loaded.values : null;
+	}, [load, onFailed, onGone, request, salutation, templateId]);
+	const retry = useCallback(() => {
+		setAttempt((count) => count + 1);
+	}, []);
+	return { retry, state: contactValuesState(contactId, loaded) };
+}
+
+/**
+ * What the panel says while the real contact's preview is not there.
+ *
+ * @param contact The picked contact, or null.
+ * @param state The state of its values.
+ * @returns The message key.
+ */
+function waitingText(
+	contact: Readonly<PreviewContact> | null,
+	state: ContactValuesState,
+): 'auth.requestFailed' | 'editor.previewPickContact' | 'preview.pending' {
+	if (contact === null) return 'editor.previewPickContact';
+	return state.status === 'failed' ? 'auth.requestFailed' : 'preview.pending';
 }
 
 /**
@@ -185,23 +210,31 @@ export function PreviewPanel({
 		announce(t('auth.requestFailed'), 'alert');
 	}, [announce, t]);
 	const handlers = useMemo(() => ({ onFailed, onGone }), [onFailed, onGone]);
-	const real = useContactValues(page.template.id, contact, salutationTexts, handlers);
+	// Only the real choice fetches: with the sample chosen no contact data is loaded.
+	const { retry, state: realState } = useContactValues(
+		page.template.id,
+		choice === 'real' ? contact : null,
+		salutationTexts,
+		handlers,
+	);
 	const values = useMemo(() => {
 		if (choice === 'sample') return sampleValues(salutationTexts, kind);
-		return real ?? NO_VALUES;
-	}, [choice, kind, real, salutationTexts]);
+		return realState.status === 'ready' ? realState.values : NO_VALUES;
+	}, [choice, kind, realState, salutationTexts]);
 	const state = useCompiledPreview(source, page.brand, page.appOrigin, values);
 	const changeChoice = useCallback((keys: ReadonlySet<Key>) => {
 		setChoice(CHOICES.find((entry) => keys.has(entry)) ?? 'sample');
 	}, []);
 	const pick = useCallback(
 		(picked: Readonly<PreviewContact>) => {
+			// Picking the same contact again loads again (after a failure too); another one loads by itself.
+			if (picked.id === contact?.id) retry();
 			setContact(picked);
 			announce(t('editor.previewShowing', { name: picked.name }), 'status');
 		},
-		[announce, t],
+		[announce, contact?.id, retry, t],
 	);
-	const waiting = choice === 'real' && real === null;
+	const waiting = choice === 'real' && realState.status !== 'ready';
 	return (
 		<section
 			aria-labelledby="editor-preview"
@@ -236,11 +269,20 @@ export function PreviewPanel({
 			)}
 			<p className="text-sm text-gray-700">{t('editor.previewValuesNote')}</p>
 			{waiting ? (
-				<output className="block">
-					{t(contact === null ? 'editor.previewPickContact' : 'preview.pending')}
-				</output>
+				<div className="flex flex-col items-start gap-2">
+					<output className="block">{t(waitingText(contact, realState))}</output>
+					{realState.status === 'failed' ? (
+						<Button className={secondaryButtonClass} onPress={retry}>
+							{t('editor.previewRetry')}
+						</Button>
+					) : null}
+				</div>
 			) : (
-				<MailPreview state={state} title={t('editor.previewFrame')} />
+				<MailPreview
+					placeholders={page.placeholders}
+					state={state}
+					title={t('editor.previewFrame')}
+				/>
 			)}
 		</section>
 	);

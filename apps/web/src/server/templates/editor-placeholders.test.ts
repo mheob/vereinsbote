@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vite-plus/test';
 
 import type { CustomFieldRecord } from '@/server/contacts/settings';
 
-import { editorPlaceholders, placeholderLabel } from './editor-placeholders';
+import { editorPlaceholders, placeholderLabel, placeholderNames } from './editor-placeholders';
 
 const BASE_KEYS = [
 	'contact.firstName',
@@ -109,5 +109,21 @@ describe(placeholderLabel, () => {
 
 	it('shows an unknown key as it is', () => {
 		expect(placeholderLabel('occasion.date', offered, t)).toBe('occasion.date');
+	});
+});
+
+describe(placeholderNames, () => {
+	const offered = editorPlaceholders(new Set([...BASE_KEYS, 'contact.custom.typ']), [
+		field({ name: 'Typ', placeholderKey: 'typ' }),
+	]);
+
+	it('names built-in and custom placeholders, not their keys', () => {
+		expect(placeholderNames(['contact.birthDate', 'contact.custom.typ'], offered, t)).toBe(
+			'«mail.placeholder.contact.birthDate», Typ',
+		);
+	});
+
+	it('is empty for no key', () => {
+		expect(placeholderNames([], offered, t)).toBe('');
 	});
 });
