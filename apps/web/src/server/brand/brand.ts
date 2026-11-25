@@ -6,6 +6,7 @@ import type { Brand, BrandLogo } from '@/mail/brand/brand-schema';
 import { writeAudit } from '@/server/audit/audit';
 import type { Db } from '@/server/db/client';
 import { brandSettings, media } from '@/server/db/schema';
+import { errorLabel } from '@/server/error-label';
 import { assertAdmin } from '@/server/permissions/principal';
 import type { Principal } from '@/server/permissions/principal';
 
@@ -40,12 +41,17 @@ class UnknownLogoError extends Error {
  *
  * @param db The database.
  * @returns The saved brand, or the default brand with `configured: false` and version 0. Stored
- * settings that no longer pass the schema give the default brand with the stored version.
+ * settings that no longer pass the schema give the default brand with the stored version, and a
+ * warning in the log (the error's label only, never the settings: they name the club).
  */
 async function getBrand(db: Db): Promise<BrandState> {
 	const [row] = await db.select().from(brandSettings).where(eq(brandSettings.id, SINGLETON_ID));
 	if (row === undefined) return { brand: DEFAULT_BRAND, configured: false, version: 0 };
 	const parsed = brandSchema.safeParse(row.settings);
+	if (!parsed.success) {
+		// oxlint-disable-next-line no-console -- an operator should know that mails use the default brand
+		console.warn('stored brand unreadable, default brand used', errorLabel(parsed.error));
+	}
 	return {
 		brand: parsed.success ? parsed.data : DEFAULT_BRAND,
 		configured: true,

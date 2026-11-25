@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm';
-import { describe, expect, it } from 'vite-plus/test';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import { DEFAULT_BRAND } from '@/mail/brand/brand-schema';
 import type { Brand, BrandLogo } from '@/mail/brand/brand-schema';
@@ -33,6 +33,10 @@ async function insertImage(
 }
 
 describe(getBrand, () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
 	it('returns the default brand until an admin saves one', async () => {
 		const db = await createTestDb();
 		await expect(getBrand(db)).resolves.toStrictEqual({
@@ -53,17 +57,25 @@ describe(getBrand, () => {
 		});
 	});
 
-	it('falls back to the default brand when the stored settings no longer parse', async () => {
+	it('falls back to the default brand when the stored settings no longer parse, with a warning', async () => {
+		const warned = vi.spyOn(console, 'warn').mockReturnValue();
 		const db = await createTestDb();
 		const { admin } = await setUpClub(db);
 		await saveBrand(db, admin, { brand: BRANDED, version: 0 });
+		expect(warned).not.toHaveBeenCalled();
 		const { brandSettings } = await import('@/server/db/schema');
-		await db.update(brandSettings).set({ settings: { name: 1 } });
+		await db.update(brandSettings).set({ settings: { name: 'Geheimverein e.V.' } });
 		await expect(getBrand(db)).resolves.toMatchObject({
 			brand: DEFAULT_BRAND,
 			configured: true,
 			version: 1,
 		});
+		// The label only, never what is stored: the settings name the club and its addresses.
+		expect(warned).toHaveBeenCalledExactlyOnceWith(
+			'stored brand unreadable, default brand used',
+			'ZodError',
+		);
+		expect(JSON.stringify(warned.mock.calls)).not.toContain('Geheimverein');
 	});
 });
 
