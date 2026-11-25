@@ -576,3 +576,73 @@ test('duplicating a template that uses the birth date into an area that may not 
 	await expect(eva).toHaveURL(/\/templates$/u);
 	await dialog.getByRole('button', { name: 'Abbrechen' }).click();
 });
+
+/**
+ * Picks a real contact in the preview: switches to „Echter Kontakt“, searches the name and picks
+ * the only hit. The search goes by POST, so the page's address never holds the term.
+ *
+ * @param page The page of the editor.
+ * @param name The full name of the contact.
+ */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- see openEditor
+async function previewContact(page: Page, name: string): Promise<void> {
+	await page.getByRole('radio', { name: 'Echter Kontakt' }).click();
+	await expect(page.getByText('Wähle einen Kontakt, um die Vorschau zu sehen.')).toBeVisible();
+	const search = page.getByRole('combobox', { name: 'Kontakt suchen' });
+	await search.fill(name);
+	await expect(search).toHaveValue(name);
+	const options = page.getByRole('option');
+	await expect(options).toHaveCount(1);
+	await options.click();
+	await expect(page).not.toHaveURL(new RegExp(name.split(' ')[0] ?? '', 'u'));
+	await expectAnnounced(page, `Die Vorschau zeigt jetzt ${name}.`);
+}
+
+// oxlint-disable-next-line max-statements -- one flow, step by step, as the editor sees it
+test('the preview greets a real contact and delivers no value of another area', async () => {
+	await openEditor(eva, 'Sommerfest');
+	await expect(eva.frameLocator(PREVIEW_FRAME).getByText('Liebe Anna')).toBeVisible();
+	// A sample of another gender, chosen from the list.
+	await eva.getByRole('button', { name: /Beispielkontakt/u }).click();
+	await eva.getByRole('option', { name: 'Mitglied, männlich' }).click();
+	await expect(eva.frameLocator(PREVIEW_FRAME).getByText('Lieber Bernd')).toBeVisible();
+	await eva.getByRole('button', { name: /Beispielkontakt/u }).click();
+	await eva.getByRole('option', { name: 'Mitglied, weiblich' }).click();
+
+	// A real contact of the contacts project: its values come from the server, by POST.
+	const loaded = eva.waitForResponse(async (response) => {
+		if (response.request().method() !== 'POST') return false;
+		const text = await response.text().catch(() => '');
+		return text.includes('contact.firstName');
+	});
+	await previewContact(eva, 'Ben Bauer');
+	const response = await loaded;
+	const body = await response.text();
+	expect(body).toContain('Ben');
+	// „Veranstaltungen“ does not get the birth date, although Eva may see it elsewhere.
+	expect(body).not.toContain('birthDate');
+	await expect(eva.frameLocator(PREVIEW_FRAME).getByText('Lieber Ben')).toBeVisible();
+	await expectNoA11yViolations(eva, [PREVIEW_FRAME]);
+
+	// Back to the sample.
+	await eva.getByRole('radio', { name: 'Beispiel' }).click();
+	await expect(eva.frameLocator(PREVIEW_FRAME).getByText('Liebe Anna')).toBeVisible();
+});
+
+// oxlint-disable-next-line max-statements -- one flow, step by step, as the editor sees it
+test('the preview names what a real contact lacks', async () => {
+	await openEditor(eva, 'Geburtstagsgruß');
+	await addBlock(eva, 'Text');
+	await eva.getByRole('textbox', { exact: true, name: 'Text' }).press('End');
+	await eva.keyboard.type('Dein Ort: ');
+	await insertPlaceholder(eva, 'Ort');
+	await eva.getByRole('button', { name: 'Speichern' }).press('Enter');
+	await expectAnnounced(eva, 'Die Vorlage ist gespeichert.');
+	// The sample has a city.
+	await expect(eva.frameLocator(PREVIEW_FRAME).getByText('Dein Ort: Beispielstadt')).toBeVisible();
+
+	// The imported members have none, and the placeholder has no replacement text.
+	await previewContact(eva, 'Ben Bauer');
+	await expect(eva.getByText('Für diesen Kontakt fehlt: Ort')).toBeVisible();
+	await expectNoA11yViolations(eva, [PREVIEW_FRAME]);
+});

@@ -71,4 +71,12 @@ describe(sampleValues, () => {
 		);
 		expect(sampleValues(DEFAULT_SALUTATIONS.du).get('contact.birthDate')).toBe('17.05.1985');
 	});
+
+	it('takes the sample contact of another kind', () => {
+		expect(sampleValues(DEFAULT_SALUTATIONS.du, 'male').get('salutation')).toBe('Lieber Bernd');
+		expect(sampleValues(DEFAULT_SALUTATIONS.du, 'diverse').get('salutation')).toBe('Hallo Kim');
+		const organization = sampleValues(DEFAULT_SALUTATIONS.du, 'organization');
+		expect(organization.get('salutation')).toBe('Sehr geehrte Damen und Herren');
+		expect(organization.get('contact.organization')).toBe('Beispiel GmbH');
+	});
 });

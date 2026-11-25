@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Key, ReactNode } from 'react';
 import { ToggleButton, ToggleButtonGroup } from 'react-aria-components';
 
+import { segmentedButtonClass } from '@/components/styles';
 import { useHydrated } from '@/components/use-hydrated';
 import { useT } from '@/i18n/use-t';
 import { BUILTIN_PLACEHOLDERS } from '@/mail/placeholders/registry';
@@ -30,9 +31,6 @@ const SELECTED = { desktop: ['desktop'], mobile: ['mobile'], text: ['text'] } as
 const FRAME_WIDTH_CLASS = { desktop: 'w-[600px]', mobile: 'w-[375px]' } as const;
 
 const LABEL_KEYS = new Map(BUILTIN_PLACEHOLDERS.map((entry) => [entry.key, entry.labelKey]));
-
-const toggleClass =
-	'border border-gray-600 px-3 py-1.5 font-semibold first:rounded-l-md last:rounded-r-md data-focus-visible:outline-2 data-focus-visible:outline-offset-2 data-focus-visible:outline-blue-700 data-hovered:bg-gray-100 data-selected:border-blue-700 data-selected:bg-blue-700 data-selected:text-white';
 
 function modeOf(keys: ReadonlySet<Key>): PreviewMode | null {
 	return MODES.find((mode) => keys.has(mode)) ?? null;
@@ -160,7 +158,7 @@ export function MailPreview({
 				selectionMode="single"
 			>
 				{MODES.map((key) => (
-					<ToggleButton className={toggleClass} id={key} key={key}>
+					<ToggleButton className={segmentedButtonClass} id={key} key={key}>
 						{t(MODE_LABELS[key])}
 					</ToggleButton>
 				))}

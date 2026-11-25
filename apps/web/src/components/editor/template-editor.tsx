@@ -19,8 +19,8 @@ import { EditorHead } from './editor-head';
 import { EditorLayout } from './editor-layout';
 import type { EditorTab } from './editor-layout';
 import { useEditorModel } from './editor-model';
-import { PreviewPane } from './editor-preview';
-import { previewSource, sampleValues } from './preview-source';
+import { PreviewPanel } from './preview-panel';
+import { previewSource } from './preview-source';
 import { indexProblems, problemDescriber } from './problems';
 import type { ProblemPlace } from './problems';
 import { SettingsPanel } from './settings-panel';
@@ -216,10 +216,6 @@ export function TemplateEditor({
 		() => previewSource(state.input, page.layouts, model.media),
 		[model.media, page.layouts, state.input],
 	);
-	const values = useMemo(
-		() => sampleValues(state.input.salutationTexts),
-		[state.input.salutationTexts],
-	);
 	const headTemplate = useMemo(
 		() => ({
 			areaName: page.areaName,
@@ -273,8 +269,15 @@ export function TemplateEditor({
 		],
 	);
 	const preview = useMemo(
-		() => <PreviewPane page={page} source={source} values={values} />,
-		[page, source, values],
+		() => (
+			<PreviewPanel
+				announce={announce}
+				page={page}
+				salutationTexts={state.input.salutationTexts}
+				source={source}
+			/>
+		),
+		[announce, page, source, state.input.salutationTexts],
 	);
 	return (
 		<div className="flex flex-col gap-6">

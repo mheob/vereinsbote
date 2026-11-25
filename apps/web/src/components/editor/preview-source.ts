@@ -1,12 +1,13 @@
 /*
  * What the editor's preview compiles: the template as a mail source, with the HTML of a chosen
- * layout, and the values of the sample contact. Contact selection follows in Task 15; until then
- * the preview greets the invented sample member Anna Beispiel, who has every built-in value.
+ * layout, and the values of a sample contact (by default the invented member Anna Beispiel, who has
+ * every built-in value).
  */
 import { contactPlaceholderValues } from '@/mail/placeholders/contact-values';
 import type { SalutationTexts } from '@/mail/placeholders/salutation';
 import type { MailLayout, MailSource, MediaInfo } from '@/mail/render/compile';
 import { SAMPLE_CONTACTS } from '@/mail/sample';
+import type { SampleContactKind } from '@/mail/sample';
 import type { TemplateInput, TemplateLayout } from '@/mail/templates/template-schema';
 import { BUILTIN_PROTECTED_FIELD_KEYS } from '@/server/contacts/fields';
 
@@ -60,13 +61,17 @@ function previewSource(
 }
 
 /**
- * The placeholder values of the sample contact with the template's salutation texts.
+ * The placeholder values of a sample contact with the template's salutation texts.
  *
  * @param texts The salutation texts.
+ * @param kind The sample contact; the sample member Anna Beispiel by default.
  * @returns The values.
  */
-function sampleValues(texts: SalutationTexts): Map<string, string> {
-	return contactPlaceholderValues(SAMPLE_CONTACTS.female, SAMPLE_FIELDS, [], texts);
+function sampleValues(
+	texts: SalutationTexts,
+	kind: SampleContactKind = 'female',
+): Map<string, string> {
+	return contactPlaceholderValues(SAMPLE_CONTACTS[kind], SAMPLE_FIELDS, [], texts);
 }
 
 export { mailLayoutOf, previewSource, sampleValues };

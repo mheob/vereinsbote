@@ -3,9 +3,11 @@ import { createServerFn } from '@tanstack/react-start';
 import { z } from 'zod';
 
 import { STARTER_IDS } from '@/mail/starters/starters';
-import { templateInputSchema } from '@/mail/templates/template-schema';
+import { salutationTextsSchema, templateInputSchema } from '@/mail/templates/template-schema';
+import { MAX_SEARCH_LENGTH } from '@/server/contacts/list-query';
 import type { TemplateEditorData } from '@/server/templates/editor-data';
 import type { SaveFailure } from '@/server/templates/failures';
+import type { PreviewContact } from '@/server/templates/preview-values';
 import type { TemplateSummary } from '@/server/templates/templates';
 
 /*
@@ -47,6 +49,10 @@ type DeleteTemplateResult = Readonly<{ ok: true } | { ok: false; failure: 'chang
 
 type SaveTemplateResult = Readonly<{ ok: true; version: number }> | SaveFailure;
 
+type PreviewValuesResult = Readonly<
+	{ ok: true; values: Readonly<Record<string, string>> } | { ok: false; failure: 'gone' }
+>;
+
 /** The longest id the server looks at; ids are 36 characters. */
 const MAX_ID_LENGTH = 100;
 /** The longest name or subject accepted before the save checks' own limits (100 and 200). */
@@ -65,6 +71,15 @@ const duplicateRequest = z.object({
 });
 const deleteRequest = z.object({ id: z.uuid(), version: z.int().min(1) });
 const pageRequest = z.object({ id: z.string().max(MAX_ID_LENGTH) });
+const searchRequest = z.object({
+	query: z.string().max(MAX_SEARCH_LENGTH),
+	templateId: z.uuid(),
+});
+const valuesRequest = z.object({
+	contactId: z.uuid(),
+	salutation: salutationTextsSchema,
+	templateId: z.uuid(),
+});
 const saveRequest = z.object({
 	id: z.uuid(),
 	input: templateInputSchema,
@@ -231,9 +246,67 @@ const submitDeleteTemplate = createServerFn({ method: 'POST' })
 		}
 	});
 
+/**
+ * Searches the contacts a template can be previewed with: at most ten, only base fields are
+ * searched. The search goes by POST, never into a URL. A template deleted meanwhile finds none.
+ */
+const searchPreviewContacts = createServerFn({ method: 'POST' })
+	.validator(searchRequest)
+	.handler(async ({ data }): Promise<{ contacts: readonly PreviewContact[] }> => {
+		const [{ requireRequestPrincipal }, preview, { TemplateNotFoundError }] = await Promise.all([
+			import('@/platform/request-principal'),
+			import('@/server/templates/preview-values'),
+			import('@/server/templates/errors'),
+		]);
+		const { context, principal } = await requireRequestPrincipal();
+		try {
+			return {
+				contacts: await preview.searchPreviewContacts(
+					context.db,
+					principal,
+					data.templateId,
+					data.query,
+				),
+			};
+		} catch (error) {
+			if (error instanceof TemplateNotFoundError) return { contacts: [] };
+			throw error;
+		}
+	});
+
+/**
+ * The placeholder values of a contact for the preview of a template, with the salutation texts
+ * as the editor holds them. A contact or template that is gone comes back as `gone`.
+ */
+const loadPreviewValues = createServerFn({ method: 'POST' })
+	.validator(valuesRequest)
+	.handler(async ({ data }): Promise<PreviewValuesResult> => {
+		const [{ requireRequestPrincipal }, preview, { TemplateNotFoundError }] = await Promise.all([
+			import('@/platform/request-principal'),
+			import('@/server/templates/preview-values'),
+			import('@/server/templates/errors'),
+		]);
+		const { context, principal } = await requireRequestPrincipal();
+		try {
+			const values = await preview.previewValues(
+				context.db,
+				principal,
+				data.templateId,
+				data.contactId,
+				data.salutation,
+			);
+			return values === null ? { failure: 'gone', ok: false } : { ok: true, values };
+		} catch (error) {
+			if (error instanceof TemplateNotFoundError) return { failure: 'gone', ok: false };
+			throw error;
+		}
+	});
+
 export {
+	loadPreviewValues,
 	loadTemplateEditor,
 	loadTemplateList,
+	searchPreviewContacts,
 	submitCreateTemplate,
 	submitDeleteTemplate,
 	submitDuplicate,
@@ -243,6 +316,7 @@ export type {
 	CreateTemplateResult,
 	DeleteTemplateResult,
 	DuplicateResult,
+	PreviewValuesResult,
 	SaveTemplateResult,
 	TemplateArea,
 	TemplateEditorPage,

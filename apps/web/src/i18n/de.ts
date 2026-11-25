@@ -328,8 +328,27 @@ export const de = {
 	'editor.preheader': 'Vorschautext',
 	'editor.preheaderHelp': 'Viele Postfächer zeigen ihn hinter dem Betreff.',
 	'editor.preview': 'Vorschau',
-	'editor.previewContact': 'Die Vorschau zeigt die Mail an den Beispielkontakt Anna Beispiel.',
+	'editor.previewChoice': 'Vorschau für',
+	'editor.previewContactGone':
+		'Der Kontakt ist nicht mehr da. Die Vorschau zeigt wieder den Beispielkontakt.',
+	'editor.previewContactKind.member': 'Mitglied',
+	'editor.previewContactKind.partner': 'Partner',
+	'editor.previewContactNone': 'Keine Kontakte gefunden.',
+	'editor.previewContactOption': '{name} ({kind})',
+	'editor.previewContactSearch': 'Kontakt suchen',
+	'editor.previewContactSearchHelp': 'Suche nach Name, E-Mail-Adresse oder Nummer.',
 	'editor.previewFrame': 'Vorschau der Mail',
+	'editor.previewPickContact': 'Wähle einen Kontakt, um die Vorschau zu sehen.',
+	'editor.previewReal': 'Echter Kontakt',
+	'editor.previewSample': 'Beispiel',
+	'editor.previewSampleKind': 'Beispielkontakt',
+	'editor.previewSampleKind.diverse': 'Mitglied, divers',
+	'editor.previewSampleKind.female': 'Mitglied, weiblich',
+	'editor.previewSampleKind.male': 'Mitglied, männlich',
+	'editor.previewSampleKind.organization': 'Partner, Firma',
+	'editor.previewShowing': 'Die Vorschau zeigt jetzt {name}.',
+	'editor.previewValuesNote':
+		'Die Werte gelten nur für diese Vorschau und werden nicht gespeichert.',
 	'editor.problem.altMissing':
 		'Bitte gib einen Alternativtext ein oder markiere das Bild als dekorativ.',
 	'editor.problem.htmlNotYetSupported':

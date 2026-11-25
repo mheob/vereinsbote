@@ -31,3 +31,6 @@ export const checkboxBoxClass =
 
 export const primaryButtonClass =
 	'rounded-md bg-blue-700 px-4 py-2 font-semibold text-white data-focus-visible:outline-2 data-focus-visible:outline-offset-2 data-focus-visible:outline-blue-700 data-hovered:bg-blue-800 data-pending:opacity-70';
+
+export const segmentedButtonClass =
+	'border border-gray-600 px-3 py-1.5 font-semibold first:rounded-l-md last:rounded-r-md data-focus-visible:outline-2 data-focus-visible:outline-offset-2 data-focus-visible:outline-blue-700 data-hovered:bg-gray-100 data-selected:border-blue-700 data-selected:bg-blue-700 data-selected:text-white';
