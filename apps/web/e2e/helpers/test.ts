@@ -12,25 +12,31 @@ type CspViolation = Readonly<{
 
 /** The name of the function every context gives its pages; a page calls it per violation. */
 const REPORT_FUNCTION = 'vbReportCspViolation';
+/** The name of the function every page has that waits until its reports have arrived. */
+const REPORTED_FUNCTION = 'vbCspViolationsReported';
 
 /** The violations of one worker's contexts that no test has checked yet, by watched browser. */
 const pendingViolations = new WeakMap<Browser, CspViolation[]>();
 
 /**
- * Runs in every document and frame of a watched context, before the page's own scripts.
+ * Runs in every document and frame of a watched context, before the page's own scripts. A
+ * report reaches the test a moment after the page saw the violation (the binding is
+ * asynchronous), so the page also gets a function that waits until its reports have arrived.
  *
- * @param reportFunction The name of the function the context exposes.
+ * @param names The names of the functions.
+ * @param names.report The function the context exposes.
+ * @param names.reported The function that waits for the reports.
  */
-function reportViolations(reportFunction: string): void {
+function reportViolations(names: Readonly<{ report: string; reported: string }>): void {
+	const reports: Promise<unknown>[] = [];
 	document.addEventListener('securitypolicyviolation', (event) => {
 		const { blockedURI, disposition, documentURI, effectiveDirective, sourceFile } = event;
-		const report: unknown = Reflect.get(globalThis, reportFunction);
-		if (typeof report === 'function') {
-			Reflect.apply(report, globalThis, [
-				{ blockedURI, disposition, documentURI, effectiveDirective, sourceFile },
-			]);
-		}
+		const report: unknown = Reflect.get(globalThis, names.report);
+		if (typeof report !== 'function') return;
+		const violation = { blockedURI, disposition, documentURI, effectiveDirective, sourceFile };
+		reports.push(Promise.resolve(Reflect.apply(report, globalThis, [violation])));
 	});
+	Reflect.set(globalThis, names.reported, async () => Promise.all(reports));
 }
 
 /**
@@ -46,7 +52,10 @@ async function watch(context: BrowserContext, violations: CspViolation[]): Promi
 	await context.exposeBinding(REPORT_FUNCTION, (_source, violation: CspViolation) => {
 		violations.push(violation);
 	});
-	await context.addInitScript(reportViolations, REPORT_FUNCTION);
+	await context.addInitScript(reportViolations, {
+		report: REPORT_FUNCTION,
+		reported: REPORTED_FUNCTION,
+	});
 }
 
 /**
@@ -129,5 +138,20 @@ const test = base.extend<{ cspViolations: null }>({
 	],
 });
 
+/**
+ * Waits until the violations the main frame of a page has seen are in the watch's list. A test
+ * that provokes a violation on purpose waits for it here: the report travels through a binding
+ * and may arrive after the test has gone on, or never, when the test closes the page first.
+ *
+ * @param page The page.
+ */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Playwright's page is a handle on the browser, mutable by design
+async function cspViolationsReported(page: Page): Promise<void> {
+	await page.evaluate(async (name) => {
+		const reported: unknown = Reflect.get(globalThis, name);
+		if (typeof reported === 'function') await Reflect.apply(reported, globalThis, []);
+	}, REPORTED_FUNCTION);
+}
+
 export { expect } from '@playwright/test';
-export { test };
+export { cspViolationsReported, test };
