@@ -24,6 +24,7 @@ import { useHydrated } from '@/components/use-hydrated';
 import type { TemplateArea } from '@/functions/templates';
 import { submitDuplicate } from '@/functions/templates';
 import { useT } from '@/i18n/use-t';
+import { placeholderLabel } from '@/server/templates/editor-placeholders';
 import { MAX_TEMPLATE_NAME_LENGTH } from '@/server/templates/save-checks';
 
 import { AreaSelect } from './area-select';
@@ -139,7 +140,9 @@ function Form({
 			</TextField>
 			{state?.failure === 'forbiddenPlaceholders' ? (
 				<p className="text-red-700" role="alert">
-					{t('templates.duplicateForbidden', { keys: state.keys.join(', ') })}
+					{t('templates.duplicateForbidden', {
+						keys: state.keys.map((key) => placeholderLabel(key, [], t)).join(', '),
+					})}
 				</p>
 			) : null}
 			{state?.failure === 'storageMissing' ? (

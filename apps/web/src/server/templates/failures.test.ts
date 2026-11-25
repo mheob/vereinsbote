@@ -10,7 +10,7 @@ import {
 	TemplateNameTakenError,
 	TemplateNotFoundError,
 } from './errors';
-import { createFailure, deleteFailure, duplicateFailure } from './failures';
+import { createFailure, deleteFailure, duplicateFailure, saveFailure } from './failures';
 
 describe(createFailure, () => {
 	it('turns the expected refusals into results', () => {
@@ -81,5 +81,37 @@ describe(deleteFailure, () => {
 
 	it('leaves anything else an error', () => {
 		expect(deleteFailure(new Error('boom'))).toBeNull();
+	});
+});
+
+describe(saveFailure, () => {
+	it('turns the expected refusals into results', () => {
+		expect(saveFailure(new TemplateChangedError())).toStrictEqual({
+			failure: 'changed',
+			ok: false,
+		});
+		expect(saveFailure(new TemplateNotFoundError())).toStrictEqual({ failure: 'gone', ok: false });
+		expect(saveFailure(new TemplateNameTakenError())).toStrictEqual({
+			failure: 'nameTaken',
+			ok: false,
+		});
+		expect(saveFailure(new LayoutNotFoundError())).toStrictEqual({
+			failure: 'layoutGone',
+			ok: false,
+		});
+	});
+
+	it('returns the problems of a template that does not pass the save checks', () => {
+		const problems = [{ kind: 'subjectEmpty' }, { blockId: 'image', kind: 'altMissing' }] as const;
+		expect(saveFailure(new TemplateInvalidError(problems))).toStrictEqual({
+			failure: 'invalid',
+			ok: false,
+			problems,
+		});
+	});
+
+	it('leaves anything else an error', () => {
+		expect(saveFailure(new UnknownAreaError())).toBeNull();
+		expect(saveFailure(new Error('boom'))).toBeNull();
 	});
 });

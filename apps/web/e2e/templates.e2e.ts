@@ -14,6 +14,8 @@ import { expect, test } from './helpers/test';
  */
 test.describe.configure({ mode: 'serial' });
 
+/** The title of the preview frame in the editor; the mail in it is the club's own design. */
+const PREVIEW_FRAME = 'iframe[title="Vorschau der Mail"]';
 /** The size of the test image, small enough to stay as it is. */
 const IMAGE_WIDTH = 64;
 const IMAGE_HEIGHT = 48;
@@ -140,8 +142,12 @@ test('an editor creates a template from the invitation starter', async ({ browse
 	await expect(
 		eva.getByRole('heading', { exact: true, level: 1, name: 'Sommerfest' }),
 	).toBeVisible();
-	await expect(eva.getByText('Einladung zu [Veranstaltung]')).toBeVisible();
-	await expectNoA11yViolations(eva);
+	// The editor opens with the starter's blocks.
+	await expect(eva.getByRole('grid', { name: 'Bausteine' }).getByRole('row')).toHaveCount(5);
+	await expect(
+		eva.getByRole('row', { name: 'Überschrift: Einladung zu [Veranstaltung]' }),
+	).toBeVisible();
+	await expectNoA11yViolations(eva, [PREVIEW_FRAME]);
 
 	// The same name again in the same area is refused at the field.
 	await eva.goto('/templates/new');
@@ -193,7 +199,15 @@ test('a reader sees templates but cannot change them', async ({ browser }) => {
 		rita.getByRole('heading', { exact: true, level: 1, name: 'Sommerfest' }),
 	).toBeVisible();
 	await expect(rita.getByRole('button', { name: 'Löschen' })).toHaveCount(0);
-	await expectNoA11yViolations(rita);
+	// The editor is read-only: no saving, no adding, the preview stays.
+	await expect(rita.getByText('Du kannst diese Vorlage nur ansehen.')).toBeVisible();
+	await expect(rita.getByRole('button', { name: 'Speichern' })).toHaveCount(0);
+	await expect(rita.getByRole('button', { name: 'Baustein hinzufügen' })).toHaveCount(0);
+	await expect(rita.getByRole('grid', { name: 'Bausteine' }).getByRole('row')).toHaveCount(5);
+	await expect(
+		rita.frameLocator('iframe[title="Vorschau der Mail"]').getByText('Liebe Anna'),
+	).toBeVisible();
+	await expectNoA11yViolations(rita, [PREVIEW_FRAME]);
 
 	// Creating needs `edit` somewhere: Rita only reads.
 	await rita.goto('/templates/new');
@@ -307,4 +321,228 @@ test('an editor uploads, renames and deletes an image', async () => {
 	await eva.getByRole('button', { name: 'Endgültig löschen' }).click();
 	await expect(eva.getByText('Das Bild „Vereinswappen“ wurde gelöscht.')).toBeVisible();
 	await expect(eva.getByText('In diesem Bereich gibt es noch keine Bilder.')).toBeVisible();
+});
+
+/**
+ * Waits until a live region says a text. The page has more than one (the preview says when it is
+ * ready), so the region is found by its text.
+ *
+ * @param page The page.
+ * @param text The announcement.
+ */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Playwright's page is a handle on the browser, mutable by design
+async function expectAnnounced(page: Page, text: string): Promise<void> {
+	await expect(page.getByRole('status').filter({ hasText: text })).toHaveText(text);
+}
+
+/**
+ * Opens a template of the list in the editor and waits until the editor is hydrated.
+ *
+ * @param page The page of the user.
+ * @param name The name of the template.
+ */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Playwright's page is a handle on the browser, mutable by design
+async function openEditor(page: Page, name: string): Promise<void> {
+	await page.goto('/templates');
+	await page
+		.getByRole('grid', { name: 'Vorlagen' })
+		.getByRole('link', { exact: true, name })
+		.click();
+	await expect(page.getByRole('heading', { exact: true, level: 1, name })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Speichern' })).toBeEnabled();
+}
+
+/**
+ * Adds a block through the menu „Baustein hinzufügen“, with the keyboard.
+ *
+ * @param page The page of the editor.
+ * @param type The name of the block type in the menu.
+ */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- see openEditor
+async function addBlock(page: Page, type: string): Promise<void> {
+	await page.getByRole('button', { name: 'Baustein hinzufügen' }).press('Enter');
+	await expect(page.getByRole('menu')).toBeVisible();
+	await page.getByRole('menuitem', { exact: true, name: type }).press('Enter');
+}
+
+/**
+ * Inserts a placeholder through its dialog, with the keyboard.
+ *
+ * @param page The page of the editor.
+ * @param name The name of the placeholder.
+ * @param missing What happens when the value is missing: „Pflicht“, „Leer lassen“ or „Text“.
+ */
+// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- see openEditor
+async function insertPlaceholder(page: Page, name: string, missing = 'Pflicht'): Promise<void> {
+	await page.getByRole('button', { name: 'Platzhalter einfügen' }).press('Enter');
+	const dialog = page.getByRole('dialog', { name: 'Platzhalter einfügen' });
+	await dialog.getByRole('option', { exact: true, name }).press('Enter');
+	await dialog.getByRole('radio', { exact: true, name: missing }).press('Space');
+	await dialog.getByRole('button', { name: 'Einfügen' }).press('Enter');
+	await expect(dialog).toHaveCount(0);
+}
+
+// oxlint-disable-next-line max-statements -- one flow, step by step, as the editor sees it
+test('an editor builds a template with the keyboard only', async () => {
+	test.slow();
+	await openEditor(eva, 'Sommerfest');
+	const blocks = eva.getByRole('grid', { name: 'Bausteine' });
+	await expect(blocks.getByRole('row')).toHaveCount(5);
+	await expect(eva.getByText('Ungespeicherte Änderungen')).toHaveCount(0);
+
+	// A text block at the end, with a placeholder.
+	await addBlock(eva, 'Text');
+	await expectAnnounced(eva, 'Text an Position 6 von 6 hinzugefügt');
+	await expect(eva.getByText('Ungespeicherte Änderungen')).toBeVisible();
+	const text = eva.getByRole('textbox', { exact: true, name: 'Text' });
+	await text.press('End');
+	await eva.keyboard.type('Hallo ');
+	// Alt+F10 moves to the toolbar, Escape back to the text.
+	await eva.keyboard.press('Alt+F10');
+	await expect(eva.getByRole('button', { name: 'Fett' })).toBeFocused();
+	await eva.keyboard.press('Escape');
+	await expect(text).toBeFocused();
+	// The birth date belongs to another area: the dialog does not offer it.
+	await eva.getByRole('button', { name: 'Platzhalter einfügen' }).press('Enter');
+	const placeholders = eva.getByRole('dialog', { name: 'Platzhalter einfügen' });
+	await expect(placeholders.getByRole('option', { name: 'Vorname' })).toBeVisible();
+	await expect(placeholders.getByRole('option', { name: 'Geburtsdatum' })).toHaveCount(0);
+	await expectNoA11yViolations(eva, [PREVIEW_FRAME]);
+	await eva.keyboard.press('Escape');
+	await insertPlaceholder(eva, 'Vorname');
+	await expect(text).toContainText('Hallo');
+	await expect(text.locator('[data-placeholder]')).toHaveText(/Vorname$/u);
+
+	// Keyboard drag and drop to the first position, announced in the live region.
+	const row = blocks.getByRole('row', { name: /^Text: Hallo/u });
+	await row.getByRole('button', { name: /ziehen$/u }).press('Enter');
+	// The drop targets are focusable once the drag has started; Home goes to the first one.
+	await expect(eva.locator(':focus')).toHaveAccessibleName(/einfügen$/u);
+	await eva.keyboard.press('Home');
+	await expect(eva.locator(':focus')).toHaveAccessibleName(/^Vor Überschrift/u);
+	await eva.keyboard.press('Enter');
+	await expectAnnounced(eva, 'Text an Position 1 von 6 verschoben');
+	await expect(blocks.getByRole('row').first()).toHaveAccessibleName(/^Text: Hallo/u);
+	// The focus comes back to the moved row before the next step.
+	await expect(eva.locator(':focus')).toHaveAccessibleName(/^Text: Hallo/u);
+
+	// An image without an alt text is refused, with the focus at the field.
+	await addBlock(eva, 'Bild');
+	await expectAnnounced(eva, 'Bild an Position 2 von 7 hinzugefügt');
+	await eva.getByRole('button', { name: 'Bild aus der Sammlung wählen' }).press('Enter');
+	const picker = eva.getByRole('dialog', { name: 'Bild auswählen' });
+	const chooser = eva.waitForEvent('filechooser');
+	await picker.getByRole('button', { name: 'Bild auswählen' }).press('Enter');
+	const fileChooser = await chooser;
+	await fileChooser.setFiles({
+		buffer: await solidPng(IMAGE_WIDTH, IMAGE_HEIGHT),
+		mimeType: 'image/png',
+		name: 'wappen.png',
+	});
+	await expect(picker.getByRole('row')).toHaveCount(1);
+	const use = picker.getByRole('button', { name: 'Dieses Bild verwenden' });
+	await expect(use).toBeEnabled();
+	await use.press('Enter');
+	await expect(picker).toHaveCount(0);
+	await eva.getByRole('button', { name: 'Speichern' }).press('Enter');
+	await expect(eva.getByRole('alert')).toHaveText(
+		'Die Vorlage wurde nicht gespeichert. Bitte prüfe die markierten Stellen.',
+	);
+	const alt = eva.getByRole('textbox', { name: 'Alternativtext' });
+	await expect(alt).toBeFocused();
+	await expect(alt).toHaveAttribute('aria-invalid', 'true');
+	await expectNoA11yViolations(eva, [PREVIEW_FRAME]);
+	await alt.fill('Vereinswappen');
+	await eva.getByRole('button', { name: 'Speichern' }).press('Enter');
+	await expectAnnounced(eva, 'Die Vorlage ist gespeichert.');
+	await expect(eva.getByText('Ungespeicherte Änderungen')).toHaveCount(0);
+
+	// The preview shows the sample contact; everything is still there after a reload.
+	await expect(eva.frameLocator(PREVIEW_FRAME).getByText('Liebe Anna')).toBeVisible();
+	await expect(eva.frameLocator(PREVIEW_FRAME).getByText('Hallo Anna')).toBeVisible();
+	await expectNoA11yViolations(eva, [PREVIEW_FRAME]);
+	await eva.reload();
+	await expect(blocks.getByRole('row')).toHaveCount(7);
+	await expect(blocks.getByRole('row').first()).toHaveAccessibleName(/^Text: Hallo/u);
+	await expect(blocks.getByRole('row').nth(1)).toHaveAccessibleName('Bild: Vereinswappen');
+});
+
+// oxlint-disable-next-line max-statements -- one flow, step by step, as the editor sees it
+test('an editor is warned before leaving with unsaved changes', async () => {
+	await openEditor(eva, 'Sommerfest');
+	await eva.getByRole('button', { name: 'Einstellungen' }).press('Enter');
+	await eva.getByRole('textbox', { name: 'Vorschautext' }).fill('Am Samstag im Vereinsheim');
+	await eva.getByRole('link', { name: 'Zurück zu den Vorlagen' }).press('Enter');
+	const leave = eva.getByRole('alertdialog', { name: 'Änderungen verwerfen?' });
+	await expect(leave).toBeVisible();
+	await expectNoA11yViolations(eva, [PREVIEW_FRAME]);
+	await leave.getByRole('button', { name: 'Weiter bearbeiten' }).press('Enter');
+	await expect(leave).toHaveCount(0);
+	await expect(eva).toHaveURL(/\/templates\/[\w-]{36}$/u);
+	await expect(eva.getByRole('textbox', { name: 'Vorschautext' })).toHaveText(
+		'Am Samstag im Vereinsheim',
+	);
+	await eva.getByRole('link', { name: 'Zurück zu den Vorlagen' }).press('Enter');
+	await eva.getByRole('button', { name: 'Verwerfen und verlassen' }).press('Enter');
+	await expect(eva).toHaveURL(/\/templates$/u);
+});
+
+// oxlint-disable-next-line max-statements -- one flow, step by step, as the editor sees it in two tabs
+test('two tabs: the second save is refused', async () => {
+	await openEditor(eva, 'Sommerfest');
+	const second = await eva.context().newPage();
+	await openEditor(second, 'Sommerfest');
+
+	await eva.getByRole('button', { name: 'Einstellungen' }).press('Enter');
+	await eva.getByRole('textbox', { name: 'Vorschautext' }).fill('Am Samstag im Vereinsheim');
+	await eva.getByRole('button', { name: 'Speichern' }).press('Enter');
+	await expectAnnounced(eva, 'Die Vorlage ist gespeichert.');
+
+	await second.getByRole('button', { name: 'Einstellungen' }).press('Enter');
+	await second.getByRole('textbox', { name: 'Vorschautext' }).fill('Am Sonntag');
+	await second.getByRole('button', { name: 'Speichern' }).press('Enter');
+	const changed = second.getByRole('alertdialog', { name: 'Vorlage inzwischen geändert' });
+	await expect(changed).toContainText(
+		'Die Vorlage wurde inzwischen geändert. Neu laden verwirft deine Änderungen.',
+	);
+	await expectNoA11yViolations(second, [PREVIEW_FRAME]);
+	await changed.getByRole('button', { name: 'Neu laden' }).press('Enter');
+	await expect(second.getByRole('button', { name: 'Speichern' })).toBeEnabled();
+	await second.getByRole('button', { name: 'Einstellungen' }).press('Enter');
+	await expect(second.getByRole('textbox', { name: 'Vorschautext' })).toHaveText(
+		'Am Samstag im Vereinsheim',
+	);
+	await second.close();
+});
+
+// oxlint-disable-next-line max-statements -- one flow, step by step, as the editor sees it
+test('duplicating a template that uses the birth date into an area that may not see it is refused with the placeholder named', async () => {
+	// „Finanzen“ sees the members' birth date (project `contacts`), „Veranstaltungen“ does not.
+	await eva.goto('/templates/new');
+	await expect(eva.getByRole('button', { name: 'Vorlage anlegen' })).toBeEnabled();
+	await choose(eva, { label: 'Bereich', option: 'Finanzen' });
+	await eva.getByLabel('Name', { exact: true }).fill('Geburtstagsgruß');
+	await eva.getByLabel('Betreff').fill('Alles Gute');
+	await eva.getByRole('button', { name: 'Vorlage anlegen' }).click();
+	await expect(
+		eva.getByRole('heading', { exact: true, level: 1, name: 'Geburtstagsgruß' }),
+	).toBeVisible();
+	await expect(eva.getByRole('button', { name: 'Speichern' })).toBeEnabled();
+	await addBlock(eva, 'Text');
+	await eva.getByRole('textbox', { exact: true, name: 'Text' }).press('End');
+	await eva.keyboard.type('Dein Geburtstag: ');
+	await insertPlaceholder(eva, 'Geburtsdatum', 'Leer lassen');
+	await eva.getByRole('button', { name: 'Speichern' }).press('Enter');
+	await expectAnnounced(eva, 'Die Vorlage ist gespeichert.');
+
+	await eva.goto('/templates');
+	await eva.getByRole('button', { name: 'Geburtstagsgruß duplizieren' }).click();
+	const dialog = eva.getByRole('dialog', { name: 'Geburtstagsgruß duplizieren' });
+	await choose(eva, { label: 'Zielbereich', option: 'Veranstaltungen', within: dialog });
+	await dialog.getByRole('button', { name: 'Duplizieren' }).click();
+	await expect(dialog.getByRole('alert')).toHaveText(
+		'Diese Platzhalter sind im Zielbereich nicht erlaubt: Geburtsdatum',
+	);
+	await expect(eva).toHaveURL(/\/templates$/u);
+	await dialog.getByRole('button', { name: 'Abbrechen' }).click();
 });

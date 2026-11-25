@@ -3,7 +3,7 @@
  * every read failure, problem, blocking issue, field issue and skipped row has its message, and
  * none of them carries a value of the file (design 13).
  */
-import type { MessageKey, MessageParams } from '@/i18n/translate';
+import type { MessageKey, MessageParams, Translate } from '@/i18n/translate';
 import type { ContactKind } from '@/server/contacts/fields';
 import { MAX_COLUMNS, MAX_HEADER_LENGTH } from '@/server/contacts/import/mapping';
 import type { MemberImportPreview } from '@/server/contacts/import/members';
@@ -14,9 +14,6 @@ import type { CustomFieldRecord } from '@/server/contacts/settings';
 
 import type { BuildPayloadProblem } from './build-payload';
 import type { ReadSheetFailure } from './read-sheet';
-
-/** `translate` or `useT()`, bound to a language. */
-type Translate = (key: MessageKey, params?: MessageParams) => string;
 
 /** A text with its parameters. */
 type Message = Readonly<{ key: MessageKey; params: MessageParams }>;
@@ -261,4 +258,4 @@ export {
 	rowIssueMessage,
 	withKeys,
 };
-export type { CountRow, ImportProblem, KindPreview, Message, Translate };
+export type { CountRow, ImportProblem, KindPreview, Message };

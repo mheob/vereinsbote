@@ -13,6 +13,7 @@ import {
 	TemplateNotFoundError,
 } from './errors';
 import { refusedPlaceholderKeys } from './refused-keys';
+import type { SaveProblem } from './save-checks';
 
 type CreateFailure = Readonly<{ ok: false; failure: 'nameTaken' | 'invalid' | 'gone' }>;
 
@@ -22,6 +23,11 @@ type DuplicateFailure = Readonly<
 >;
 
 type DeleteFailure = Readonly<{ ok: false; failure: 'changed' | 'gone' }>;
+
+type SaveFailure = Readonly<
+	| { ok: false; failure: 'changed' | 'gone' | 'nameTaken' | 'layoutGone' }
+	| { ok: false; failure: 'invalid'; problems: readonly SaveProblem[] }
+>;
 
 /**
  * The result for an error of creating a template.
@@ -70,5 +76,24 @@ function deleteFailure(error: unknown): DeleteFailure | null {
 	return null;
 }
 
-export { createFailure, deleteFailure, duplicateFailure };
-export type { CreateFailure, DeleteFailure, DuplicateFailure };
+/**
+ * The result for an error of saving a template: somebody saved or deleted it meanwhile, another
+ * template of the area has the name, the chosen global layout is gone, or the save checks found
+ * problems (they come along, so the editor shows them at the field).
+ *
+ * @param error What was thrown.
+ * @returns The failure, or null when the error is not an expected refusal.
+ */
+function saveFailure(error: unknown): SaveFailure | null {
+	if (error instanceof TemplateChangedError) return { failure: 'changed', ok: false };
+	if (error instanceof TemplateNotFoundError) return { failure: 'gone', ok: false };
+	if (error instanceof TemplateNameTakenError) return { failure: 'nameTaken', ok: false };
+	if (error instanceof LayoutNotFoundError) return { failure: 'layoutGone', ok: false };
+	if (error instanceof TemplateInvalidError) {
+		return { failure: 'invalid', ok: false, problems: error.problems };
+	}
+	return null;
+}
+
+export { createFailure, deleteFailure, duplicateFailure, saveFailure };
+export type { CreateFailure, DeleteFailure, DuplicateFailure, SaveFailure };

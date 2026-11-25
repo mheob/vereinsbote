@@ -3,6 +3,9 @@ import { createServerFn } from '@tanstack/react-start';
 import { z } from 'zod';
 
 import { STARTER_IDS } from '@/mail/starters/starters';
+import { templateInputSchema } from '@/mail/templates/template-schema';
+import type { TemplateEditorData } from '@/server/templates/editor-data';
+import type { SaveFailure } from '@/server/templates/failures';
 import type { TemplateSummary } from '@/server/templates/templates';
 
 /*
@@ -24,19 +27,10 @@ interface TemplateListPage {
 	readonly areas: readonly Readonly<TemplateArea>[];
 }
 
-/** One template as its page shows it. */
-interface TemplatePage {
-	readonly id: string;
-	readonly name: string;
-	readonly subject: string;
-	readonly bodyKind: 'blocks' | 'html';
-	readonly areaId: string;
-	readonly areaName: string;
-	readonly version: number;
-	readonly canEdit: boolean;
-	readonly updatedAt: Date;
-	/** Null when that user no longer exists. */
-	readonly updatedByName: string | null;
+/** A template in its editor, with what the editor needs. */
+interface TemplateEditorPage extends TemplateEditorData {
+	/** The origin of the app, for the preview's image addresses. */
+	readonly appOrigin: string;
 }
 
 type CreateTemplateResult = Readonly<
@@ -50,6 +44,8 @@ type DuplicateResult = Readonly<
 >;
 
 type DeleteTemplateResult = Readonly<{ ok: true } | { ok: false; failure: 'changed' | 'gone' }>;
+
+type SaveTemplateResult = Readonly<{ ok: true; version: number }> | SaveFailure;
 
 /** The longest id the server looks at; ids are 36 characters. */
 const MAX_ID_LENGTH = 100;
@@ -69,6 +65,11 @@ const duplicateRequest = z.object({
 });
 const deleteRequest = z.object({ id: z.uuid(), version: z.int().min(1) });
 const pageRequest = z.object({ id: z.string().max(MAX_ID_LENGTH) });
+const saveRequest = z.object({
+	id: z.uuid(),
+	input: templateInputSchema,
+	version: z.int().min(1),
+});
 
 /**
  * The templates of the areas the user may read, and those areas with the right to change.
@@ -93,22 +94,20 @@ const loadTemplateList = createServerFn({ method: 'GET' }).handler(
 );
 
 /**
- * One template for its page. A template that does not exist, or one in an area the user may not
+ * One template for its editor. A template that does not exist, or one in an area the user may not
  * read, is "not found": the page does not tell the two apart.
  */
-const loadTemplatePage = createServerFn({ method: 'GET' })
+const loadTemplateEditor = createServerFn({ method: 'GET' })
 	.validator(pageRequest)
-	.handler(async ({ data }): Promise<TemplatePage> => {
+	.handler(async ({ data }): Promise<TemplateEditorPage> => {
 		const [
 			{ requireRequestPrincipal },
-			{ listAreas },
-			templates,
-			{ ForbiddenError, canAccessArea },
+			{ loadTemplateEditorData },
+			{ ForbiddenError },
 			{ TemplateNotFoundError },
 		] = await Promise.all([
 			import('@/platform/request-principal'),
-			import('@/server/areas/areas'),
-			import('@/server/templates/templates'),
+			import('@/server/templates/editor-data'),
 			import('@/server/permissions/principal'),
 			import('@/server/templates/errors'),
 		]);
@@ -116,26 +115,44 @@ const loadTemplatePage = createServerFn({ method: 'GET' })
 		// oxlint-disable-next-line typescript/only-throw-error -- the router shows its not-found page
 		if (!z.uuid().safeParse(data.id).success) throw notFound();
 		try {
-			const record = await templates.getTemplate(context.db, principal, data.id);
-			const listed = await listAreas(context.db, principal);
-			return {
-				areaId: record.areaId,
-				areaName: listed.find(({ id }) => id === record.areaId)?.name ?? '',
-				bodyKind: record.body.kind,
-				canEdit: canAccessArea(principal, record.areaId, 'edit'),
-				id: record.id,
-				name: record.name,
-				subject: record.subject,
-				updatedAt: record.updatedAt,
-				updatedByName: record.updatedByName,
-				version: record.version,
-			};
+			const editor = await loadTemplateEditorData(context.db, principal, data.id);
+			return { ...editor, appOrigin: context.env.appUrl.origin };
 		} catch (error) {
 			if (error instanceof TemplateNotFoundError || error instanceof ForbiddenError) {
 				// oxlint-disable-next-line typescript/only-throw-error -- see above
 				throw notFound();
 			}
 			throw error;
+		}
+	});
+
+/**
+ * Saves a template from its editor with the version it was loaded or last saved with. A newer
+ * version, a template deleted meanwhile, a taken name, a vanished layout and the save checks'
+ * problems come back as results.
+ */
+const submitTemplate = createServerFn({ method: 'POST' })
+	.validator(saveRequest)
+	.handler(async ({ data }): Promise<SaveTemplateResult> => {
+		const [{ requireRequestPrincipal }, templates, { saveFailure }] = await Promise.all([
+			import('@/platform/request-principal'),
+			import('@/server/templates/templates'),
+			import('@/server/templates/failures'),
+		]);
+		const { context, principal } = await requireRequestPrincipal();
+		try {
+			const saved = await templates.saveTemplate(
+				context.db,
+				principal,
+				data.id,
+				data.input,
+				data.version,
+			);
+			return { ok: true, version: saved.version };
+		} catch (error) {
+			const failure = saveFailure(error);
+			if (failure === null) throw error;
+			return failure;
 		}
 	});
 
@@ -215,17 +232,19 @@ const submitDeleteTemplate = createServerFn({ method: 'POST' })
 	});
 
 export {
+	loadTemplateEditor,
 	loadTemplateList,
-	loadTemplatePage,
 	submitCreateTemplate,
 	submitDeleteTemplate,
 	submitDuplicate,
+	submitTemplate,
 };
 export type {
 	CreateTemplateResult,
 	DeleteTemplateResult,
 	DuplicateResult,
+	SaveTemplateResult,
 	TemplateArea,
+	TemplateEditorPage,
 	TemplateListPage,
-	TemplatePage,
 };

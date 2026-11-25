@@ -765,14 +765,14 @@ async function deleteTemplate(
 }
 
 /**
- * The global layouts a template can choose, by name.
+ * The global layouts a template can choose, by name, with their HTML for the editor's preview.
  *
  * @param db The database.
- * @returns Id and name of each layout.
+ * @returns Id, name and HTML of each layout.
  */
-async function listLayoutChoices(db: Db): Promise<{ id: string; name: string }[]> {
+async function listLayoutChoices(db: Db): Promise<{ id: string; name: string; html: string }[]> {
 	return db
-		.select({ id: layouts.id, name: layouts.name })
+		.select({ html: layouts.html, id: layouts.id, name: layouts.name })
 		.from(layouts)
 		.orderBy(sql`lower(${layouts.name})`, layouts.name, layouts.id);
 }

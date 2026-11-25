@@ -453,11 +453,15 @@ describe(saveTemplate, () => {
 });
 
 describe('layouts of templates', () => {
-	it('lists the global layouts by name', async () => {
+	it('lists the global layouts by name, with their HTML for the preview', async () => {
 		const c = await club();
 		const festive = await insertLayout(c.db, 'Festlich');
 		const formal = await insertLayout(c.db, 'amtlich');
-		await expect(listLayoutChoices(c.db)).resolves.toStrictEqual([formal, festive]);
+		const html = '<div>{{content}}</div>';
+		await expect(listLayoutChoices(c.db)).resolves.toStrictEqual([
+			{ ...formal, html },
+			{ ...festive, html },
+		]);
 	});
 
 	it('keeps a shared layout while a template uses it', async () => {
