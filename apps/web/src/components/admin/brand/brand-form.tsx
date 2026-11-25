@@ -2,7 +2,7 @@ import { useRouter } from '@tanstack/react-router';
 import { useServerFn } from '@tanstack/react-start';
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import type { ReactNode } from 'react';
-import { Button } from 'react-aria-components';
+import { Button, Tab, TabList, TabPanel, Tabs } from 'react-aria-components';
 import type { FormProps } from 'react-aria-components';
 
 import { Announcements, useAnnouncer } from '@/components/announcements';
@@ -10,6 +10,7 @@ import { PostForm } from '@/components/post-form';
 import { FAILED, settle } from '@/components/settle';
 import { secondaryButtonClass } from '@/components/styles';
 import { SubmitButton } from '@/components/submit-button';
+import { useMediaQuery } from '@/components/use-media-query';
 import { submitBrand } from '@/functions/brand';
 import type { BrandPage } from '@/functions/brand';
 import { useT } from '@/i18n/use-t';
@@ -24,6 +25,12 @@ import { FooterSection } from './footer-section';
 import { LogosSection } from './logos-section';
 
 const MAX_NAME_LENGTH = 100;
+
+/** From this width the form and the preview sit side by side (Design decision 10). */
+const WIDE_QUERY = '(min-width: 1024px)';
+
+const tabClass =
+	'cursor-default border-b-2 border-transparent px-4 py-2 font-semibold data-focus-visible:outline-2 data-focus-visible:outline-offset-2 data-focus-visible:outline-blue-700 data-selected:border-blue-700';
 
 /**
  * The message under each refused field, ready for the form's `validationErrors`.
@@ -114,44 +121,67 @@ export function BrandForm({ page }: Readonly<{ page: Readonly<BrandPage> }>): Re
 		}
 	}, [errors]);
 	const validationErrors = useMemo(() => messagesOf(errors, t), [errors, t]);
+	const wide = useMediaQuery(WIDE_QUERY);
+	const form = (
+		<PostForm
+			className="flex flex-col gap-8"
+			onSubmit={submit}
+			ref={formRef}
+			validationErrors={validationErrors}
+		>
+			<BrandTextField
+				label={t('brand.name')}
+				maxLength={MAX_NAME_LENGTH}
+				name="name"
+				onChange={changeName}
+				value={draft.name}
+			/>
+			<LogosSection
+				announce={announceStatus}
+				draft={draft}
+				onChange={setDraft}
+				storageReady={page.storageReady}
+			/>
+			<ColorsSection colors={draft.colors} onChange={setDraft} />
+			<FontsSection fonts={draft.fonts} onChange={setDraft} />
+			<FooterSection announce={announceStatus} draft={draft} onChange={setDraft} />
+			<div className="flex flex-col gap-3">
+				<SubmitButton isPending={isPending}>{t('brand.save')}</SubmitButton>
+				<Announcements announcement={announcement} />
+				{changed ? (
+					<div className="flex flex-wrap items-center gap-3" role="alert">
+						<p className="text-red-700">{t('brand.changed')}</p>
+						<Button className={secondaryButtonClass} onPress={reload}>
+							{t('brand.reload')}
+						</Button>
+					</div>
+				) : null}
+			</div>
+		</PostForm>
+	);
+	const preview = <BrandPreview appOrigin={page.appOrigin} draft={draft} initial={page.brand} />;
+	if (wide) {
+		return (
+			<div className="grid grid-cols-[minmax(0,1fr)_41rem] gap-8">
+				{form}
+				{preview}
+			</div>
+		);
+	}
+	// Below 1024 px a tab holds the preview, so it is not a long scroll away from the fields. One
+	// panel is mounted at a time: the draft lives in this component, and the preview frame exists once.
 	return (
-		<div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_41rem]">
-			<PostForm
-				className="flex flex-col gap-8"
-				onSubmit={submit}
-				ref={formRef}
-				validationErrors={validationErrors}
-			>
-				<BrandTextField
-					label={t('brand.name')}
-					maxLength={MAX_NAME_LENGTH}
-					name="name"
-					onChange={changeName}
-					value={draft.name}
-				/>
-				<LogosSection
-					announce={announceStatus}
-					draft={draft}
-					onChange={setDraft}
-					storageReady={page.storageReady}
-				/>
-				<ColorsSection colors={draft.colors} onChange={setDraft} />
-				<FontsSection fonts={draft.fonts} onChange={setDraft} />
-				<FooterSection announce={announceStatus} draft={draft} onChange={setDraft} />
-				<div className="flex flex-col gap-3">
-					<SubmitButton isPending={isPending}>{t('brand.save')}</SubmitButton>
-					<Announcements announcement={announcement} />
-					{changed ? (
-						<div className="flex flex-wrap items-center gap-3" role="alert">
-							<p className="text-red-700">{t('brand.changed')}</p>
-							<Button className={secondaryButtonClass} onPress={reload}>
-								{t('brand.reload')}
-							</Button>
-						</div>
-					) : null}
-				</div>
-			</PostForm>
-			<BrandPreview appOrigin={page.appOrigin} draft={draft} initial={page.brand} />
-		</div>
+		<Tabs>
+			<TabList aria-label={t('brand.tabsLabel')} className="mb-6 flex border-b border-gray-600">
+				<Tab className={tabClass} id="settings">
+					{t('brand.tabSettings')}
+				</Tab>
+				<Tab className={tabClass} id="preview">
+					{t('brand.tabPreview')}
+				</Tab>
+			</TabList>
+			<TabPanel id="settings">{form}</TabPanel>
+			<TabPanel id="preview">{preview}</TabPanel>
+		</Tabs>
 	);
 }

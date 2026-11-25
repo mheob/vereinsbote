@@ -193,3 +193,28 @@ test('the admin navigation marks only the current page', async () => {
 		'aria-current',
 	);
 });
+
+// oxlint-disable-next-line max-statements -- one flow on a phone, step by step
+test('on a phone the preview is on a tab of its own', async () => {
+	await admin.setViewportSize({ height: 800, width: 390 });
+	try {
+		await admin.goto('/admin/brand');
+		const settings = admin.getByRole('tab', { name: 'Einstellungen' });
+		const preview = admin.getByRole('tab', { name: 'Vorschau' });
+		await expect(admin.getByRole('tablist', { name: 'Einstellungen und Vorschau' })).toBeVisible();
+		await expect(settings).toHaveAttribute('aria-selected', 'true');
+		await expect(admin.getByLabel('Vereinsname')).toBeVisible();
+		await expectNoA11yViolations(admin);
+		// Keyboard: arrow keys switch the tab.
+		await settings.focus();
+		await admin.keyboard.press('ArrowRight');
+		await expect(preview).toHaveAttribute('aria-selected', 'true');
+		await expect(admin.locator('iframe')).toHaveCount(1);
+		const frame = admin.frameLocator('iframe[title="Vorschau einer Mail mit dem CD"]');
+		await expect(frame.locator('body')).toContainText('Einladung zum Sommerfest');
+		await expect(admin.getByLabel('Vereinsname')).toBeHidden();
+		await expectNoA11yViolations(admin, ['iframe']);
+	} finally {
+		await admin.setViewportSize({ height: 720, width: 1280 });
+	}
+});
