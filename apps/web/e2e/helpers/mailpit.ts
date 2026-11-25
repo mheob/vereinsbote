@@ -12,6 +12,10 @@ const POLL_INTERVAL_MS = 250;
 const messageSummary = z.object({ ID: z.string() });
 const searchResult = z.object({ messages: z.array(messageSummary) });
 const message = z.object({ Text: z.string() });
+const listedMessage = z.object({ ID: z.string(), Subject: z.string() });
+const listing = z.object({ messages: z.array(listedMessage) });
+const htmlMessage = z.object({ HTML: z.string() });
+const htmlCheck = z.object({ Total: z.object({ Supported: z.number() }) });
 
 /**
  * Calls the Mailpit API.
@@ -90,4 +94,34 @@ async function latestLink(to: string, pattern: Readonly<RegExp>): Promise<string
 	}
 }
 
-export { deleteAllMessages, latestLink };
+/**
+ * Every message in the inbox, oldest first.
+ *
+ * @returns The ID and the subject of each.
+ */
+async function listMessages(): Promise<{ id: string; subject: string }[]> {
+	const { messages } = listing.parse(await mailpitJson('/messages?limit=500'));
+	return messages.toReversed().map(({ ID, Subject }) => ({ id: ID, subject: Subject }));
+}
+
+/**
+ * The HTML of a message.
+ *
+ * @param id The message's ID.
+ * @returns The HTML.
+ */
+async function messageHtml(id: string): Promise<string> {
+	return htmlMessage.parse(await mailpitJson(`/message/${id}`)).HTML;
+}
+
+/**
+ * Mailpit's check of the HTML against the CSS and HTML support of mail clients (caniemail).
+ *
+ * @param id The message's ID.
+ * @returns The share of supported features, in percent.
+ */
+async function supportedShare(id: string): Promise<number> {
+	return htmlCheck.parse(await mailpitJson(`/message/${id}/html-check`)).Total.Supported;
+}
+
+export { deleteAllMessages, latestLink, listMessages, messageHtml, supportedShare };

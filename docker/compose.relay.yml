@@ -1,0 +1,13 @@
+# Lets Mailpit release (relay) a caught mail to a real mailbox, to look at the sample mails
+# (`vp run --filter web mail:sample`) in Outlook, Gmail or Apple Mail. Use it on top of the dev file:
+#   cp docker/mailpit-relay.example.yaml docker/mailpit-relay.yaml   # then fill in the SMTP account
+#   docker compose -f docker/compose.dev.yml -f docker/compose.relay.yml up -d mailpit
+# Mailpit relays nothing by itself: in its web UI (http://localhost:8025) open a mail and press
+# "Release", then enter the address of your own mailbox. `docker/mailpit-relay.yaml` holds the
+# credentials of your SMTP account; it is ignored by Git and must never be committed.
+services:
+  mailpit:
+    environment:
+      MP_SMTP_RELAY_CONFIG: /etc/mailpit/relay.yaml
+    volumes:
+      - ./mailpit-relay.yaml:/etc/mailpit/relay.yaml:ro

@@ -13,7 +13,8 @@
 		"deploy:cloudflare": "vp run build:cloudflare && vp run db:migrate && wrangler deploy",
 		"dev": "vp dev",
 		"e2e": "playwright test",
-		"icons:social": "tsx scripts/build-social-icons.ts"
+		"icons:social": "tsx scripts/build-social-icons.ts",
+		"mail:sample": "tsx src/server/mail/sample-cli.ts"
 	},
 	"dependencies": {
 		"@internationalized/date": "catalog:",

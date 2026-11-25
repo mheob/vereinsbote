@@ -1,7 +1,11 @@
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
+
 import type { Locator, Page } from '@playwright/test';
 
+import { E2E_SERVER_ENV } from './env';
 import { expectNoA11yViolations } from './helpers/a11y';
-import { deleteAllMessages } from './helpers/mailpit';
+import { deleteAllMessages, listMessages, messageHtml, supportedShare } from './helpers/mailpit';
 import { signIn } from './helpers/sign-in';
 import { expect, test } from './helpers/test';
 
@@ -216,5 +220,47 @@ test('on a phone the preview is on a tab of its own', async () => {
 		await expectNoA11yViolations(admin, ['iframe']);
 	} finally {
 		await admin.setViewportSize({ height: 720, width: 1280 });
+	}
+});
+
+const SAMPLE_MAIL_COUNT = 4;
+/** What Mailpit's HTML check must find supported in the mail clients' CSS and HTML (Plan 3, decision 11). */
+const MIN_SUPPORTED_PERCENT = 80;
+const SAMPLE_TIMEOUT_MS = 120_000;
+
+/**
+ * Runs `mail:sample` as a developer does, with the settings of this run: it sends to Mailpit
+ * through DEV_SMTP_URL and points the images at APP_URL.
+ */
+async function runSampleScript(): Promise<void> {
+	const child = spawn('pnpm', ['exec', 'tsx', 'src/server/mail/sample-cli.ts'], {
+		cwd: process.cwd(),
+		// oxlint-disable-next-line node/no-process-env -- the script needs the shell's PATH next to the settings
+		env: { ...process.env, ...E2E_SERVER_ENV },
+		stdio: ['ignore', 'ignore', 'inherit'],
+	});
+	const closed: unknown[] = await once(child, 'close');
+	expect(closed[0], 'exit code of mail:sample').toBe(0);
+}
+
+// oxlint-disable-next-line max-statements -- sends, then checks each mail the same way
+test('the sample mails are supported by mail clients and accessible', async ({ page }) => {
+	test.setTimeout(SAMPLE_TIMEOUT_MS);
+	await deleteAllMessages();
+	await runSampleScript();
+	const messages = await listMessages();
+	expect(messages).toHaveLength(SAMPLE_MAIL_COUNT);
+	for (const { id, subject } of messages) {
+		// oxlint-disable-next-line no-await-in-loop -- one mail after the other keeps failures readable
+		const supported = await supportedShare(id);
+		expect(supported, `Mailpit's HTML check of "${subject}"`).toBeGreaterThanOrEqual(
+			MIN_SUPPORTED_PERCENT,
+		);
+		// The mail as a mailbox shows it, in a page of its own: axe checks the rendered mail (Design 22).
+		// The `cid:` images stay empty here, which does not matter for the rules.
+		// oxlint-disable-next-line no-await-in-loop -- see above
+		await page.setContent(await messageHtml(id));
+		// oxlint-disable-next-line no-await-in-loop -- see above
+		await expectNoA11yViolations(page);
 	}
 });
