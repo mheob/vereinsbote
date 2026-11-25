@@ -149,7 +149,7 @@ jobs:
             echo "::error::The Cloudflare bundle contains nodemailer, pg, s3mini or @vercel/blob (grep exit code $status)."
             exit 1
           fi
-      # Tiptap, read-excel-file and papaparse are heavy browser libraries: they load by dynamic
+      # Tiptap, read-excel-file, papaparse and fflate are heavy browser libraries: they load by dynamic
       # import() in client code only (the editor fields, the import reader) and must be in no server
       # bundle. A bundled library is a file or chunk named after it (`_libs/papaparse.mjs`) or, in the
       # Worker bundle and the source maps, code under `node_modules/<package>/`; a bare mention of the
@@ -162,16 +162,16 @@ jobs:
             vercel) dir=apps/web/.vercel/output/functions ;;
             *) dir=apps/web/dist/${{ matrix.target }}/server ;;
           esac
-          named=$(find "$dir" -type f \( -iname '*tiptap*' -o -iname 'papaparse*' -o -iname 'read-excel-file*' \))
+          named=$(find "$dir" -type f \( -iname '*tiptap*' -o -iname 'papaparse*' -o -iname 'read-excel-file*' -o -iname 'fflate*' \))
           if [ -n "$named" ]; then
             echo "$named"
-            echo "::error::The ${{ matrix.target }} server bundle has a chunk of @tiptap, read-excel-file or papaparse."
+            echo "::error::The ${{ matrix.target }} server bundle has a chunk of @tiptap, read-excel-file, papaparse or fflate."
             exit 1
           fi
           status=0
-          grep -rlE 'node_modules/(@tiptap|read-excel-file|papaparse)|(from |import\()"(@tiptap/|read-excel-file|papaparse)' "$dir" || status=$?
+          grep -rlE 'node_modules/(@tiptap|read-excel-file|papaparse|fflate)|(from |import\()"(@tiptap/|read-excel-file|papaparse|fflate)' "$dir" || status=$?
           if [ "$status" -ne 1 ]; then
-            echo "::error::The ${{ matrix.target }} server bundle contains @tiptap, read-excel-file or papaparse (grep exit code $status)."
+            echo "::error::The ${{ matrix.target }} server bundle contains @tiptap, read-excel-file, papaparse or fflate (grep exit code $status)."
             exit 1
           fi
 
