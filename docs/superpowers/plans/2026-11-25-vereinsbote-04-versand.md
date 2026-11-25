@@ -470,7 +470,8 @@ export const MAX_ATTEMPTS = 5
 export const RETRY_DELAYS_MS = [300_000, 1_800_000, 7_200_000, 28_800_000] as const
 export const UNCERTAIN_AFTER_MS = 600_000
 export function nextAttemptDelay(attempts: number, retryAfterMs: number | null): number | null     // null = keine Versuche mehr
-export interface ClaimedEntry { id: string; source: 'wave'; sourceId: string; senderId: string; priority: EntryPriority; attempts: number }
+export interface ClaimedEntry { id: string; source: 'wave'; sourceId: string; senderId: string; priority: EntryPriority; attempts: number;
+  messageId: string }   // beim ersten Übernehmen erzeugt und gespeichert, bei jedem weiteren Versuch dieselbe (Ruling R4)
 export type PreparedMail =
   | { kind: 'send'; mail: OutgoingMail; recipient: string }
   | { kind: 'skip'; reason: string }          // z. B. 'suppressed', 'exited', 'optedOut', 'invalidEmail', 'gone', 'addressChanged'
@@ -968,7 +969,7 @@ export function resendUncertain(db: Db, actor: Principal, entryId: string): Prom
 - **Geänderte Adresse:** persönlich → aktuelle Adresse; Rundschreiben → Kontakt fällt aus dem Eintrag (der nächste rückt nach), sonst `skip('addressChanged')`.
 - Erster verbleibender Kontakt füllt die Mail mit `sendingValues` und `fillMail`; fehlender Pflichtwert → `fail('missing:<key>')`.
 - `unsubscribe.url` = `unsubscribeUrl` mit allen verbleibenden Kontakten des Eintrags (Design 12); `listUnsubscribe` gleich.
-- Absender, Antwortadresse, Archiv-Kopie aus dem Absender; Anhänge der Welle; `messageId` neu; `idempotencyKey` = Eintrags-ID.
+- Absender, Antwortadresse, Archiv-Kopie aus dem Absender; Anhänge der Welle; `messageId` aus dem Eintrag (`ClaimedEntry.messageId`, Ruling R4); `idempotencyKey` = Eintrags-ID.
 - `stopWave` (`send`): alle `planned` → `cancelled`, `stopped_at`; Protokoll `wave.stopped`.
 
 - [ ] **Step 1: Failing Tests schreiben**
