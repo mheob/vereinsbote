@@ -339,6 +339,9 @@ export const en: Record<keyof typeof de, string> = {
 	'mail.invite.subject': 'Invitation to Vereinsbote',
 	'mail.invite.text':
 		'Hello {name},\n\nyou have been invited to Vereinsbote. Sign in here:\n{link}',
+	'mail.layout.imprint': 'Legal notice',
+	'mail.layout.privacy': 'Privacy policy',
+	'mail.layout.website': 'Website',
 	'mail.login.subject': 'Your sign-in link for Vereinsbote',
 	'mail.login.text':
 		'Hello,\n\nhere is your sign-in link:\n{link}\n\nThe link is valid for 15 minutes and works once.',
@@ -374,6 +377,15 @@ export const en: Record<keyof typeof de, string> = {
 	'mail.placeholder.contact.tags': 'Tags',
 	'mail.placeholder.content': 'Template content',
 	'mail.placeholder.salutation': 'Salutation',
+	'mail.social.bluesky': 'Bluesky',
+	'mail.social.facebook': 'Facebook',
+	'mail.social.instagram': 'Instagram',
+	'mail.social.mastodon': 'Mastodon',
+	'mail.social.threads': 'Threads',
+	'mail.social.tiktok': 'TikTok',
+	'mail.social.whatsapp': 'WhatsApp',
+	'mail.social.x': 'X',
+	'mail.social.youtube': 'YouTube',
 	'mail.staleImport.subject': 'The member data in Vereinsbote is out of date',
 	'mail.staleImport.text':
 		'Hello {name},\n\nthe last member import was on {date}. Please upload a current export:\n{link}',

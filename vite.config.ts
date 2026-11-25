@@ -42,6 +42,18 @@ export default defineConfig({
 				},
 			},
 			{
+				// Mail components render once to an HTML string for mail clients: inline styles are the
+				// only styling every client reads, nothing re-renders, and their classes belong to the
+				// mail's own `<style>`, not to Tailwind.
+				files: ['apps/web/src/mail/**/*.tsx'],
+				plugins: ['react', 'react-perf'],
+				rules: {
+					'better-tailwindcss/no-unknown-classes': 'off',
+					'react/no-array-index-key': 'off',
+					'react-perf/jsx-no-new-object-as-prop': 'off',
+				},
+			},
+			{
 				// TanStack Router names a path parameter after its file, e.g. `$contactId.tsx`.
 				files: ['apps/web/src/routes/**/$*.tsx'],
 				rules: { 'unicorn/filename-case': 'off' },

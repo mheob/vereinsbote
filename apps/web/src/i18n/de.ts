@@ -346,6 +346,9 @@ export const de = {
 	'mail.invite.subject': 'Einladung zum Vereinsbote',
 	'mail.invite.text':
 		'Hallo {name},\n\ndu wurdest zum Vereinsbote eingeladen. Melde dich hier an:\n{link}',
+	'mail.layout.imprint': 'Impressum',
+	'mail.layout.privacy': 'Datenschutz',
+	'mail.layout.website': 'Website',
 	'mail.login.subject': 'Dein Anmeldelink für den Vereinsbote',
 	'mail.login.text':
 		'Hallo,\n\nhier ist dein Anmeldelink:\n{link}\n\nDer Link ist 15 Minuten gültig und funktioniert einmal.',
@@ -381,6 +384,15 @@ export const de = {
 	'mail.placeholder.contact.tags': 'Schlagworte',
 	'mail.placeholder.content': 'Inhalt der Vorlage',
 	'mail.placeholder.salutation': 'Briefanrede',
+	'mail.social.bluesky': 'Bluesky',
+	'mail.social.facebook': 'Facebook',
+	'mail.social.instagram': 'Instagram',
+	'mail.social.mastodon': 'Mastodon',
+	'mail.social.threads': 'Threads',
+	'mail.social.tiktok': 'TikTok',
+	'mail.social.whatsapp': 'WhatsApp',
+	'mail.social.x': 'X',
+	'mail.social.youtube': 'YouTube',
 	'mail.staleImport.subject': 'Die Mitgliederdaten im Vereinsbote sind veraltet',
 	'mail.staleImport.text':
 		'Hallo {name},\n\nder letzte Mitglieder-Import war am {date}. Bitte lade einen aktuellen Export hoch:\n{link}',
