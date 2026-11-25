@@ -653,6 +653,7 @@ describe('the member import', () => {
 		expect(field).toMatchObject({
 			kind: 'member',
 			name: 'Spind',
+			placeholderKey: 'spind',
 			protection: 'protected',
 			type: 'text',
 		});

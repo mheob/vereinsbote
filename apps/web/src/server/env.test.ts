@@ -12,6 +12,14 @@ const valid = {
 	DATABASE_URL: 'postgres://u:p@localhost:5432/vb',
 };
 
+const s3 = {
+	S3_ACCESS_KEY_ID: 'key',
+	S3_BUCKET: 'vereinsbote',
+	S3_ENDPOINT: 'https://s3.example.org',
+	S3_REGION: 'eu-central-1',
+	S3_SECRET_ACCESS_KEY: 'secret',
+};
+
 // Returns the EnvError thrown by parseEnv; fails the test if nothing or something else is thrown.
 const envErrorFor = (source: Readonly<Record<string, string | undefined>>): EnvError => {
 	try {
@@ -65,6 +73,50 @@ describe(parseEnv, () => {
 			'MS_LOGIN_CLIENT_SECRET',
 			'MS_LOGIN_TENANT_ID',
 		]);
+	});
+
+	it('needs all S3 variables or none', () => {
+		expect(envErrorFor({ ...valid, S3_BUCKET: 'vereinsbote' }).variables).toStrictEqual([
+			'S3_ENDPOINT',
+			'S3_REGION',
+			'S3_ACCESS_KEY_ID',
+			'S3_SECRET_ACCESS_KEY',
+		]);
+		expect(parseEnv(valid).s3).toBeNull();
+	});
+
+	it('reads a complete S3 group', () => {
+		const env = parseEnv({ ...valid, ...s3 });
+		expect(env.s3).toStrictEqual({
+			accessKeyId: 'key',
+			bucket: 'vereinsbote',
+			endpoint: new URL('https://s3.example.org'),
+			region: 'eu-central-1',
+			secretAccessKey: 'secret',
+		});
+	});
+
+	it('refuses plain http for S3 except locally', () => {
+		expect(
+			envErrorFor({ ...valid, ...s3, S3_ENDPOINT: 'http://s3.example' }).variables,
+		).toStrictEqual(['S3_ENDPOINT']);
+		expect(
+			parseEnv({ ...valid, ...s3, S3_ENDPOINT: 'http://localhost:8333' }).s3?.endpoint.host,
+		).toBe('localhost:8333');
+		expect(envErrorFor({ ...valid, ...s3, S3_ENDPOINT: 'not a url' }).variables).toStrictEqual([
+			'S3_ENDPOINT',
+		]);
+	});
+
+	it('names no S3 value in its error', () => {
+		expect(envErrorFor({ ...valid, ...s3, S3_BUCKET: 'Bad Bucket!' }).message).not.toContain('Bad');
+	});
+
+	it('reads the Vercel Blob token', () => {
+		expect(parseEnv(valid).blobToken).toBeNull();
+		expect(parseEnv({ ...valid, BLOB_READ_WRITE_TOKEN: ' vercel_blob_rw_x ' }).blobToken).toBe(
+			'vercel_blob_rw_x',
+		);
 	});
 
 	it('accepts a complete MS_LOGIN_* group', () => {

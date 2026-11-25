@@ -3,5 +3,7 @@
 export * from './areas';
 export * from './audit';
 export * from './auth';
+export * from './brand';
 export * from './contacts';
+export * from './media';
 export * from './system';

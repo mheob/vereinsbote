@@ -111,7 +111,11 @@ async function insertField(
 ): Promise<string> {
 	const [row] = await db
 		.insert(customFields)
-		.values({ ...field, createdAt: new Date(field.createdAt) })
+		.values({
+			...field,
+			createdAt: new Date(field.createdAt),
+			placeholderKey: field.name.toLowerCase(),
+		})
 		.returning({ id: customFields.id });
 	if (row === undefined) throw new Error('Inserting the custom field returned no row.');
 	return row.id;

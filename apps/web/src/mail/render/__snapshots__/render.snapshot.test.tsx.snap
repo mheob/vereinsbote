@@ -1,0 +1,1481 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`the rendered mails > render the Sie form for a firm > html 1`] = `
+"<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html lang="de" dir="ltr">
+<head>
+<meta charSet="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta name="x-apple-disable-message-reformatting"/>
+<title>Sommerfest für Beispiel GmbH</title>
+<style>@media only screen and (max-width: 620px) { .vb-container { width: 100% !important; max-width: 100% !important; } .vb-column { display: block !important; width: 100% !important; max-width: 100% !important; box-sizing: border-box; } .vb-page { padding: 0 !important; } }</style>
+</head>
+<body style="background-color:#f3f4f6;margin:0;padding:0;width:100%">
+<div lang="de" dir="ltr">
+<div data-skip-in-text="true" style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;mso-hide:all;opacity:0;overflow:hidden">Alles zum Sommerfest,  ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌</div>
+<table role="presentation" border="0" cellPadding="0" cellSpacing="0" width="100%" style="background-color:#f3f4f6;border-collapse:collapse;width:100%">
+<tbody>
+<tr>
+<td align="center" class="vb-page" style="padding:24px 0">
+<table role="presentation" align="center" border="0" cellPadding="0" cellSpacing="0" class="vb-container" width="600" style="background-color:#ffffff;border-collapse:collapse;max-width:600px;width:600px">
+<tbody>
+<tr>
+<td data-skip-in-text="true" height="4" style="background-color:#1d4ed8;font-size:4px;height:4px;line-height:4px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="32" style="font-size:32px;height:32px;line-height:32px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td align="left" style="padding:0 20px 16px">
+<h1 style="font-size:28px;line-height:36px;color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-weight:bold;margin:0;mso-line-height-rule:exactly">Einladung zum Sommerfest</h1>
+</td>
+</tr>
+<tr>
+<td align="left" style="padding:0 20px 16px">
+<p style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0;mso-line-height-rule:exactly">Sehr geehrte Damen und Herren,</p>
+</td>
+</tr>
+<tr>
+<td align="left" style="padding:0 20px 16px">
+<p style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0 0 16px;mso-line-height-rule:exactly">Wir laden herzlich zu unserem <strong>Sommerfest</strong> ein. Es gibt Kuchen, <em>Musik</em> und ein Turnier für alle. Mehr dazu steht auf <a href="https://example.org/sommerfest" style="color:#1d4ed8;text-decoration:underline">der Seite zum Sommerfest</a>.</p>
+<ul style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0 0 16px;mso-line-height-rule:exactly;margin-left:24px;padding:0">
+<li style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0 0 4px;mso-line-height-rule:exactly">Samstag, 12. Juli, ab 15 Uhr</li>
+<li style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0 0 4px;mso-line-height-rule:exactly">Vereinsheim am Sportplatz</li>
+</ul>
+<p style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0 0 16px;mso-line-height-rule:exactly">Der Ablauf:</p>
+<ol style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0 0 16px;mso-line-height-rule:exactly;margin-left:24px;padding:0">
+<li style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0 0 4px;mso-line-height-rule:exactly">Begrüßung</li>
+<li style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0 0 4px;mso-line-height-rule:exactly">Turnier</li>
+<li style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0 0 4px;mso-line-height-rule:exactly">Grillen</li>
+</ol>
+<p style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0;mso-line-height-rule:exactly">Fragen beantwortet das Büro unter <a href="tel:+4912345678" style="color:#1d4ed8;text-decoration:underline">012345 678</a> oder per <a href="mailto:info@example.org" style="color:#1d4ed8;text-decoration:underline">Mail an das Büro</a>. Mitgliedsnummer: liegt uns nicht vor</p>
+</td>
+</tr>
+<tr>
+<td align="center" style="padding:0 20px 16px">
+<div>
+<!--[if mso]>
+<v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="https://example.org/sommerfest/anmeldung" style="height:44px;v-text-anchor:middle;width:255px;" arcsize="14%" stroke="f" fillcolor="#1d4ed8">
+<w:anchorlock/>
+<center style="color:#ffffff;font-family:Arial, Helvetica, sans-serif;font-size:16px;font-weight:bold;">Zum Sommerfest anmelden</center>
+</v:roundrect>
+<![endif]-->
+</div>
+<table role="presentation" align="center" border="0" cellPadding="0" cellSpacing="0" style="background-color:#1d4ed8;border-collapse:collapse;mso-hide:all">
+<tbody>
+<tr>
+<td align="center" style="background-color:#1d4ed8;border-radius:6px;mso-hide:all;mso-padding-alt:12px 24px">
+<a href="https://example.org/sommerfest/anmeldung" style="background-color:#1d4ed8;border-radius:6px;color:#ffffff;display:inline-block;font-family:Arial, Helvetica, sans-serif;font-size:16px;font-weight:bold;line-height:20px;mso-hide:all;padding:12px 24px;text-decoration:none">Zum Sommerfest anmelden</a>
+</td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+<tr>
+<td align="left" style="padding:0 20px 16px">
+<table role="presentation" border="0" cellPadding="0" cellSpacing="0" width="100%" style="border-collapse:collapse;width:100%">
+<tbody>
+<tr>
+<td data-skip-in-text="true" style="border-top:1px solid #d1d5db;font-size:1px;line-height:1px"> </td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+<tr>
+<td align="left" style="padding:0 20px 16px">
+<h2 style="font-size:22px;line-height:30px;color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-weight:bold;margin:0;mso-line-height-rule:exactly">Das Programm</h2>
+</td>
+</tr>
+<tr>
+<td align="left" style="padding:0">
+<table role="presentation" border="0" cellPadding="0" cellSpacing="0" width="100%" style="border-collapse:collapse;width:100%">
+<tbody>
+<tr>
+<td class="vb-column" valign="top" width="300" style="padding:0 10px;vertical-align:top;width:300px">
+<table role="presentation" border="0" cellPadding="0" cellSpacing="0" width="100%" style="border-collapse:collapse;width:100%">
+<tbody>
+<tr>
+<td align="left" style="padding:0 10px 16px">
+<h3 style="font-size:18px;line-height:26px;color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-weight:bold;margin:0;mso-line-height-rule:exactly">Für Kinder</h3>
+</td>
+</tr>
+<tr>
+<td align="left" style="padding:0 10px 16px">
+<p style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0;mso-line-height-rule:exactly">Hüpfburg und Kinderschminken ab 15 Uhr.</p>
+</td>
+</tr>
+</tbody>
+</table>
+</td>
+<td class="vb-column" valign="top" width="300" style="padding:0 10px;vertical-align:top;width:300px">
+<table role="presentation" border="0" cellPadding="0" cellSpacing="0" width="100%" style="border-collapse:collapse;width:100%">
+<tbody>
+<tr>
+<td align="left" style="padding:0 10px 16px">
+<h3 style="font-size:18px;line-height:26px;color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-weight:bold;margin:0;mso-line-height-rule:exactly">Für Erwachsene</h3>
+</td>
+</tr>
+<tr>
+<td align="left" style="padding:0 10px 16px">
+<p style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0;mso-line-height-rule:exactly">Ab 18 Uhr spielt die Band „Die Beispiele“.</p>
+</td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="32" style="font-size:32px;height:32px;line-height:32px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td align="left" style="padding:0 20px 16px">
+<p style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0;mso-line-height-rule:exactly">Viele Grüße<br/>Verein</p>
+</td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="16" style="font-size:16px;height:16px;line-height:16px;mso-line-height-rule:exactly"> </td>
+</tr>
+</tbody>
+</table>
+<table role="presentation" align="center" border="0" cellPadding="0" cellSpacing="0" class="vb-container" width="600" style="border-collapse:collapse;max-width:600px;width:600px">
+<tbody>
+<tr>
+<td data-skip-in-text="true" height="24" style="font-size:24px;height:24px;line-height:24px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td align="center" style="padding:0 20px 8px">
+<p style="color:#000000;font-family:Arial, Helvetica, sans-serif;font-size:13px;font-weight:bold;line-height:20px;margin:0;mso-line-height-rule:exactly">Verein</p>
+</td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="24" style="font-size:24px;height:24px;line-height:24px;mso-line-height-rule:exactly"> </td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</body>
+</html>"
+`;
+
+exports[`the rendered mails > render the Sie form for a firm > text 1`] = `
+"Einladung zum Sommerfest
+
+Sehr geehrte Damen und Herren,
+
+Wir laden herzlich zu unserem Sommerfest ein. Es gibt Kuchen, Musik und ein Turnier für alle. Mehr dazu steht auf der Seite zum Sommerfest https://example.org/sommerfest.
+
+ * Samstag, 12. Juli, ab 15 Uhr
+ * Vereinsheim am Sportplatz
+
+Der Ablauf:
+
+ 1. Begrüßung
+ 2. Turnier
+ 3. Grillen
+
+Fragen beantwortet das Büro unter 012345 678 tel:+4912345678 oder per Mail an das Büro info@example.org. Mitgliedsnummer: liegt uns nicht vor
+
+Zum Sommerfest anmelden https://example.org/sommerfest/anmeldung
+
+Das Programm
+
+Für Kinder
+
+Hüpfburg und Kinderschminken ab 15 Uhr.
+
+Für Erwachsene
+
+Ab 18 Uhr spielt die Band „Die Beispiele“.
+
+Viele Grüße
+Verein
+
+Verein"
+`;
+
+exports[`the rendered mails > render the button sample-button block alone > html 1`] = `
+"<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html lang="de" dir="ltr">
+<head>
+<meta charSet="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta name="x-apple-disable-message-reformatting"/>
+<title>Sommerfest für Anna Beispiel</title>
+<style>@media only screen and (max-width: 620px) { .vb-container { width: 100% !important; max-width: 100% !important; } .vb-column { display: block !important; width: 100% !important; max-width: 100% !important; box-sizing: border-box; } .vb-page { padding: 0 !important; } }</style>
+</head>
+<body style="background-color:#f3f4f6;margin:0;padding:0;width:100%">
+<div lang="de" dir="ltr">
+<div data-skip-in-text="true" style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;mso-hide:all;opacity:0;overflow:hidden">Alles zum Sommerfest, Anna ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌</div>
+<table role="presentation" border="0" cellPadding="0" cellSpacing="0" width="100%" style="background-color:#f3f4f6;border-collapse:collapse;width:100%">
+<tbody>
+<tr>
+<td align="center" class="vb-page" style="padding:24px 0">
+<table role="presentation" align="center" border="0" cellPadding="0" cellSpacing="0" class="vb-container" width="600" style="background-color:#ffffff;border-collapse:collapse;max-width:600px;width:600px">
+<tbody>
+<tr>
+<td data-skip-in-text="true" height="4" style="background-color:#1d4ed8;font-size:4px;height:4px;line-height:4px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="32" style="font-size:32px;height:32px;line-height:32px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td align="center" style="padding:0 20px 16px">
+<div>
+<!--[if mso]>
+<v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="https://example.org/sommerfest/anmeldung" style="height:44px;v-text-anchor:middle;width:255px;" arcsize="14%" stroke="f" fillcolor="#1d4ed8">
+<w:anchorlock/>
+<center style="color:#ffffff;font-family:Arial, Helvetica, sans-serif;font-size:16px;font-weight:bold;">Zum Sommerfest anmelden</center>
+</v:roundrect>
+<![endif]-->
+</div>
+<table role="presentation" align="center" border="0" cellPadding="0" cellSpacing="0" style="background-color:#1d4ed8;border-collapse:collapse;mso-hide:all">
+<tbody>
+<tr>
+<td align="center" style="background-color:#1d4ed8;border-radius:6px;mso-hide:all;mso-padding-alt:12px 24px">
+<a href="https://example.org/sommerfest/anmeldung" style="background-color:#1d4ed8;border-radius:6px;color:#ffffff;display:inline-block;font-family:Arial, Helvetica, sans-serif;font-size:16px;font-weight:bold;line-height:20px;mso-hide:all;padding:12px 24px;text-decoration:none">Zum Sommerfest anmelden</a>
+</td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="16" style="font-size:16px;height:16px;line-height:16px;mso-line-height-rule:exactly"> </td>
+</tr>
+</tbody>
+</table>
+<table role="presentation" align="center" border="0" cellPadding="0" cellSpacing="0" class="vb-container" width="600" style="border-collapse:collapse;max-width:600px;width:600px">
+<tbody>
+<tr>
+<td data-skip-in-text="true" height="24" style="font-size:24px;height:24px;line-height:24px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td align="center" style="padding:0 20px 8px">
+<p style="color:#000000;font-family:Arial, Helvetica, sans-serif;font-size:13px;font-weight:bold;line-height:20px;margin:0;mso-line-height-rule:exactly">Verein</p>
+</td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="24" style="font-size:24px;height:24px;line-height:24px;mso-line-height-rule:exactly"> </td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</body>
+</html>"
+`;
+
+exports[`the rendered mails > render the button sample-button block alone > text 1`] = `
+"Zum Sommerfest anmelden https://example.org/sommerfest/anmeldung
+
+Verein"
+`;
+
+exports[`the rendered mails > render the columns sample-columns block alone > html 1`] = `
+"<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html lang="de" dir="ltr">
+<head>
+<meta charSet="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta name="x-apple-disable-message-reformatting"/>
+<title>Sommerfest für Anna Beispiel</title>
+<style>@media only screen and (max-width: 620px) { .vb-container { width: 100% !important; max-width: 100% !important; } .vb-column { display: block !important; width: 100% !important; max-width: 100% !important; box-sizing: border-box; } .vb-page { padding: 0 !important; } }</style>
+</head>
+<body style="background-color:#f3f4f6;margin:0;padding:0;width:100%">
+<div lang="de" dir="ltr">
+<div data-skip-in-text="true" style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;mso-hide:all;opacity:0;overflow:hidden">Alles zum Sommerfest, Anna ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌</div>
+<table role="presentation" border="0" cellPadding="0" cellSpacing="0" width="100%" style="background-color:#f3f4f6;border-collapse:collapse;width:100%">
+<tbody>
+<tr>
+<td align="center" class="vb-page" style="padding:24px 0">
+<table role="presentation" align="center" border="0" cellPadding="0" cellSpacing="0" class="vb-container" width="600" style="background-color:#ffffff;border-collapse:collapse;max-width:600px;width:600px">
+<tbody>
+<tr>
+<td data-skip-in-text="true" height="4" style="background-color:#1d4ed8;font-size:4px;height:4px;line-height:4px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="32" style="font-size:32px;height:32px;line-height:32px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td align="left" style="padding:0">
+<table role="presentation" border="0" cellPadding="0" cellSpacing="0" width="100%" style="border-collapse:collapse;width:100%">
+<tbody>
+<tr>
+<td class="vb-column" valign="top" width="300" style="padding:0 10px;vertical-align:top;width:300px">
+<table role="presentation" border="0" cellPadding="0" cellSpacing="0" width="100%" style="border-collapse:collapse;width:100%">
+<tbody>
+<tr>
+<td align="left" style="padding:0 10px 16px">
+<h3 style="font-size:18px;line-height:26px;color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-weight:bold;margin:0;mso-line-height-rule:exactly">Für Kinder</h3>
+</td>
+</tr>
+<tr>
+<td align="left" style="padding:0 10px 16px">
+<p style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0;mso-line-height-rule:exactly">Hüpfburg und Kinderschminken ab 15 Uhr.</p>
+</td>
+</tr>
+</tbody>
+</table>
+</td>
+<td class="vb-column" valign="top" width="300" style="padding:0 10px;vertical-align:top;width:300px">
+<table role="presentation" border="0" cellPadding="0" cellSpacing="0" width="100%" style="border-collapse:collapse;width:100%">
+<tbody>
+<tr>
+<td align="left" style="padding:0 10px 16px">
+<h3 style="font-size:18px;line-height:26px;color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-weight:bold;margin:0;mso-line-height-rule:exactly">Für Erwachsene</h3>
+</td>
+</tr>
+<tr>
+<td align="left" style="padding:0 10px 16px">
+<p style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0;mso-line-height-rule:exactly">Ab 18 Uhr spielt die Band „Die Beispiele“.</p>
+</td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="16" style="font-size:16px;height:16px;line-height:16px;mso-line-height-rule:exactly"> </td>
+</tr>
+</tbody>
+</table>
+<table role="presentation" align="center" border="0" cellPadding="0" cellSpacing="0" class="vb-container" width="600" style="border-collapse:collapse;max-width:600px;width:600px">
+<tbody>
+<tr>
+<td data-skip-in-text="true" height="24" style="font-size:24px;height:24px;line-height:24px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td align="center" style="padding:0 20px 8px">
+<p style="color:#000000;font-family:Arial, Helvetica, sans-serif;font-size:13px;font-weight:bold;line-height:20px;margin:0;mso-line-height-rule:exactly">Verein</p>
+</td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="24" style="font-size:24px;height:24px;line-height:24px;mso-line-height-rule:exactly"> </td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</body>
+</html>"
+`;
+
+exports[`the rendered mails > render the columns sample-columns block alone > text 1`] = `
+"Für Kinder
+
+Hüpfburg und Kinderschminken ab 15 Uhr.
+
+Für Erwachsene
+
+Ab 18 Uhr spielt die Band „Die Beispiele“.
+
+Verein"
+`;
+
+exports[`the rendered mails > render the decorative image block alone > html 1`] = `
+"<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html lang="de" dir="ltr">
+<head>
+<meta charSet="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta name="x-apple-disable-message-reformatting"/>
+<title>Sommerfest für Anna Beispiel</title>
+<style>@media only screen and (max-width: 620px) { .vb-container { width: 100% !important; max-width: 100% !important; } .vb-column { display: block !important; width: 100% !important; max-width: 100% !important; box-sizing: border-box; } .vb-page { padding: 0 !important; } }</style>
+</head>
+<body style="background-color:#f3f4f6;margin:0;padding:0;width:100%">
+<div lang="de" dir="ltr">
+<div data-skip-in-text="true" style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;mso-hide:all;opacity:0;overflow:hidden">Alles zum Sommerfest, Anna ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌</div>
+<table role="presentation" border="0" cellPadding="0" cellSpacing="0" width="100%" style="background-color:#f3f4f6;border-collapse:collapse;width:100%">
+<tbody>
+<tr>
+<td align="center" class="vb-page" style="padding:24px 0">
+<table role="presentation" align="center" border="0" cellPadding="0" cellSpacing="0" class="vb-container" width="600" style="background-color:#ffffff;border-collapse:collapse;max-width:600px;width:600px">
+<tbody>
+<tr>
+<td data-skip-in-text="true" height="4" style="background-color:#1d4ed8;font-size:4px;height:4px;line-height:4px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="32" style="font-size:32px;height:32px;line-height:32px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td align="center" style="padding:0 0px 16px">
+<img alt="" height="400" src="https://verein.example/media/IMAGE_aaaaaaaaaaaaaaaa.jpg" width="600" style="border:0;display:block;height:auto;max-width:100%;outline:none;text-decoration:none;width:600px"/>
+</td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="16" style="font-size:16px;height:16px;line-height:16px;mso-line-height-rule:exactly"> </td>
+</tr>
+</tbody>
+</table>
+<table role="presentation" align="center" border="0" cellPadding="0" cellSpacing="0" class="vb-container" width="600" style="border-collapse:collapse;max-width:600px;width:600px">
+<tbody>
+<tr>
+<td data-skip-in-text="true" height="24" style="font-size:24px;height:24px;line-height:24px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td align="center" style="padding:0 20px 8px">
+<p style="color:#000000;font-family:Arial, Helvetica, sans-serif;font-size:13px;font-weight:bold;line-height:20px;margin:0;mso-line-height-rule:exactly">Verein</p>
+</td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="24" style="font-size:24px;height:24px;line-height:24px;mso-line-height-rule:exactly"> </td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</body>
+</html>"
+`;
+
+exports[`the rendered mails > render the decorative image block alone > text 1`] = `"Verein"`;
+
+exports[`the rendered mails > render the divider sample-divider block alone > html 1`] = `
+"<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html lang="de" dir="ltr">
+<head>
+<meta charSet="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta name="x-apple-disable-message-reformatting"/>
+<title>Sommerfest für Anna Beispiel</title>
+<style>@media only screen and (max-width: 620px) { .vb-container { width: 100% !important; max-width: 100% !important; } .vb-column { display: block !important; width: 100% !important; max-width: 100% !important; box-sizing: border-box; } .vb-page { padding: 0 !important; } }</style>
+</head>
+<body style="background-color:#f3f4f6;margin:0;padding:0;width:100%">
+<div lang="de" dir="ltr">
+<div data-skip-in-text="true" style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;mso-hide:all;opacity:0;overflow:hidden">Alles zum Sommerfest, Anna ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌</div>
+<table role="presentation" border="0" cellPadding="0" cellSpacing="0" width="100%" style="background-color:#f3f4f6;border-collapse:collapse;width:100%">
+<tbody>
+<tr>
+<td align="center" class="vb-page" style="padding:24px 0">
+<table role="presentation" align="center" border="0" cellPadding="0" cellSpacing="0" class="vb-container" width="600" style="background-color:#ffffff;border-collapse:collapse;max-width:600px;width:600px">
+<tbody>
+<tr>
+<td data-skip-in-text="true" height="4" style="background-color:#1d4ed8;font-size:4px;height:4px;line-height:4px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="32" style="font-size:32px;height:32px;line-height:32px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td align="left" style="padding:0 20px 16px">
+<table role="presentation" border="0" cellPadding="0" cellSpacing="0" width="100%" style="border-collapse:collapse;width:100%">
+<tbody>
+<tr>
+<td data-skip-in-text="true" style="border-top:1px solid #d1d5db;font-size:1px;line-height:1px"> </td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="16" style="font-size:16px;height:16px;line-height:16px;mso-line-height-rule:exactly"> </td>
+</tr>
+</tbody>
+</table>
+<table role="presentation" align="center" border="0" cellPadding="0" cellSpacing="0" class="vb-container" width="600" style="border-collapse:collapse;max-width:600px;width:600px">
+<tbody>
+<tr>
+<td data-skip-in-text="true" height="24" style="font-size:24px;height:24px;line-height:24px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td align="center" style="padding:0 20px 8px">
+<p style="color:#000000;font-family:Arial, Helvetica, sans-serif;font-size:13px;font-weight:bold;line-height:20px;margin:0;mso-line-height-rule:exactly">Verein</p>
+</td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="24" style="font-size:24px;height:24px;line-height:24px;mso-line-height-rule:exactly"> </td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</body>
+</html>"
+`;
+
+exports[`the rendered mails > render the divider sample-divider block alone > text 1`] = `"Verein"`;
+
+exports[`the rendered mails > render the full brand with logos and five footer links, three as icons > html 1`] = `
+"<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html lang="de" dir="ltr">
+<head>
+<meta charSet="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta name="x-apple-disable-message-reformatting"/>
+<title>Sommerfest für Anna Beispiel</title>
+<style>@media only screen and (max-width: 620px) { .vb-container { width: 100% !important; max-width: 100% !important; } .vb-column { display: block !important; width: 100% !important; max-width: 100% !important; box-sizing: border-box; } .vb-page { padding: 0 !important; } }</style>
+</head>
+<body style="background-color:#1e3a5f;margin:0;padding:0;width:100%">
+<div lang="de" dir="ltr">
+<div data-skip-in-text="true" style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;mso-hide:all;opacity:0;overflow:hidden">Alles zum Sommerfest, Anna ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌</div>
+<table role="presentation" border="0" cellPadding="0" cellSpacing="0" width="100%" style="background-color:#1e3a5f;border-collapse:collapse;width:100%">
+<tbody>
+<tr>
+<td align="center" class="vb-page" style="padding:24px 0">
+<table role="presentation" align="center" border="0" cellPadding="0" cellSpacing="0" class="vb-container" width="600" style="background-color:#fffdf7;border-collapse:collapse;max-width:600px;width:600px">
+<tbody>
+<tr>
+<td align="center" style="padding:24px 20px">
+<img alt="TSV Beispielstadt" height="60" src="https://verein.example/media/HEADER_LOGO_aaaaaaaaaa.png" width="240" style="border:0;display:block;height:auto;max-width:100%;outline:none;text-decoration:none;width:240px"/>
+</td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="4" style="background-color:#b91c1c;font-size:4px;height:4px;line-height:4px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="32" style="font-size:32px;height:32px;line-height:32px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td align="left" style="padding:0 20px 16px">
+<h1 style="font-size:28px;line-height:36px;color:#111827;font-family:&quot;Merriweather&quot;, Georgia, &quot;Times New Roman&quot;, serif;font-weight:bold;margin:0;mso-line-height-rule:exactly">Einladung zum Sommerfest</h1>
+</td>
+</tr>
+<tr>
+<td align="left" style="padding:0 20px 16px">
+<p style="color:#111827;font-family:Verdana, Geneva, sans-serif;font-size:16px;line-height:24px;margin:0;mso-line-height-rule:exactly">Liebe Anna,</p>
+</td>
+</tr>
+<tr>
+<td align="left" style="padding:0 20px 16px">
+<p style="color:#111827;font-family:Verdana, Geneva, sans-serif;font-size:16px;line-height:24px;margin:0 0 16px;mso-line-height-rule:exactly">Wir laden herzlich zu unserem <strong>Sommerfest</strong> ein. Es gibt Kuchen, <em>Musik</em> und ein Turnier für alle. Mehr dazu steht auf <a href="https://example.org/sommerfest" style="color:#0b5394;text-decoration:underline">der Seite zum Sommerfest</a>.</p>
+<ul style="color:#111827;font-family:Verdana, Geneva, sans-serif;font-size:16px;line-height:24px;margin:0 0 16px;mso-line-height-rule:exactly;margin-left:24px;padding:0">
+<li style="color:#111827;font-family:Verdana, Geneva, sans-serif;font-size:16px;line-height:24px;margin:0 0 4px;mso-line-height-rule:exactly">Samstag, 12. Juli, ab 15 Uhr</li>
+<li style="color:#111827;font-family:Verdana, Geneva, sans-serif;font-size:16px;line-height:24px;margin:0 0 4px;mso-line-height-rule:exactly">Vereinsheim am Sportplatz</li>
+</ul>
+<p style="color:#111827;font-family:Verdana, Geneva, sans-serif;font-size:16px;line-height:24px;margin:0 0 16px;mso-line-height-rule:exactly">Der Ablauf:</p>
+<ol style="color:#111827;font-family:Verdana, Geneva, sans-serif;font-size:16px;line-height:24px;margin:0 0 16px;mso-line-height-rule:exactly;margin-left:24px;padding:0">
+<li style="color:#111827;font-family:Verdana, Geneva, sans-serif;font-size:16px;line-height:24px;margin:0 0 4px;mso-line-height-rule:exactly">Begrüßung</li>
+<li style="color:#111827;font-family:Verdana, Geneva, sans-serif;font-size:16px;line-height:24px;margin:0 0 4px;mso-line-height-rule:exactly">Turnier</li>
+<li style="color:#111827;font-family:Verdana, Geneva, sans-serif;font-size:16px;line-height:24px;margin:0 0 4px;mso-line-height-rule:exactly">Grillen</li>
+</ol>
+<p style="color:#111827;font-family:Verdana, Geneva, sans-serif;font-size:16px;line-height:24px;margin:0;mso-line-height-rule:exactly">Fragen beantwortet das Büro unter <a href="tel:+4912345678" style="color:#0b5394;text-decoration:underline">012345 678</a> oder per <a href="mailto:info@example.org" style="color:#0b5394;text-decoration:underline">Mail an das Büro</a>. Mitgliedsnummer: 1001</p>
+</td>
+</tr>
+<tr>
+<td align="center" style="padding:0 20px 16px">
+<div>
+<!--[if mso]>
+<v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="https://example.org/sommerfest/anmeldung" style="height:44px;v-text-anchor:middle;width:255px;" arcsize="14%" stroke="f" fillcolor="#b91c1c">
+<w:anchorlock/>
+<center style="color:#ffffff;font-family:Verdana, Geneva, sans-serif;font-size:16px;font-weight:bold;">Zum Sommerfest anmelden</center>
+</v:roundrect>
+<![endif]-->
+</div>
+<table role="presentation" align="center" border="0" cellPadding="0" cellSpacing="0" style="background-color:#b91c1c;border-collapse:collapse;mso-hide:all">
+<tbody>
+<tr>
+<td align="center" style="background-color:#b91c1c;border-radius:6px;mso-hide:all;mso-padding-alt:12px 24px">
+<a href="https://example.org/sommerfest/anmeldung" style="background-color:#b91c1c;border-radius:6px;color:#ffffff;display:inline-block;font-family:Verdana, Geneva, sans-serif;font-size:16px;font-weight:bold;line-height:20px;mso-hide:all;padding:12px 24px;text-decoration:none">Zum Sommerfest anmelden</a>
+</td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+<tr>
+<td align="left" style="padding:0 20px 16px">
+<table role="presentation" border="0" cellPadding="0" cellSpacing="0" width="100%" style="border-collapse:collapse;width:100%">
+<tbody>
+<tr>
+<td data-skip-in-text="true" style="border-top:1px solid #d1d5db;font-size:1px;line-height:1px"> </td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+<tr>
+<td align="left" style="padding:0 20px 16px">
+<h2 style="font-size:22px;line-height:30px;color:#111827;font-family:&quot;Merriweather&quot;, Georgia, &quot;Times New Roman&quot;, serif;font-weight:bold;margin:0;mso-line-height-rule:exactly">Das Programm</h2>
+</td>
+</tr>
+<tr>
+<td align="left" style="padding:0">
+<table role="presentation" border="0" cellPadding="0" cellSpacing="0" width="100%" style="border-collapse:collapse;width:100%">
+<tbody>
+<tr>
+<td class="vb-column" valign="top" width="300" style="padding:0 10px;vertical-align:top;width:300px">
+<table role="presentation" border="0" cellPadding="0" cellSpacing="0" width="100%" style="border-collapse:collapse;width:100%">
+<tbody>
+<tr>
+<td align="left" style="padding:0 10px 16px">
+<h3 style="font-size:18px;line-height:26px;color:#111827;font-family:&quot;Merriweather&quot;, Georgia, &quot;Times New Roman&quot;, serif;font-weight:bold;margin:0;mso-line-height-rule:exactly">Für Kinder</h3>
+</td>
+</tr>
+<tr>
+<td align="left" style="padding:0 10px 16px">
+<p style="color:#111827;font-family:Verdana, Geneva, sans-serif;font-size:16px;line-height:24px;margin:0;mso-line-height-rule:exactly">Hüpfburg und Kinderschminken ab 15 Uhr.</p>
+</td>
+</tr>
+</tbody>
+</table>
+</td>
+<td class="vb-column" valign="top" width="300" style="padding:0 10px;vertical-align:top;width:300px">
+<table role="presentation" border="0" cellPadding="0" cellSpacing="0" width="100%" style="border-collapse:collapse;width:100%">
+<tbody>
+<tr>
+<td align="left" style="padding:0 10px 16px">
+<h3 style="font-size:18px;line-height:26px;color:#111827;font-family:&quot;Merriweather&quot;, Georgia, &quot;Times New Roman&quot;, serif;font-weight:bold;margin:0;mso-line-height-rule:exactly">Für Erwachsene</h3>
+</td>
+</tr>
+<tr>
+<td align="left" style="padding:0 10px 16px">
+<p style="color:#111827;font-family:Verdana, Geneva, sans-serif;font-size:16px;line-height:24px;margin:0;mso-line-height-rule:exactly">Ab 18 Uhr spielt die Band „Die Beispiele“.</p>
+</td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="32" style="font-size:32px;height:32px;line-height:32px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td align="left" style="padding:0 20px 16px">
+<p style="color:#111827;font-family:Verdana, Geneva, sans-serif;font-size:16px;line-height:24px;margin:0;mso-line-height-rule:exactly">Viele Grüße<br/>TSV Beispielstadt</p>
+</td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="16" style="font-size:16px;height:16px;line-height:16px;mso-line-height-rule:exactly"> </td>
+</tr>
+</tbody>
+</table>
+<table role="presentation" align="center" border="0" cellPadding="0" cellSpacing="0" class="vb-container" width="600" style="border-collapse:collapse;max-width:600px;width:600px">
+<tbody>
+<tr>
+<td data-skip-in-text="true" height="24" style="font-size:24px;height:24px;line-height:24px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td align="center" style="padding:0 20px 16px">
+<img alt="TSV Beispielstadt" height="64" src="https://verein.example/media/FOOTER_LOGO_aaaaaaaaaa.png" width="64" style="border:0;display:block;height:auto;max-width:100%;outline:none;text-decoration:none;width:64px"/>
+</td>
+</tr>
+<tr>
+<td align="center" style="padding:0 20px 8px">
+<p style="color:#ffffff;font-family:Verdana, Geneva, sans-serif;font-size:13px;font-weight:bold;line-height:20px;margin:0;mso-line-height-rule:exactly">TSV Beispielstadt</p>
+</td>
+</tr>
+<tr>
+<td align="center" style="padding:0 20px 8px">
+<p style="color:#ffffff;font-family:Verdana, Geneva, sans-serif;font-size:13px;font-weight:normal;line-height:20px;margin:0;mso-line-height-rule:exactly">TSV Beispielstadt e. V.<br/>Sportplatzweg 1<br/>12345 Beispielstadt</p>
+</td>
+</tr>
+<tr>
+<td align="center" style="padding:0 20px 8px">
+<p style="color:#ffffff;font-family:Verdana, Geneva, sans-serif;font-size:13px;font-weight:normal;line-height:20px;margin:0;mso-line-height-rule:exactly">Amtsgericht Beispielstadt, VR 1234</p>
+</td>
+</tr>
+<tr>
+<td align="center" style="padding:0 20px 8px">
+<p style="color:#ffffff;font-family:Verdana, Geneva, sans-serif;font-size:13px;font-weight:normal;line-height:20px;margin:0;mso-line-height-rule:exactly">
+<a href="https://verein.example/impressum" style="color:#ffffff;text-decoration:underline">Impressum</a>
+<span aria-hidden="true"> · </span>
+<a href="https://verein.example/datenschutz" style="color:#ffffff;text-decoration:underline">Datenschutz</a>
+<span aria-hidden="true"> · </span>
+<a href="https://verein.example" style="color:#ffffff;text-decoration:underline">Website</a>
+<span aria-hidden="true"> · </span>
+<a href="https://blog.verein.example" style="color:#ffffff;text-decoration:underline">Vereinsblog</a>
+<span aria-hidden="true"> · </span>
+<a href="mailto:info@verein.example" style="color:#ffffff;text-decoration:underline">Kontakt</a>
+</p>
+</td>
+</tr>
+<tr>
+<td align="center" style="padding:8px 20px 16px">
+<table role="presentation" align="center" border="0" cellPadding="0" cellSpacing="0" style="border-collapse:collapse">
+<tbody>
+<tr>
+<td style="padding:0 6px">
+<a href="https://www.instagram.com/tsv.beispiel" style="display:block;text-decoration:none">
+<img alt="Instagram" height="24" src="https://verein.example/social/instagram-light.png" width="24" style="border:0;display:block;height:24px;width:24px"/>
+</a>
+</td>
+<td style="padding:0 6px">
+<a href="https://facebook.com/tsv.beispiel" style="display:block;text-decoration:none">
+<img alt="Facebook" height="24" src="https://verein.example/social/facebook-light.png" width="24" style="border:0;display:block;height:24px;width:24px"/>
+</a>
+</td>
+<td style="padding:0 6px">
+<a href="https://social.example/@tsv" style="display:block;text-decoration:none">
+<img alt="Mastodon" height="24" src="https://verein.example/social/mastodon-light.png" width="24" style="border:0;display:block;height:24px;width:24px"/>
+</a>
+</td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+<tr>
+<td align="center" style="padding:0 20px 8px">
+<p style="color:#ffffff;font-family:Verdana, Geneva, sans-serif;font-size:13px;font-weight:normal;line-height:20px;margin:0;mso-line-height-rule:exactly">Du bekommst diese Mail als Mitglied.<br/>Fragen? Schreib uns.</p>
+</td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="24" style="font-size:24px;height:24px;line-height:24px;mso-line-height-rule:exactly"> </td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</body>
+</html>"
+`;
+
+exports[`the rendered mails > render the full brand with logos and five footer links, three as icons > text 1`] = `
+"Einladung zum Sommerfest
+
+Liebe Anna,
+
+Wir laden herzlich zu unserem Sommerfest ein. Es gibt Kuchen, Musik und ein Turnier für alle. Mehr dazu steht auf der Seite zum Sommerfest https://example.org/sommerfest.
+
+ * Samstag, 12. Juli, ab 15 Uhr
+ * Vereinsheim am Sportplatz
+
+Der Ablauf:
+
+ 1. Begrüßung
+ 2. Turnier
+ 3. Grillen
+
+Fragen beantwortet das Büro unter 012345 678 tel:+4912345678 oder per Mail an das Büro info@example.org. Mitgliedsnummer: 1001
+
+Zum Sommerfest anmelden https://example.org/sommerfest/anmeldung
+
+Das Programm
+
+Für Kinder
+
+Hüpfburg und Kinderschminken ab 15 Uhr.
+
+Für Erwachsene
+
+Ab 18 Uhr spielt die Band „Die Beispiele“.
+
+Viele Grüße
+TSV Beispielstadt
+
+TSV Beispielstadt
+
+TSV Beispielstadt e. V.
+Sportplatzweg 1
+12345 Beispielstadt
+
+Amtsgericht Beispielstadt, VR 1234
+
+Impressum https://verein.example/impressum · Datenschutz https://verein.example/datenschutz · Website https://verein.example · Vereinsblog https://blog.verein.example · Kontakt info@verein.example
+
+https://www.instagram.com/tsv.beispiel
+https://facebook.com/tsv.beispiel
+https://social.example/@tsv
+
+Du bekommst diese Mail als Mitglied.
+Fragen? Schreib uns."
+`;
+
+exports[`the rendered mails > render the heading sample-heading block alone > html 1`] = `
+"<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html lang="de" dir="ltr">
+<head>
+<meta charSet="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta name="x-apple-disable-message-reformatting"/>
+<title>Sommerfest für Anna Beispiel</title>
+<style>@media only screen and (max-width: 620px) { .vb-container { width: 100% !important; max-width: 100% !important; } .vb-column { display: block !important; width: 100% !important; max-width: 100% !important; box-sizing: border-box; } .vb-page { padding: 0 !important; } }</style>
+</head>
+<body style="background-color:#f3f4f6;margin:0;padding:0;width:100%">
+<div lang="de" dir="ltr">
+<div data-skip-in-text="true" style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;mso-hide:all;opacity:0;overflow:hidden">Alles zum Sommerfest, Anna ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌</div>
+<table role="presentation" border="0" cellPadding="0" cellSpacing="0" width="100%" style="background-color:#f3f4f6;border-collapse:collapse;width:100%">
+<tbody>
+<tr>
+<td align="center" class="vb-page" style="padding:24px 0">
+<table role="presentation" align="center" border="0" cellPadding="0" cellSpacing="0" class="vb-container" width="600" style="background-color:#ffffff;border-collapse:collapse;max-width:600px;width:600px">
+<tbody>
+<tr>
+<td data-skip-in-text="true" height="4" style="background-color:#1d4ed8;font-size:4px;height:4px;line-height:4px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="32" style="font-size:32px;height:32px;line-height:32px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td align="left" style="padding:0 20px 16px">
+<h1 style="font-size:28px;line-height:36px;color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-weight:bold;margin:0;mso-line-height-rule:exactly">Einladung zum Sommerfest</h1>
+</td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="16" style="font-size:16px;height:16px;line-height:16px;mso-line-height-rule:exactly"> </td>
+</tr>
+</tbody>
+</table>
+<table role="presentation" align="center" border="0" cellPadding="0" cellSpacing="0" class="vb-container" width="600" style="border-collapse:collapse;max-width:600px;width:600px">
+<tbody>
+<tr>
+<td data-skip-in-text="true" height="24" style="font-size:24px;height:24px;line-height:24px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td align="center" style="padding:0 20px 8px">
+<p style="color:#000000;font-family:Arial, Helvetica, sans-serif;font-size:13px;font-weight:bold;line-height:20px;margin:0;mso-line-height-rule:exactly">Verein</p>
+</td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="24" style="font-size:24px;height:24px;line-height:24px;mso-line-height-rule:exactly"> </td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</body>
+</html>"
+`;
+
+exports[`the rendered mails > render the heading sample-heading block alone > text 1`] = `
+"Einladung zum Sommerfest
+
+Verein"
+`;
+
+exports[`the rendered mails > render the heading sample-program block alone > html 1`] = `
+"<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html lang="de" dir="ltr">
+<head>
+<meta charSet="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta name="x-apple-disable-message-reformatting"/>
+<title>Sommerfest für Anna Beispiel</title>
+<style>@media only screen and (max-width: 620px) { .vb-container { width: 100% !important; max-width: 100% !important; } .vb-column { display: block !important; width: 100% !important; max-width: 100% !important; box-sizing: border-box; } .vb-page { padding: 0 !important; } }</style>
+</head>
+<body style="background-color:#f3f4f6;margin:0;padding:0;width:100%">
+<div lang="de" dir="ltr">
+<div data-skip-in-text="true" style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;mso-hide:all;opacity:0;overflow:hidden">Alles zum Sommerfest, Anna ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌</div>
+<table role="presentation" border="0" cellPadding="0" cellSpacing="0" width="100%" style="background-color:#f3f4f6;border-collapse:collapse;width:100%">
+<tbody>
+<tr>
+<td align="center" class="vb-page" style="padding:24px 0">
+<table role="presentation" align="center" border="0" cellPadding="0" cellSpacing="0" class="vb-container" width="600" style="background-color:#ffffff;border-collapse:collapse;max-width:600px;width:600px">
+<tbody>
+<tr>
+<td data-skip-in-text="true" height="4" style="background-color:#1d4ed8;font-size:4px;height:4px;line-height:4px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="32" style="font-size:32px;height:32px;line-height:32px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td align="left" style="padding:0 20px 16px">
+<h2 style="font-size:22px;line-height:30px;color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-weight:bold;margin:0;mso-line-height-rule:exactly">Das Programm</h2>
+</td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="16" style="font-size:16px;height:16px;line-height:16px;mso-line-height-rule:exactly"> </td>
+</tr>
+</tbody>
+</table>
+<table role="presentation" align="center" border="0" cellPadding="0" cellSpacing="0" class="vb-container" width="600" style="border-collapse:collapse;max-width:600px;width:600px">
+<tbody>
+<tr>
+<td data-skip-in-text="true" height="24" style="font-size:24px;height:24px;line-height:24px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td align="center" style="padding:0 20px 8px">
+<p style="color:#000000;font-family:Arial, Helvetica, sans-serif;font-size:13px;font-weight:bold;line-height:20px;margin:0;mso-line-height-rule:exactly">Verein</p>
+</td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="24" style="font-size:24px;height:24px;line-height:24px;mso-line-height-rule:exactly"> </td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</body>
+</html>"
+`;
+
+exports[`the rendered mails > render the heading sample-program block alone > text 1`] = `
+"Das Programm
+
+Verein"
+`;
+
+exports[`the rendered mails > render the image block alone > html 1`] = `
+"<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html lang="de" dir="ltr">
+<head>
+<meta charSet="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta name="x-apple-disable-message-reformatting"/>
+<title>Sommerfest für Anna Beispiel</title>
+<style>@media only screen and (max-width: 620px) { .vb-container { width: 100% !important; max-width: 100% !important; } .vb-column { display: block !important; width: 100% !important; max-width: 100% !important; box-sizing: border-box; } .vb-page { padding: 0 !important; } }</style>
+</head>
+<body style="background-color:#f3f4f6;margin:0;padding:0;width:100%">
+<div lang="de" dir="ltr">
+<div data-skip-in-text="true" style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;mso-hide:all;opacity:0;overflow:hidden">Alles zum Sommerfest, Anna ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌</div>
+<table role="presentation" border="0" cellPadding="0" cellSpacing="0" width="100%" style="background-color:#f3f4f6;border-collapse:collapse;width:100%">
+<tbody>
+<tr>
+<td align="center" class="vb-page" style="padding:24px 0">
+<table role="presentation" align="center" border="0" cellPadding="0" cellSpacing="0" class="vb-container" width="600" style="background-color:#ffffff;border-collapse:collapse;max-width:600px;width:600px">
+<tbody>
+<tr>
+<td data-skip-in-text="true" height="4" style="background-color:#1d4ed8;font-size:4px;height:4px;line-height:4px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="32" style="font-size:32px;height:32px;line-height:32px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td align="center" style="padding:0 0px 16px">
+<a href="https://verein.example/galerie" style="display:block;text-decoration:none">
+<img alt="Das Vereinsheim im Sommer" height="400" src="https://verein.example/media/IMAGE_aaaaaaaaaaaaaaaa.jpg" width="600" style="border:0;display:block;height:auto;max-width:100%;outline:none;text-decoration:none;width:600px"/>
+</a>
+</td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="16" style="font-size:16px;height:16px;line-height:16px;mso-line-height-rule:exactly"> </td>
+</tr>
+</tbody>
+</table>
+<table role="presentation" align="center" border="0" cellPadding="0" cellSpacing="0" class="vb-container" width="600" style="border-collapse:collapse;max-width:600px;width:600px">
+<tbody>
+<tr>
+<td data-skip-in-text="true" height="24" style="font-size:24px;height:24px;line-height:24px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td align="center" style="padding:0 20px 8px">
+<p style="color:#000000;font-family:Arial, Helvetica, sans-serif;font-size:13px;font-weight:bold;line-height:20px;margin:0;mso-line-height-rule:exactly">Verein</p>
+</td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="24" style="font-size:24px;height:24px;line-height:24px;mso-line-height-rule:exactly"> </td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</body>
+</html>"
+`;
+
+exports[`the rendered mails > render the image block alone > text 1`] = `
+"https://verein.example/galerie
+
+Verein"
+`;
+
+exports[`the rendered mails > render the placeholderLine sample-salutation block alone > html 1`] = `
+"<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html lang="de" dir="ltr">
+<head>
+<meta charSet="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta name="x-apple-disable-message-reformatting"/>
+<title>Sommerfest für Anna Beispiel</title>
+<style>@media only screen and (max-width: 620px) { .vb-container { width: 100% !important; max-width: 100% !important; } .vb-column { display: block !important; width: 100% !important; max-width: 100% !important; box-sizing: border-box; } .vb-page { padding: 0 !important; } }</style>
+</head>
+<body style="background-color:#f3f4f6;margin:0;padding:0;width:100%">
+<div lang="de" dir="ltr">
+<div data-skip-in-text="true" style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;mso-hide:all;opacity:0;overflow:hidden">Alles zum Sommerfest, Anna ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌</div>
+<table role="presentation" border="0" cellPadding="0" cellSpacing="0" width="100%" style="background-color:#f3f4f6;border-collapse:collapse;width:100%">
+<tbody>
+<tr>
+<td align="center" class="vb-page" style="padding:24px 0">
+<table role="presentation" align="center" border="0" cellPadding="0" cellSpacing="0" class="vb-container" width="600" style="background-color:#ffffff;border-collapse:collapse;max-width:600px;width:600px">
+<tbody>
+<tr>
+<td data-skip-in-text="true" height="4" style="background-color:#1d4ed8;font-size:4px;height:4px;line-height:4px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="32" style="font-size:32px;height:32px;line-height:32px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td align="left" style="padding:0 20px 16px">
+<p style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0;mso-line-height-rule:exactly">Liebe Anna,</p>
+</td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="16" style="font-size:16px;height:16px;line-height:16px;mso-line-height-rule:exactly"> </td>
+</tr>
+</tbody>
+</table>
+<table role="presentation" align="center" border="0" cellPadding="0" cellSpacing="0" class="vb-container" width="600" style="border-collapse:collapse;max-width:600px;width:600px">
+<tbody>
+<tr>
+<td data-skip-in-text="true" height="24" style="font-size:24px;height:24px;line-height:24px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td align="center" style="padding:0 20px 8px">
+<p style="color:#000000;font-family:Arial, Helvetica, sans-serif;font-size:13px;font-weight:bold;line-height:20px;margin:0;mso-line-height-rule:exactly">Verein</p>
+</td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="24" style="font-size:24px;height:24px;line-height:24px;mso-line-height-rule:exactly"> </td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</body>
+</html>"
+`;
+
+exports[`the rendered mails > render the placeholderLine sample-salutation block alone > text 1`] = `
+"Liebe Anna,
+
+Verein"
+`;
+
+exports[`the rendered mails > render the sample blocks in the default brand > html 1`] = `
+"<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html lang="de" dir="ltr">
+<head>
+<meta charSet="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta name="x-apple-disable-message-reformatting"/>
+<title>Sommerfest für Anna Beispiel</title>
+<style>@media only screen and (max-width: 620px) { .vb-container { width: 100% !important; max-width: 100% !important; } .vb-column { display: block !important; width: 100% !important; max-width: 100% !important; box-sizing: border-box; } .vb-page { padding: 0 !important; } }</style>
+</head>
+<body style="background-color:#f3f4f6;margin:0;padding:0;width:100%">
+<div lang="de" dir="ltr">
+<div data-skip-in-text="true" style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;mso-hide:all;opacity:0;overflow:hidden">Alles zum Sommerfest, Anna ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌</div>
+<table role="presentation" border="0" cellPadding="0" cellSpacing="0" width="100%" style="background-color:#f3f4f6;border-collapse:collapse;width:100%">
+<tbody>
+<tr>
+<td align="center" class="vb-page" style="padding:24px 0">
+<table role="presentation" align="center" border="0" cellPadding="0" cellSpacing="0" class="vb-container" width="600" style="background-color:#ffffff;border-collapse:collapse;max-width:600px;width:600px">
+<tbody>
+<tr>
+<td data-skip-in-text="true" height="4" style="background-color:#1d4ed8;font-size:4px;height:4px;line-height:4px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="32" style="font-size:32px;height:32px;line-height:32px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td align="left" style="padding:0 20px 16px">
+<h1 style="font-size:28px;line-height:36px;color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-weight:bold;margin:0;mso-line-height-rule:exactly">Einladung zum Sommerfest</h1>
+</td>
+</tr>
+<tr>
+<td align="left" style="padding:0 20px 16px">
+<p style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0;mso-line-height-rule:exactly">Liebe Anna,</p>
+</td>
+</tr>
+<tr>
+<td align="left" style="padding:0 20px 16px">
+<p style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0 0 16px;mso-line-height-rule:exactly">Wir laden herzlich zu unserem <strong>Sommerfest</strong> ein. Es gibt Kuchen, <em>Musik</em> und ein Turnier für alle. Mehr dazu steht auf <a href="https://example.org/sommerfest" style="color:#1d4ed8;text-decoration:underline">der Seite zum Sommerfest</a>.</p>
+<ul style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0 0 16px;mso-line-height-rule:exactly;margin-left:24px;padding:0">
+<li style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0 0 4px;mso-line-height-rule:exactly">Samstag, 12. Juli, ab 15 Uhr</li>
+<li style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0 0 4px;mso-line-height-rule:exactly">Vereinsheim am Sportplatz</li>
+</ul>
+<p style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0 0 16px;mso-line-height-rule:exactly">Der Ablauf:</p>
+<ol style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0 0 16px;mso-line-height-rule:exactly;margin-left:24px;padding:0">
+<li style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0 0 4px;mso-line-height-rule:exactly">Begrüßung</li>
+<li style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0 0 4px;mso-line-height-rule:exactly">Turnier</li>
+<li style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0 0 4px;mso-line-height-rule:exactly">Grillen</li>
+</ol>
+<p style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0;mso-line-height-rule:exactly">Fragen beantwortet das Büro unter <a href="tel:+4912345678" style="color:#1d4ed8;text-decoration:underline">012345 678</a> oder per <a href="mailto:info@example.org" style="color:#1d4ed8;text-decoration:underline">Mail an das Büro</a>. Mitgliedsnummer: 1001</p>
+</td>
+</tr>
+<tr>
+<td align="center" style="padding:0 20px 16px">
+<div>
+<!--[if mso]>
+<v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="https://example.org/sommerfest/anmeldung" style="height:44px;v-text-anchor:middle;width:255px;" arcsize="14%" stroke="f" fillcolor="#1d4ed8">
+<w:anchorlock/>
+<center style="color:#ffffff;font-family:Arial, Helvetica, sans-serif;font-size:16px;font-weight:bold;">Zum Sommerfest anmelden</center>
+</v:roundrect>
+<![endif]-->
+</div>
+<table role="presentation" align="center" border="0" cellPadding="0" cellSpacing="0" style="background-color:#1d4ed8;border-collapse:collapse;mso-hide:all">
+<tbody>
+<tr>
+<td align="center" style="background-color:#1d4ed8;border-radius:6px;mso-hide:all;mso-padding-alt:12px 24px">
+<a href="https://example.org/sommerfest/anmeldung" style="background-color:#1d4ed8;border-radius:6px;color:#ffffff;display:inline-block;font-family:Arial, Helvetica, sans-serif;font-size:16px;font-weight:bold;line-height:20px;mso-hide:all;padding:12px 24px;text-decoration:none">Zum Sommerfest anmelden</a>
+</td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+<tr>
+<td align="left" style="padding:0 20px 16px">
+<table role="presentation" border="0" cellPadding="0" cellSpacing="0" width="100%" style="border-collapse:collapse;width:100%">
+<tbody>
+<tr>
+<td data-skip-in-text="true" style="border-top:1px solid #d1d5db;font-size:1px;line-height:1px"> </td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+<tr>
+<td align="left" style="padding:0 20px 16px">
+<h2 style="font-size:22px;line-height:30px;color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-weight:bold;margin:0;mso-line-height-rule:exactly">Das Programm</h2>
+</td>
+</tr>
+<tr>
+<td align="left" style="padding:0">
+<table role="presentation" border="0" cellPadding="0" cellSpacing="0" width="100%" style="border-collapse:collapse;width:100%">
+<tbody>
+<tr>
+<td class="vb-column" valign="top" width="300" style="padding:0 10px;vertical-align:top;width:300px">
+<table role="presentation" border="0" cellPadding="0" cellSpacing="0" width="100%" style="border-collapse:collapse;width:100%">
+<tbody>
+<tr>
+<td align="left" style="padding:0 10px 16px">
+<h3 style="font-size:18px;line-height:26px;color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-weight:bold;margin:0;mso-line-height-rule:exactly">Für Kinder</h3>
+</td>
+</tr>
+<tr>
+<td align="left" style="padding:0 10px 16px">
+<p style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0;mso-line-height-rule:exactly">Hüpfburg und Kinderschminken ab 15 Uhr.</p>
+</td>
+</tr>
+</tbody>
+</table>
+</td>
+<td class="vb-column" valign="top" width="300" style="padding:0 10px;vertical-align:top;width:300px">
+<table role="presentation" border="0" cellPadding="0" cellSpacing="0" width="100%" style="border-collapse:collapse;width:100%">
+<tbody>
+<tr>
+<td align="left" style="padding:0 10px 16px">
+<h3 style="font-size:18px;line-height:26px;color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-weight:bold;margin:0;mso-line-height-rule:exactly">Für Erwachsene</h3>
+</td>
+</tr>
+<tr>
+<td align="left" style="padding:0 10px 16px">
+<p style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0;mso-line-height-rule:exactly">Ab 18 Uhr spielt die Band „Die Beispiele“.</p>
+</td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="32" style="font-size:32px;height:32px;line-height:32px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td align="left" style="padding:0 20px 16px">
+<p style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0;mso-line-height-rule:exactly">Viele Grüße<br/>Verein</p>
+</td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="16" style="font-size:16px;height:16px;line-height:16px;mso-line-height-rule:exactly"> </td>
+</tr>
+</tbody>
+</table>
+<table role="presentation" align="center" border="0" cellPadding="0" cellSpacing="0" class="vb-container" width="600" style="border-collapse:collapse;max-width:600px;width:600px">
+<tbody>
+<tr>
+<td data-skip-in-text="true" height="24" style="font-size:24px;height:24px;line-height:24px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td align="center" style="padding:0 20px 8px">
+<p style="color:#000000;font-family:Arial, Helvetica, sans-serif;font-size:13px;font-weight:bold;line-height:20px;margin:0;mso-line-height-rule:exactly">Verein</p>
+</td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="24" style="font-size:24px;height:24px;line-height:24px;mso-line-height-rule:exactly"> </td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</body>
+</html>"
+`;
+
+exports[`the rendered mails > render the sample blocks in the default brand > text 1`] = `
+"Einladung zum Sommerfest
+
+Liebe Anna,
+
+Wir laden herzlich zu unserem Sommerfest ein. Es gibt Kuchen, Musik und ein Turnier für alle. Mehr dazu steht auf der Seite zum Sommerfest https://example.org/sommerfest.
+
+ * Samstag, 12. Juli, ab 15 Uhr
+ * Vereinsheim am Sportplatz
+
+Der Ablauf:
+
+ 1. Begrüßung
+ 2. Turnier
+ 3. Grillen
+
+Fragen beantwortet das Büro unter 012345 678 tel:+4912345678 oder per Mail an das Büro info@example.org. Mitgliedsnummer: 1001
+
+Zum Sommerfest anmelden https://example.org/sommerfest/anmeldung
+
+Das Programm
+
+Für Kinder
+
+Hüpfburg und Kinderschminken ab 15 Uhr.
+
+Für Erwachsene
+
+Ab 18 Uhr spielt die Band „Die Beispiele“.
+
+Viele Grüße
+Verein
+
+Verein"
+`;
+
+exports[`the rendered mails > render the spacer sample-spacer block alone > html 1`] = `
+"<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html lang="de" dir="ltr">
+<head>
+<meta charSet="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta name="x-apple-disable-message-reformatting"/>
+<title>Sommerfest für Anna Beispiel</title>
+<style>@media only screen and (max-width: 620px) { .vb-container { width: 100% !important; max-width: 100% !important; } .vb-column { display: block !important; width: 100% !important; max-width: 100% !important; box-sizing: border-box; } .vb-page { padding: 0 !important; } }</style>
+</head>
+<body style="background-color:#f3f4f6;margin:0;padding:0;width:100%">
+<div lang="de" dir="ltr">
+<div data-skip-in-text="true" style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;mso-hide:all;opacity:0;overflow:hidden">Alles zum Sommerfest, Anna ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌</div>
+<table role="presentation" border="0" cellPadding="0" cellSpacing="0" width="100%" style="background-color:#f3f4f6;border-collapse:collapse;width:100%">
+<tbody>
+<tr>
+<td align="center" class="vb-page" style="padding:24px 0">
+<table role="presentation" align="center" border="0" cellPadding="0" cellSpacing="0" class="vb-container" width="600" style="background-color:#ffffff;border-collapse:collapse;max-width:600px;width:600px">
+<tbody>
+<tr>
+<td data-skip-in-text="true" height="4" style="background-color:#1d4ed8;font-size:4px;height:4px;line-height:4px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="32" style="font-size:32px;height:32px;line-height:32px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="32" style="font-size:32px;height:32px;line-height:32px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="16" style="font-size:16px;height:16px;line-height:16px;mso-line-height-rule:exactly"> </td>
+</tr>
+</tbody>
+</table>
+<table role="presentation" align="center" border="0" cellPadding="0" cellSpacing="0" class="vb-container" width="600" style="border-collapse:collapse;max-width:600px;width:600px">
+<tbody>
+<tr>
+<td data-skip-in-text="true" height="24" style="font-size:24px;height:24px;line-height:24px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td align="center" style="padding:0 20px 8px">
+<p style="color:#000000;font-family:Arial, Helvetica, sans-serif;font-size:13px;font-weight:bold;line-height:20px;margin:0;mso-line-height-rule:exactly">Verein</p>
+</td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="24" style="font-size:24px;height:24px;line-height:24px;mso-line-height-rule:exactly"> </td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</body>
+</html>"
+`;
+
+exports[`the rendered mails > render the spacer sample-spacer block alone > text 1`] = `"Verein"`;
+
+exports[`the rendered mails > render the text sample-closing block alone > html 1`] = `
+"<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html lang="de" dir="ltr">
+<head>
+<meta charSet="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta name="x-apple-disable-message-reformatting"/>
+<title>Sommerfest für Anna Beispiel</title>
+<style>@media only screen and (max-width: 620px) { .vb-container { width: 100% !important; max-width: 100% !important; } .vb-column { display: block !important; width: 100% !important; max-width: 100% !important; box-sizing: border-box; } .vb-page { padding: 0 !important; } }</style>
+</head>
+<body style="background-color:#f3f4f6;margin:0;padding:0;width:100%">
+<div lang="de" dir="ltr">
+<div data-skip-in-text="true" style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;mso-hide:all;opacity:0;overflow:hidden">Alles zum Sommerfest, Anna ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌</div>
+<table role="presentation" border="0" cellPadding="0" cellSpacing="0" width="100%" style="background-color:#f3f4f6;border-collapse:collapse;width:100%">
+<tbody>
+<tr>
+<td align="center" class="vb-page" style="padding:24px 0">
+<table role="presentation" align="center" border="0" cellPadding="0" cellSpacing="0" class="vb-container" width="600" style="background-color:#ffffff;border-collapse:collapse;max-width:600px;width:600px">
+<tbody>
+<tr>
+<td data-skip-in-text="true" height="4" style="background-color:#1d4ed8;font-size:4px;height:4px;line-height:4px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="32" style="font-size:32px;height:32px;line-height:32px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td align="left" style="padding:0 20px 16px">
+<p style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0;mso-line-height-rule:exactly">Viele Grüße<br/>Verein</p>
+</td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="16" style="font-size:16px;height:16px;line-height:16px;mso-line-height-rule:exactly"> </td>
+</tr>
+</tbody>
+</table>
+<table role="presentation" align="center" border="0" cellPadding="0" cellSpacing="0" class="vb-container" width="600" style="border-collapse:collapse;max-width:600px;width:600px">
+<tbody>
+<tr>
+<td data-skip-in-text="true" height="24" style="font-size:24px;height:24px;line-height:24px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td align="center" style="padding:0 20px 8px">
+<p style="color:#000000;font-family:Arial, Helvetica, sans-serif;font-size:13px;font-weight:bold;line-height:20px;margin:0;mso-line-height-rule:exactly">Verein</p>
+</td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="24" style="font-size:24px;height:24px;line-height:24px;mso-line-height-rule:exactly"> </td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</body>
+</html>"
+`;
+
+exports[`the rendered mails > render the text sample-closing block alone > text 1`] = `
+"Viele Grüße
+Verein
+
+Verein"
+`;
+
+exports[`the rendered mails > render the text sample-text block alone > html 1`] = `
+"<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html lang="de" dir="ltr">
+<head>
+<meta charSet="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta name="x-apple-disable-message-reformatting"/>
+<title>Sommerfest für Anna Beispiel</title>
+<style>@media only screen and (max-width: 620px) { .vb-container { width: 100% !important; max-width: 100% !important; } .vb-column { display: block !important; width: 100% !important; max-width: 100% !important; box-sizing: border-box; } .vb-page { padding: 0 !important; } }</style>
+</head>
+<body style="background-color:#f3f4f6;margin:0;padding:0;width:100%">
+<div lang="de" dir="ltr">
+<div data-skip-in-text="true" style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;mso-hide:all;opacity:0;overflow:hidden">Alles zum Sommerfest, Anna ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌</div>
+<table role="presentation" border="0" cellPadding="0" cellSpacing="0" width="100%" style="background-color:#f3f4f6;border-collapse:collapse;width:100%">
+<tbody>
+<tr>
+<td align="center" class="vb-page" style="padding:24px 0">
+<table role="presentation" align="center" border="0" cellPadding="0" cellSpacing="0" class="vb-container" width="600" style="background-color:#ffffff;border-collapse:collapse;max-width:600px;width:600px">
+<tbody>
+<tr>
+<td data-skip-in-text="true" height="4" style="background-color:#1d4ed8;font-size:4px;height:4px;line-height:4px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="32" style="font-size:32px;height:32px;line-height:32px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td align="left" style="padding:0 20px 16px">
+<p style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0 0 16px;mso-line-height-rule:exactly">Wir laden herzlich zu unserem <strong>Sommerfest</strong> ein. Es gibt Kuchen, <em>Musik</em> und ein Turnier für alle. Mehr dazu steht auf <a href="https://example.org/sommerfest" style="color:#1d4ed8;text-decoration:underline">der Seite zum Sommerfest</a>.</p>
+<ul style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0 0 16px;mso-line-height-rule:exactly;margin-left:24px;padding:0">
+<li style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0 0 4px;mso-line-height-rule:exactly">Samstag, 12. Juli, ab 15 Uhr</li>
+<li style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0 0 4px;mso-line-height-rule:exactly">Vereinsheim am Sportplatz</li>
+</ul>
+<p style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0 0 16px;mso-line-height-rule:exactly">Der Ablauf:</p>
+<ol style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0 0 16px;mso-line-height-rule:exactly;margin-left:24px;padding:0">
+<li style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0 0 4px;mso-line-height-rule:exactly">Begrüßung</li>
+<li style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0 0 4px;mso-line-height-rule:exactly">Turnier</li>
+<li style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0 0 4px;mso-line-height-rule:exactly">Grillen</li>
+</ol>
+<p style="color:#1f2937;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:24px;margin:0;mso-line-height-rule:exactly">Fragen beantwortet das Büro unter <a href="tel:+4912345678" style="color:#1d4ed8;text-decoration:underline">012345 678</a> oder per <a href="mailto:info@example.org" style="color:#1d4ed8;text-decoration:underline">Mail an das Büro</a>. Mitgliedsnummer: 1001</p>
+</td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="16" style="font-size:16px;height:16px;line-height:16px;mso-line-height-rule:exactly"> </td>
+</tr>
+</tbody>
+</table>
+<table role="presentation" align="center" border="0" cellPadding="0" cellSpacing="0" class="vb-container" width="600" style="border-collapse:collapse;max-width:600px;width:600px">
+<tbody>
+<tr>
+<td data-skip-in-text="true" height="24" style="font-size:24px;height:24px;line-height:24px;mso-line-height-rule:exactly"> </td>
+</tr>
+<tr>
+<td align="center" style="padding:0 20px 8px">
+<p style="color:#000000;font-family:Arial, Helvetica, sans-serif;font-size:13px;font-weight:bold;line-height:20px;margin:0;mso-line-height-rule:exactly">Verein</p>
+</td>
+</tr>
+<tr>
+<td data-skip-in-text="true" height="24" style="font-size:24px;height:24px;line-height:24px;mso-line-height-rule:exactly"> </td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</body>
+</html>"
+`;
+
+exports[`the rendered mails > render the text sample-text block alone > text 1`] = `
+"Wir laden herzlich zu unserem Sommerfest ein. Es gibt Kuchen, Musik und ein Turnier für alle. Mehr dazu steht auf der Seite zum Sommerfest https://example.org/sommerfest.
+
+ * Samstag, 12. Juli, ab 15 Uhr
+ * Vereinsheim am Sportplatz
+
+Der Ablauf:
+
+ 1. Begrüßung
+ 2. Turnier
+ 3. Grillen
+
+Fragen beantwortet das Büro unter 012345 678 tel:+4912345678 oder per Mail an das Büro info@example.org. Mitgliedsnummer: 1001
+
+Verein"
+`;

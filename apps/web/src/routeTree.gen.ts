@@ -13,9 +13,11 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteRouteImport } from './routes/admin/route'
 import { Route as ContactsRouteRouteImport } from './routes/contacts/route'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as PreviewFrameRouteImport } from './routes/preview-frame'
 import { Route as SetupRouteImport } from './routes/setup'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AdminAreasRouteImport } from './routes/admin/areas'
+import { Route as AdminBrandRouteImport } from './routes/admin/brand'
 import { Route as AdminContactSettingsRouteImport } from './routes/admin/contact-settings'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
@@ -23,6 +25,7 @@ import { Route as ApiTickRouteImport } from './routes/api/tick'
 import { Route as ContactsIndexRouteImport } from './routes/contacts/index'
 import { Route as ContactsContactIdRouteImport } from './routes/contacts/$contactId'
 import { Route as ContactsNewRouteImport } from './routes/contacts/new'
+import { Route as MediaFileRouteImport } from './routes/media/$file'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ContactsImportMembersRouteImport } from './routes/contacts/import/members'
 import { Route as ContactsImportPartnersRouteImport } from './routes/contacts/import/partners'
@@ -47,6 +50,11 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PreviewFrameRoute = PreviewFrameRouteImport.update({
+  id: '/preview-frame',
+  path: '/preview-frame',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SetupRoute = SetupRouteImport.update({
   id: '/setup',
   path: '/setup',
@@ -60,6 +68,11 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
 const AdminAreasRoute = AdminAreasRouteImport.update({
   id: '/areas',
   path: '/areas',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminBrandRoute = AdminBrandRouteImport.update({
+  id: '/brand',
+  path: '/brand',
   getParentRoute: () => AdminRouteRoute,
 } as any)
 const AdminContactSettingsRoute = AdminContactSettingsRouteImport.update({
@@ -97,6 +110,11 @@ const ContactsNewRoute = ContactsNewRouteImport.update({
   path: '/new',
   getParentRoute: () => ContactsRouteRoute,
 } as any)
+const MediaFileRoute = MediaFileRouteImport.update({
+  id: '/media/$file',
+  path: '/media/$file',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -118,14 +136,17 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRouteRouteWithChildren
   '/contacts': typeof ContactsRouteRouteWithChildren
   '/login': typeof LoginRoute
+  '/preview-frame': typeof PreviewFrameRoute
   '/setup': typeof SetupRoute
   '/admin/areas': typeof AdminAreasRoute
+  '/admin/brand': typeof AdminBrandRoute
   '/admin/contact-settings': typeof AdminContactSettingsRoute
   '/admin/users': typeof AdminUsersRoute
   '/api/health': typeof ApiHealthRoute
   '/api/tick': typeof ApiTickRoute
   '/contacts/$contactId': typeof ContactsContactIdRoute
   '/contacts/new': typeof ContactsNewRoute
+  '/media/$file': typeof MediaFileRoute
   '/admin/': typeof AdminIndexRoute
   '/contacts/': typeof ContactsIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -135,14 +156,17 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/preview-frame': typeof PreviewFrameRoute
   '/setup': typeof SetupRoute
   '/admin/areas': typeof AdminAreasRoute
+  '/admin/brand': typeof AdminBrandRoute
   '/admin/contact-settings': typeof AdminContactSettingsRoute
   '/admin/users': typeof AdminUsersRoute
   '/api/health': typeof ApiHealthRoute
   '/api/tick': typeof ApiTickRoute
   '/contacts/$contactId': typeof ContactsContactIdRoute
   '/contacts/new': typeof ContactsNewRoute
+  '/media/$file': typeof MediaFileRoute
   '/admin': typeof AdminIndexRoute
   '/contacts': typeof ContactsIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -155,14 +179,17 @@ export interface FileRoutesById {
   '/admin': typeof AdminRouteRouteWithChildren
   '/contacts': typeof ContactsRouteRouteWithChildren
   '/login': typeof LoginRoute
+  '/preview-frame': typeof PreviewFrameRoute
   '/setup': typeof SetupRoute
   '/admin/areas': typeof AdminAreasRoute
+  '/admin/brand': typeof AdminBrandRoute
   '/admin/contact-settings': typeof AdminContactSettingsRoute
   '/admin/users': typeof AdminUsersRoute
   '/api/health': typeof ApiHealthRoute
   '/api/tick': typeof ApiTickRoute
   '/contacts/$contactId': typeof ContactsContactIdRoute
   '/contacts/new': typeof ContactsNewRoute
+  '/media/$file': typeof MediaFileRoute
   '/admin/': typeof AdminIndexRoute
   '/contacts/': typeof ContactsIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -176,14 +203,17 @@ export interface FileRouteTypes {
     | '/admin'
     | '/contacts'
     | '/login'
+    | '/preview-frame'
     | '/setup'
     | '/admin/areas'
+    | '/admin/brand'
     | '/admin/contact-settings'
     | '/admin/users'
     | '/api/health'
     | '/api/tick'
     | '/contacts/$contactId'
     | '/contacts/new'
+    | '/media/$file'
     | '/admin/'
     | '/contacts/'
     | '/api/auth/$'
@@ -193,14 +223,17 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/login'
+    | '/preview-frame'
     | '/setup'
     | '/admin/areas'
+    | '/admin/brand'
     | '/admin/contact-settings'
     | '/admin/users'
     | '/api/health'
     | '/api/tick'
     | '/contacts/$contactId'
     | '/contacts/new'
+    | '/media/$file'
     | '/admin'
     | '/contacts'
     | '/api/auth/$'
@@ -212,14 +245,17 @@ export interface FileRouteTypes {
     | '/admin'
     | '/contacts'
     | '/login'
+    | '/preview-frame'
     | '/setup'
     | '/admin/areas'
+    | '/admin/brand'
     | '/admin/contact-settings'
     | '/admin/users'
     | '/api/health'
     | '/api/tick'
     | '/contacts/$contactId'
     | '/contacts/new'
+    | '/media/$file'
     | '/admin/'
     | '/contacts/'
     | '/api/auth/$'
@@ -232,9 +268,11 @@ export interface RootRouteChildren {
   AdminRouteRoute: typeof AdminRouteRouteWithChildren
   ContactsRouteRoute: typeof ContactsRouteRouteWithChildren
   LoginRoute: typeof LoginRoute
+  PreviewFrameRoute: typeof PreviewFrameRoute
   SetupRoute: typeof SetupRoute
   ApiHealthRoute: typeof ApiHealthRoute
   ApiTickRoute: typeof ApiTickRoute
+  MediaFileRoute: typeof MediaFileRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
 
@@ -268,6 +306,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/preview-frame': {
+      id: '/preview-frame'
+      path: '/preview-frame'
+      fullPath: '/preview-frame'
+      preLoaderRoute: typeof PreviewFrameRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/setup': {
       id: '/setup'
       path: '/setup'
@@ -287,6 +332,13 @@ declare module '@tanstack/react-router' {
       path: '/areas'
       fullPath: '/admin/areas'
       preLoaderRoute: typeof AdminAreasRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/brand': {
+      id: '/admin/brand'
+      path: '/brand'
+      fullPath: '/admin/brand'
+      preLoaderRoute: typeof AdminBrandRouteImport
       parentRoute: typeof AdminRouteRoute
     }
     '/admin/contact-settings': {
@@ -338,6 +390,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ContactsNewRouteImport
       parentRoute: typeof ContactsRouteRoute
     }
+    '/media/$file': {
+      id: '/media/$file'
+      path: '/media/$file'
+      fullPath: '/media/$file'
+      preLoaderRoute: typeof MediaFileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -364,6 +423,7 @@ declare module '@tanstack/react-router' {
 
 interface AdminRouteRouteChildren {
   AdminAreasRoute: typeof AdminAreasRoute
+  AdminBrandRoute: typeof AdminBrandRoute
   AdminContactSettingsRoute: typeof AdminContactSettingsRoute
   AdminUsersRoute: typeof AdminUsersRoute
   AdminIndexRoute: typeof AdminIndexRoute
@@ -371,6 +431,7 @@ interface AdminRouteRouteChildren {
 
 const AdminRouteRouteChildren: AdminRouteRouteChildren = {
   AdminAreasRoute: AdminAreasRoute,
+  AdminBrandRoute: AdminBrandRoute,
   AdminContactSettingsRoute: AdminContactSettingsRoute,
   AdminUsersRoute: AdminUsersRoute,
   AdminIndexRoute: AdminIndexRoute,
@@ -405,9 +466,11 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRouteRoute: AdminRouteRouteWithChildren,
   ContactsRouteRoute: ContactsRouteRouteWithChildren,
   LoginRoute: LoginRoute,
+  PreviewFrameRoute: PreviewFrameRoute,
   SetupRoute: SetupRoute,
   ApiHealthRoute: ApiHealthRoute,
   ApiTickRoute: ApiTickRoute,
+  MediaFileRoute: MediaFileRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
 }
 export const routeTree = rootRouteImport

@@ -12,13 +12,17 @@
 		"db:migrate:vercel": "tsx src/server/db/migrate-vercel-cli.ts",
 		"deploy:cloudflare": "vp run build:cloudflare && vp run db:migrate && wrangler deploy",
 		"dev": "vp dev",
-		"e2e": "playwright test"
+		"e2e": "playwright test",
+		"icons:social": "tsx scripts/build-social-icons.ts",
+		"mail:sample": "tsx src/server/mail/sample-cli.ts"
 	},
 	"dependencies": {
 		"@internationalized/date": "catalog:",
 		"@neondatabase/serverless": "catalog:",
+		"@react-email/render": "catalog:",
 		"@tanstack/react-router": "catalog:",
 		"@tanstack/react-start": "catalog:",
+		"@vercel/blob": "catalog:",
 		"better-auth": "catalog:",
 		"drizzle-orm": "catalog:",
 		"fflate": "catalog:",
@@ -29,6 +33,8 @@
 		"react-aria-components": "catalog:",
 		"react-dom": "catalog:",
 		"read-excel-file": "catalog:",
+		"s3mini": "catalog:",
+		"web-streams-polyfill": "catalog:",
 		"zod": "catalog:"
 	},
 	"devDependencies": {
@@ -45,6 +51,7 @@
 		"@vitejs/plugin-react": "catalog:",
 		"drizzle-kit": "catalog:",
 		"nitro": "catalog:",
+		"simple-icons": "catalog:",
 		"tailwindcss": "catalog:",
 		"tsx": "catalog:",
 		"vite": "catalog:",

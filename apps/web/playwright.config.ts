@@ -15,13 +15,19 @@ export default defineConfig({
 	forbidOnly: isCi,
 	fullyParallel: false,
 	globalSetup: './e2e/global-setup.ts',
-	// One project per flow. `contacts` needs the club that `fundament` sets up, so it runs after it.
+	// One project per flow. `contacts` and `design` need the club that `fundament` sets up, so they run after it.
 	projects: [
 		{ name: 'fundament', testMatch: 'fundament.e2e.ts', use: { ...devices['Desktop Chrome'] } },
 		{
 			dependencies: ['fundament'],
 			name: 'contacts',
 			testMatch: 'contacts.e2e.ts',
+			use: { ...devices['Desktop Chrome'] },
+		},
+		{
+			dependencies: ['fundament'],
+			name: 'design',
+			testMatch: 'design.e2e.ts',
 			use: { ...devices['Desktop Chrome'] },
 		},
 	],

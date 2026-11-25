@@ -4,7 +4,7 @@
  * see), the batched writes and the confirm skeleton (authorize, lock, compare the stock version,
  * create new custom fields, save the mapping, write the audit entry).
  */
-import { inArray, sql } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 
 import { writeAudit } from '@/server/audit/audit';
@@ -16,6 +16,7 @@ import type { DisplayName } from '@/server/contacts/display-name';
 import { CONTACT_FIELDS, GENDERS, protectedFieldOf } from '@/server/contacts/fields';
 import type { ContactField, ContactKind, FieldKey, Gender } from '@/server/contacts/fields';
 import { lockImportState, recordConfirmedImport } from '@/server/contacts/import-state';
+import { placeholderKeyFromName } from '@/server/contacts/placeholder-key';
 import { listCustomFields } from '@/server/contacts/settings';
 import type { Db } from '@/server/db/client';
 import { contacts, customFields } from '@/server/db/schema';
@@ -509,19 +510,28 @@ function newFieldKey(name: string): string {
  * @returns The id per row key (`new:<name>`).
  */
 async function createCustomFields(tx: Db, payload: ImportPayload): Promise<Map<string, string>> {
-	const fields = payload.columns.flatMap(({ target }) =>
+	const names = payload.columns.flatMap(({ target }) =>
 		target.type === 'newCustomField'
-			? [
-					{
-						kind: payload.kind,
-						name: cleanText(target.name),
-						protection: 'protected' as const,
-						type: target.valueType,
-					},
-				]
+			? [{ name: cleanText(target.name), valueType: target.valueType }]
 			: [],
 	);
-	if (fields.length === 0) return new Map();
+	if (names.length === 0) return new Map();
+	const existing = await tx
+		.select({ key: customFields.placeholderKey })
+		.from(customFields)
+		.where(eq(customFields.kind, payload.kind));
+	const taken = new Set(existing.map(({ key }) => key));
+	const fields = names.map(({ name, valueType }) => {
+		const placeholderKey = placeholderKeyFromName(name, taken);
+		taken.add(placeholderKey);
+		return {
+			kind: payload.kind,
+			name,
+			placeholderKey,
+			protection: 'protected' as const,
+			type: valueType,
+		};
+	});
 	const created = await tx
 		.insert(customFields)
 		.values(fields)

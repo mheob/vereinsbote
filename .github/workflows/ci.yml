@@ -58,8 +58,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # PostgreSQL for the tests that need real concurrency (TEST_POSTGRES_URL); each creates and
-    # drops a database of its own. Image pinned by digest, like in the compose files. The throwaway
-    # service trusts every connection, so the workflow holds no password.
+    # drops a database of its own. SeaweedFS serves the S3 storage test (TEST_S3_URL). Images pinned
+    # by digest, like in the compose files. The throwaway PostgreSQL trusts every connection, so the
+    # workflow holds no password.
     services:
       postgres:
         image: postgres:19@sha256:766ddae4967301b9802b341bb596905f11dd5c558149690a7a4d80c2f61bbcf9
@@ -72,6 +73,19 @@ jobs:
           --health-retries 30
         ports:
           - 5432:5432
+      # S3 storage for the images (apps/web/e2e/env.ts, TEST_S3_URL). The image starts `weed mini`
+      # and creates the bucket; the credentials are fixed test values.
+      seaweedfs:
+        image: chrislusf/seaweedfs:4.55@sha256:7ca46aeae2f223b37e5d91593c17ab37738eec6df6ab69b48a0487f7643342b9
+        env:
+          AWS_ACCESS_KEY_ID: vereinsbote
+          AWS_SECRET_ACCESS_KEY: vereinsbote-dev-secret
+          S3_BUCKET: vereinsbote
+        options: >-
+          --health-cmd "wget --quiet --spider --tries=1 http://localhost:9333/cluster/status" --health-interval 2s
+          --health-timeout 5s --health-retries 30
+        ports:
+          - 8333:8333
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -87,6 +101,7 @@ jobs:
       - name: Unit and integration tests
         env:
           TEST_POSTGRES_URL: postgres://vereinsbote@localhost:5432/vereinsbote
+          TEST_S3_URL: http://vereinsbote:vereinsbote-dev-secret@localhost:8333/vereinsbote
         run: vp test --coverage
       # Pushes to main and pull requests of this repository only: other pushes would analyze the
       # same code twice, and pull requests from forks get no secrets. Needs the repository secret
@@ -118,18 +133,20 @@ jobs:
             - args: ['--frozen-lockfile']
       - name: Build for ${{ matrix.target }}
         run: vp run --filter web build:${{ matrix.target }}
-      # nodemailer and pg (with pg-pool and pg-protocol) are loaded on the Node path only and must
-      # never reach the Worker. The bundle names the module of each piece of code by its path
-      # (`node_modules/pg-pool/…`, in comments and source maps); Neon's driver carries pg's
-      # package.json as text, which names pg-pool without being its code. grep exits with 1 when
-      # nothing matches; 0 (a match) and 2 (an error) fail the step.
+      # nodemailer, pg (with pg-pool and pg-protocol), s3mini and @vercel/blob are loaded on the Node
+      # or Vercel path only and must never reach the Worker. The bundle names the module of each piece
+      # of code by its path (`node_modules/pg-pool/…`, in comments and source maps), so s3mini and
+      # @vercel/blob are matched by path, too: the source maps also hold our own source, which names
+      # them in its guarded imports. Neon's driver carries pg's package.json as text, which names
+      # pg-pool without being its code. grep exits with 1 when nothing matches; 0 (a match) and 2
+      # (an error) fail the step.
       - name: Check the Cloudflare bundle for Node-only modules
         if: matrix.target == 'cloudflare'
         run: |
           status=0
-          grep -rlE 'nodemailer|from "pg"|node_modules/(pg|pg-pool|pg-protocol)/' apps/web/dist/cloudflare || status=$?
+          grep -rlE 'nodemailer|from "pg"|node_modules/(pg|pg-pool|pg-protocol|s3mini|@vercel/blob)/' apps/web/dist/cloudflare || status=$?
           if [ "$status" -ne 1 ]; then
-            echo "::error::The Cloudflare bundle contains nodemailer or pg (grep exit code $status)."
+            echo "::error::The Cloudflare bundle contains nodemailer, pg, s3mini or @vercel/blob (grep exit code $status)."
             exit 1
           fi
 
@@ -167,6 +184,19 @@ jobs:
         ports:
           - 1025:1025
           - 8025:8025
+      # S3 storage for the images (S3_* in apps/web/e2e/env.ts). The image starts `weed mini`
+      # and creates the bucket; the credentials are fixed test values.
+      seaweedfs:
+        image: chrislusf/seaweedfs:4.55@sha256:7ca46aeae2f223b37e5d91593c17ab37738eec6df6ab69b48a0487f7643342b9
+        env:
+          AWS_ACCESS_KEY_ID: vereinsbote
+          AWS_SECRET_ACCESS_KEY: vereinsbote-dev-secret
+          S3_BUCKET: vereinsbote
+        options: >-
+          --health-cmd "wget --quiet --spider --tries=1 http://localhost:9333/cluster/status" --health-interval 2s
+          --health-timeout 5s --health-retries 30
+        ports:
+          - 8333:8333
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

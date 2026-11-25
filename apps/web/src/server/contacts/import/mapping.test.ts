@@ -31,6 +31,7 @@ const SPIND: CustomFieldRecord = {
 	id: SPIND_ID,
 	kind: 'member',
 	name: 'Spind',
+	placeholderKey: 'spind',
 	protection: 'protected',
 	type: 'text',
 };

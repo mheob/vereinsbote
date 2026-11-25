@@ -1,0 +1,11 @@
+# Template for docker/mailpit-relay.yaml, the SMTP account that Mailpit releases mails through
+# (docker/compose.relay.yml). Copy it, replace the placeholder values, and never commit the copy:
+# it is in .gitignore. The values below are placeholders, not real credentials.
+host: smtp.example.org
+port: 587
+starttls: true
+auth: plain
+username: sample-user@example.org
+password: replace-with-the-password-of-the-smtp-account
+# The address that bounces go to; many providers require an address of the account.
+return-path: sample-user@example.org

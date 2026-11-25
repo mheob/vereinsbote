@@ -42,9 +42,34 @@ export default defineConfig({
 				},
 			},
 			{
+				// Mail components render once to an HTML string for mail clients: inline styles are the
+				// only styling every client reads, nothing re-renders, and their classes belong to the
+				// mail's own `<style>`, not to Tailwind.
+				files: ['apps/web/src/mail/**/*.tsx'],
+				plugins: ['react', 'react-perf'],
+				rules: {
+					'better-tailwindcss/no-unknown-classes': 'off',
+					'react/no-array-index-key': 'off',
+					'react-perf/jsx-no-new-object-as-prop': 'off',
+				},
+			},
+			{
 				// TanStack Router names a path parameter after its file, e.g. `$contactId.tsx`.
 				files: ['apps/web/src/routes/**/$*.tsx'],
 				rules: { 'unicorn/filename-case': 'off' },
+			},
+			{
+				// `expectStorageFailures` asserts for the tests that call it, and `describeStorageContract`
+				// registers the cases every storage implementation must pass.
+				files: ['**/*.test.ts'],
+				plugins: ['vitest'],
+				rules: {
+					'vitest/expect-expect': [
+						'error',
+						{ assertFunctionNames: ['expect', 'expectStorageFailures'] },
+					],
+					'vitest/require-hook': ['warn', { allowedFunctionCalls: ['describeStorageContract'] }],
+				},
 			},
 		],
 		rules: {
@@ -58,7 +83,8 @@ export default defineConfig({
 			],
 			// Strict for plain data. The allowed types are opaque or mutable by design and cannot be made
 			// deeply readonly: DOM/platform handles, the Drizzle client, Better Auth's instance, zod's
-			// refinement context, React nodes and the app's service bundles that hold such objects.
+			// refinement context, React nodes, the app's service bundles and the storage clients (the R2
+			// binding, `s3mini`, `@vercel/blob`) that hold such objects.
 			// Names are matched as written, so a parameter typed `Readonly<Env>` is not covered: write `Env`.
 			'typescript/prefer-readonly-parameter-types': [
 				'error',
@@ -74,9 +100,12 @@ export default defineConfig({
 						'Db',
 						'Env',
 						'IsolateServices',
+						'R2BucketLike',
 						'ReactNode',
 						'ReadableStream',
 						'RefinementCtx',
+						'S3ClientLike',
+						'VercelBlobClient',
 					],
 					// Callbacks whose parameter types come from a library (Drizzle builders, hooks, handlers).
 					ignoreInferredTypes: true,

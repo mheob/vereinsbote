@@ -1,15 +1,31 @@
 import { setResponseHeaders } from '@tanstack/react-start/server';
 import { describe, expect, it, vi } from 'vite-plus/test';
 
+import { parseEnv } from '@/server/env';
 import { startInstance } from '@/start';
 
+import type { getAppEnv } from './context';
+import { cspNonceFor } from './csp-nonce';
 import { createServerFnCsrfMiddleware } from './csrf';
-import { SECURITY_HEADERS } from './security-headers';
+import { securityHeadersFor } from './security-headers';
 
 // Start's response helpers need its request context, which the stand-in executor has not.
 vi.mock(import('@tanstack/react-start/server'), async (importOriginal) => ({
 	...(await importOriginal()),
 	setResponseHeaders: vi.fn<typeof setResponseHeaders>(),
+}));
+
+// The security headers read the app's URL, and the stand-in has no environment.
+vi.mock(import('./context'), async (importOriginal) => ({
+	...(await importOriginal()),
+	getAppEnv: vi.fn<typeof getAppEnv>().mockResolvedValue(
+		parseEnv({
+			APP_SECRET: Buffer.alloc(32, 5).toString('base64'),
+			APP_URL: 'https://bote.example.org',
+			CRON_SECRET: 'c'.repeat(32),
+			DATABASE_URL: 'postgres://x@localhost/x',
+		}),
+	),
 }));
 
 const APP_ORIGIN = 'https://bote.example.org';
@@ -152,10 +168,9 @@ describe('csrf protection of server functions', () => {
 				'sec-fetch-site': 'cross-site',
 			});
 			await expect(runApp(request, 'serverFn')).resolves.toMatchObject({ status: FORBIDDEN });
+			const expected = securityHeadersFor('page', { https: true, nonce: cspNonceFor(request) });
 			// Headers compare by their entries.
-			expect(vi.mocked(setResponseHeaders).mock.calls).toStrictEqual([
-				[new Headers(SECURITY_HEADERS)],
-			]);
+			expect(vi.mocked(setResponseHeaders).mock.calls).toStrictEqual([[new Headers(expected)]]);
 		});
 
 		it('leaves routes such as Better Auth to their own origin check', async () => {

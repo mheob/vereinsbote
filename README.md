@@ -7,13 +7,13 @@ Vereinsbote is an open-source web app a club uses to send e-mails to its members
 - Node.js 26 (see `.node-version`)
 - pnpm 12 (see `packageManager` in `package.json`)
 - [Vite+](https://viteplus.dev) with its CLI `vp`
-- Docker, for PostgreSQL and Mailpit
+- Docker, for PostgreSQL, Mailpit and SeaweedFS (S3 storage for images)
 
 ## Local development
 
 ```sh
 pnpm install
-docker compose -f docker/compose.dev.yml up -d   # PostgreSQL :5432, Mailpit :1025 (SMTP) and :8025 (web)
+docker compose -f docker/compose.dev.yml up -d   # PostgreSQL :5432, Mailpit :1025 (SMTP) and :8025 (web), SeaweedFS :8333 (S3)
 cp apps/web/.env.example apps/web/.env           # fill in, see below
 set -a; . apps/web/.env; set +a                  # load the variables into the shell
 vp run --filter web db:migrate
@@ -21,9 +21,12 @@ vp dev                                           # http://localhost:3000
 ```
 
 - Generate the secrets in `apps/web/.env` (the commands are in the file) and set `DEV_SMTP_URL=smtp://localhost:1025`. All mails then end up in Mailpit at <http://localhost:8025>.
+- Images need a storage. Set the `S3_*` variables to the SeaweedFS of `compose.dev.yml` (the values are in `apps/web/.env.example`); without storage `/admin/brand` shows the upload as unavailable and `/media` answers 404. See [Image storage](#image-storage).
 - On first start, `/setup` walks you through creating the first admin with the `SETUP_TOKEN`.
 - Checks: `vp check` (format, lint, types), `vp test`, `pnpm check:catalog`, `pnpm check:vite-plus` and `pnpm cve`.
 - Tests that need real PostgreSQL concurrency (`*.postgres.test.ts`) run only when `TEST_POSTGRES_URL` is set; otherwise `vp test` counts them as skipped, and `vp test --reporter=verbose` shows why (the reason is in the test's title). With the dev services running: `TEST_POSTGRES_URL=postgres://vereinsbote:vereinsbote@localhost:5432/vereinsbote vp test`. Each such test creates a database of its own and drops it again. CI sets the variable.
+- The S3 storage test (`s3.seaweedfs.test.ts`) runs only when `TEST_S3_URL` is set, like the PostgreSQL tests: `TEST_S3_URL=http://vereinsbote:vereinsbote-dev-secret@localhost:8333/vereinsbote vp test` (user, secret, host and bucket of the SeaweedFS in `compose.dev.yml`; CI sets it).
+- Mail snapshots (`apps/web/src/mail/render/__snapshots__`) pin the HTML of the standard layout. After a deliberate change of the layout, update them with `vp test -u` and read the diff; see [CONTRIBUTING.md](CONTRIBUTING.md#development-workflow).
 - Commits: `pnpm commit` starts czg for Conventional Commits. `pnpm install` installs the Git hooks (`.vite-hooks/`) through `vp config`.
 - Changesets: every user-facing change needs one, add it with `pnpm changeset`. The `pre-push` hook runs `pnpm exec changeset status --since=origin/main` (skipped when `CI` is set) and refuses a push of changed packages without a changeset. For a change without a user-facing effect (docs, tests, CI), add an empty one: `pnpm changeset --empty`. See [Releases](#releases).
 
@@ -37,7 +40,7 @@ vp run --filter web e2e
 
 Playwright builds the Node output and starts it on port 3100 with fixed test values (`apps/web/e2e/env.ts`). The values in that file replace the shell's, so your own `MS_LOGIN_*` or `HEARTBEAT_URL` do not leak into the run. Every run empties the database `vereinsbote_e2e` and the Mailpit inbox, so the development database `vereinsbote` stays untouched.
 
-Each test file is a Playwright project of its own in `apps/web/playwright.config.ts`: `fundament` (`fundament.e2e.ts`: setup, sign-in, users and areas) and `contacts` (`contacts.e2e.ts`: imports, contact pages and contact settings). `contacts` depends on `fundament` and runs after it, on the club that `fundament` set up. A new `*.e2e.ts` file needs a project entry of its own, with `dependencies` when it builds on another file's data; a file without one does not run.
+Each test file is a Playwright project of its own in `apps/web/playwright.config.ts`: `fundament` (`fundament.e2e.ts`: setup, sign-in, users and areas), `contacts` (`contacts.e2e.ts`: imports, contact pages and contact settings) and `design` (`design.e2e.ts`: the brand page with its preview and image upload, and the sample mails). `contacts` and `design` depend on `fundament` and run after it, on the club that `fundament` set up; its last test signs the admin in by link and saves the session (`helpers/admin-session.ts`, in Playwright's `test-results` folder), which `contacts` and `design` open their admin pages with, because the server sends only one sign-in link per address and minute. A new `*.e2e.ts` file needs a project entry of its own, with `dependencies` when it builds on another file's data; a file without one does not run. Every E2E file imports `test` from `apps/web/e2e/helpers/test.ts`, which watches every browser context of the run (the `page` fixture's and those a test or a `beforeAll` opens with `browser.newContext()`) and fails the test during which a page reported a Content Security Policy violation. The `design` project also runs `mail:sample` (see [Sample mails](#sample-mails-and-the-mailpit-relay)) against Mailpit and requires at least 80 % support in Mailpit's HTML check and no axe violation for each sample mail.
 
 `compose.dev.yml` creates `vereinsbote_e2e` when its volume is new. If an older volume lacks it, create it:
 
@@ -59,6 +62,8 @@ All variables are described in `apps/web/.env.example`. They are trimmed and val
 | `MS_LOGIN_CLIENT_ID`, `MS_LOGIN_CLIENT_SECRET`, `MS_LOGIN_TENANT_ID` | no | Sign-in with Microsoft, all three or none. The tenant must be the club's tenant ID (a GUID); `common`, `organizations` and `consumers` are refused |
 | `DEV_SMTP_URL` | no | Development only: system mails via SMTP, e.g. to Mailpit. Unencrypted only to `localhost`, `127.0.0.1` or `[::1]`; any other server must offer STARTTLS |
 | `DEV_NEON_WS_PROXY` | no | Development only: a local Neon WebSocket proxy for the Neon driver (see [Cloudflare smoke test](#local-smoke-test-of-the-cloudflare-build)); needs an `http://localhost` `APP_URL` |
+| `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | no | Node/Docker: S3 storage for images, all five or none. `http://` only for `localhost` and `127.0.0.1`, the bucket must exist (see [Image storage](#image-storage)) |
+| `BLOB_READ_WRITE_TOKEN` | no | Vercel: the read-write token of a private Vercel Blob store; the build reads it (see [Image storage](#image-storage)) |
 | `HEARTBEAT_URL` | no | Called after every completed tick, also when a step failed (not when the tick could not run, e.g. without a database) |
 | `TICK_INTERVAL_MS` | no | Node/Docker only: interval between ticks, default 15 minutes |
 
@@ -101,7 +106,7 @@ The image (`docker/Dockerfile`) builds in a separate stage. At runtime it contai
 
 - The variables are secrets of the Worker: `wrangler secret put DATABASE_URL`, and likewise `APP_URL`, `APP_SECRET`, `CRON_SECRET` and the optional ones.
 - Deploy with `vp run --filter web deploy:cloudflare`, with `DATABASE_URL` in the shell. The script builds, migrates the database and then runs `wrangler deploy`. A failing build never touches the database, and no stale build is ever deployed.
-- The cron trigger is set in `apps/web/wrangler.jsonc`.
+- The cron trigger and the R2 binding are set in `apps/web/wrangler.jsonc`. Create the image bucket once, before the first deployment: see [Image storage](#image-storage).
 
 ### Local smoke test of the Cloudflare build
 
@@ -125,6 +130,7 @@ cd apps/web && pnpm exec wrangler dev --config dist/cloudflare/server/wrangler.j
 - Signed out, `curl -s -o /dev/null -D - localhost:8787/admin/users` answers `307` with `Location: /login`: a page's redirect survives the request middleware that ends the request's database.
 - `curl -s -o /dev/null -w '%{http_code}\n' localhost:8787/does-not-exist` answers `404`, and `curl -s localhost:8787/does-not-exist | grep '<h1'` shows the translated not-found page („Seite nicht gefunden“; with `-H 'Cookie: locale=en'`, "Page not found").
 - `/login` renders; `/setup` with the `SETUP_TOKEN` creates the first admin and leads to `/admin/users` (a POST server function, a transaction and a session on workerd); the header's Sign out button (de: „Abmelden“) leads back to `/login`.
+- `/media` from the local R2 (the generated config keeps the `MEDIA_BUCKET` binding, and `wrangler dev` simulates the bucket on disk): sign in as the admin (the sign-in link of the first admin comes from `/setup`), upload a logo on `/admin/brand` and save, then `curl -s -o /dev/null -D - localhost:8787/media/<id>.png` (the address is the `src` of the logo in the preview) answers `200` with `Content-Type: image/png`, `Cache-Control: public, max-age=86400` and `Content-Security-Policy: default-src 'none'; sandbox`. An unknown id answers `404`.
 - The cron handler: `curl -s -X POST -H 'content-type: application/json' -d '{"cron":"*/15 * * * *"}' 'localhost:8787/cdn-cgi/local/explorer/api/local/scheduled?worker=vereinsbote'` answers `"outcome":"ok"`, and an expired row in `verification` is gone afterwards. (`wrangler dev --test-scheduled` and `/__scheduled` do not reach this build: its generated config sets `no_bundle`, so wrangler injects no test middleware.)
 
 Afterwards: stop `wrangler dev`, drop the database (`dropdb --username=vereinsbote vereinsbote_smoke` in the `postgres` container) and run `docker compose -f docker/compose.dev.yml --profile cloudflare stop wsproxy`. This covers the Worker's code paths, not Cloudflare's network, Hyperdrive or Neon itself; see the checklist below.
@@ -141,7 +147,7 @@ Preview deployments sit behind Vercel's Deployment Protection by default, so a p
 2. Push a branch. The build log shows `pnpm v12`, the build, then `Migrations applied.`
 3. On the preview URL: `/api/health` returns `{"ok":true}`; `/setup` creates the first admin; `/admin/users` and `/admin/areas` load; an invitation and a level change are saved; Sign out works; signed out, `/admin/users` redirects to `/login`; an unknown address shows the 404 page.
 4. Call the tick the way Vercel Cron does: `curl -s -H "Authorization: Bearer $CRON_SECRET" -H "x-vercel-protection-bypass: $VERCEL_BYPASS" https://<preview>/api/tick` returns the report of a completed tick. The function log shows no `no waitUntil` warning.
-5. Check the response headers of a page and of a built asset under `/assets/` (`X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'`); the asset comes from Vercel's CDN, which takes its headers from `.vercel/output/config.json`.
+5. Check the response headers of a page (`X-Frame-Options: DENY`, a `Content-Security-Policy` with a nonce) and of a built asset under `/assets/` (`X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'`); the asset comes from Vercel's CDN, which takes its headers from `.vercel/output/config.json`.
 6. Then promote with the production variables (without `MIGRATE_ON_PREVIEW`). Promoting rebuilds the deployment for production: its build log must show `Migrations applied.` as well (not `Migrations skipped`, and no `Migrations not run` error). Check that the cron job `/api/tick` appears under Settings → Cron Jobs.
 
 **Cloudflare Workers:**
@@ -150,6 +156,44 @@ Preview deployments sit behind Vercel's Deployment Protection by default, so a p
 2. `vp run --filter web deploy:cloudflare` with `DATABASE_URL` in the shell: build, `Migrations applied.`, deploy.
 3. On the Worker's URL: the same checks as for Vercel (health, setup, admin pages, sign-out, the redirect of a signed-out `/admin/users`, 404, headers of a page and of an asset under `/assets/`, which Cloudflare serves with the `_headers` file of the build).
 4. Run the cron trigger once from the dashboard (Triggers → Cron → run), then check in `wrangler tail` that it logged no `scheduled tick failed` and no `no waitUntil` warning, and that `system_state` has a fresh `last_tick`.
+
+## Image storage
+
+Images of the club (logos now, template images later) are stored privately and served by the app itself under `/media/<id>.<ext>`: the address is the only protection, an id of 22 random base64url characters, because the images end up in e-mails and a mailbox sends no session. Each platform has its own store; the app picks it from what is configured:
+
+| Platform | Storage | Setup |
+| --- | --- | --- |
+| Cloudflare Workers | R2 bucket, binding `MEDIA_BUCKET` (`apps/web/wrangler.jsonc`) | `wrangler r2 bucket create vereinsbote-media --jurisdiction eu`, once before the first deployment. The jurisdiction is fixed when the bucket is created and keeps the data in the EU. The bucket stays private: no public bucket URL, no custom domain |
+| Vercel | private Vercel Blob store | Create the store in the region `fra1` (Frankfurt) with access "Private" (Storage tab of the project; it adds `BLOB_READ_WRITE_TOKEN` to the project's environment). The app passes `access: 'private'` on every call, so a public store fails instead of leaking images |
+| Node/Docker | any S3 service | `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY`, all five or none. The bucket must exist. `http://` endpoints work for `localhost` only. The client is `s3mini`. For Docker Compose put them in `docker/.env` |
+
+- **Development and tests:** `docker/compose.dev.yml` starts SeaweedFS (`weed mini`) with the bucket `vereinsbote` at <http://localhost:8333>, access key `vereinsbote`, secret `vereinsbote-dev-secret`. The E2E tests and the CI services use it too. `TEST_S3_URL` runs the S3 contract test against it (see [Local development](#local-development)).
+- **Without a storage** (no `S3_*`, no token, no binding) the app runs; uploads are refused with a notice and `/media` answers 404.
+- **Packages:** `s3mini` and `@vercel/blob` load only behind the build constants (`import.meta.env.VITE_VB_PLATFORM`), like `pg` and `nodemailer`, so the Cloudflare bundle holds neither. CI greps that bundle for `nodemailer`, `pg`, `s3mini` and `@vercel/blob` (by the `node_modules/` path of the latter three, because their names also appear in our own source maps).
+- **`/media`:** serves GET and HEAD (other methods get `405`; a failing database or storage an empty `503` with `Cache-Control: no-store`, logged by error code only), `Cache-Control: public, max-age=86400` (one day), plus `CDN-Cache-Control` with the same value on Vercel; Workers do not cache (reading R2 is cheap). The response has its own security headers: `default-src 'none'; sandbox`, `X-Content-Type-Options: nosniff` and `Cross-Origin-Resource-Policy: cross-origin`, so a mail client can show the image but the file can never run as a page. A deleted image can stay visible for up to a day in caches and in mails already sent.
+- **Uploads:** the browser scales an image to at most 1200 px width and re-encodes it (JPEG or PNG, EXIF rotation applied); the server checks the bytes again (type, at most 1200 × 4000 px and 2 MB) and stores it only through `storeImage`.
+
+## Brand and mails
+
+The corporate design (CD) is set by admins on `/admin/brand`: club name, header and footer logo, colours (a contrast check at the field warns below 4.5:1 and does not block saving), font stacks that mail clients have, an optional font the recipient may have installed, the footer (address, register, imprint, privacy, website, free text) and up to five more footer links, each shown as text or as a social icon. Saving a changed CD that another tab or admin changed meanwhile is refused with a notice. The page shows a live preview of a sample mail (as desktop, as phone or as text; on screens below 1024 px on its own tab). Until a CD is saved the neutral default applies, and the start page points admins to it.
+
+- **Standard layout:** mails are built from blocks (heading, text, image, button, divider, spacer, two columns) in one standard layout made of tables and inline styles for mail clients, with the CD applied when the mail is compiled. `compileMail` (`apps/web/src/mail/render/compile.ts`) renders the HTML and the plain-text version once, with a marker per recipient value; `fillMail` puts a recipient's values into the slots in one pass. Values are escaped for HTML, left as they are in the text and put on one line in the subject. A value is never parsed again, so a first name like `{{contact.email}}` appears literally.
+- **Placeholders** (`{{key}}`, `{{key | "fallback"}}`) work only in text, never in attributes, URLs or `<style>`. `salutation` is chosen by gender, name and company, in the informal (du) or formal (Sie) form.
+- **Social icons:** `apps/web/public/social/<platform>-<dark|light|brand>.png` (48 × 48 px, shown at 24 px) are checked in and served as static files. They come from [`simple-icons`](https://simpleicons.org) (CC0 1.0), generated by `vp run --filter web icons:social` (needs Playwright's Chromium; run it by hand when the set changes). The logos are trademarks of their owners and used only to link to the club's own profile on that platform; the license of the icon set does not cover the trademarks. LinkedIn has no icon, because `simple-icons` removed it: a LinkedIn link is shown as text.
+
+### Sample mails and the Mailpit relay
+
+`vp run --filter web mail:sample` sends four sample mails (the standard layout with all blocks to a woman informally; the formal form to a company; two columns; the full CD with logos and icon links) with invented data to `sample@example.org` through `DEV_SMTP_URL`, so they land in Mailpit (<http://localhost:8025>). It reads `DEV_SMTP_URL` (required) and `APP_URL` from the environment (load `apps/web/.env` as shown above). Real mailboxes cannot reach `localhost`, so every image goes along as an inline attachment (`cid:`); the photo is generated on the fly.
+
+For a look in real mail clients, Mailpit can release (relay) a mail to your own mailbox:
+
+```sh
+cp docker/mailpit-relay.example.yaml docker/mailpit-relay.yaml   # fill in your SMTP account
+docker compose -f docker/compose.dev.yml -f docker/compose.relay.yml up -d mailpit
+vp run --filter web mail:sample
+```
+
+Then open a mail in Mailpit, press "Release" and enter the address of a mailbox of your own. **`docker/mailpit-relay.yaml` holds the credentials of an SMTP account: it is in `.gitignore` and must never be committed.** Only `docker/mailpit-relay.example.yaml`, with placeholder values, is in the repository. Before a release that touches the layout, look at the four mails in Outlook (classic and new), Gmail (web and app), Apple Mail and the iOS mail app. The E2E tests already check them with Mailpit's HTML check (at least 80 % supported) and with axe, but only real clients show how they look.
 
 ## Contacts and imports
 
@@ -166,7 +210,7 @@ Contacts are the club's members and partners (`/contacts`). Everyone with at lea
 - **Remove `SETUP_TOKEN` after the setup.** `/setup` is then switched off.
 - **No production mail transport yet.** In this stage the app can send system mails (sign-in links, invitations) only through `DEV_SMTP_URL` (development) or not at all; users can still sign in with Microsoft when it is configured. The setup's own session is then the only way in for the first admin. Sessions last 7 days and are renewed when used, so it lapses after 7 days without use; keep it alive or configure Microsoft sign-in.
 - **Rotating `APP_SECRET` signs everyone out** (the session cookies no longer verify) and resets the login link windows. Credentials stored encrypted with the old secret could no longer be read; this stage stores none yet.
-- **Security headers:** pages and API responses carry `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'`, `X-Content-Type-Options: nosniff` and `Referrer-Policy: strict-origin-when-cross-origin`, set by the request middleware in `apps/web/src/start.ts`. The built assets under `/assets/` never reach that middleware: Nitro's static handler (Node), Vercel's CDN and Cloudflare's Workers assets serve them. They get the same headers from each platform's configuration (`apps/web/src/platform/static-headers.ts`): a Nitro route rule on Node, the routes of `.vercel/output/config.json` on Vercel, and a `_headers` file in `dist/cloudflare/client` on Cloudflare. A full Content Security Policy follows in a later stage.
+- **Security headers:** pages and API responses carry `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin` and a `Content-Security-Policy` with a nonce per request (`default-src 'self'`, scripts need that nonce, no `unsafe-eval` (zod runs without its JIT, `z.config({ jitless: true })` in `apps/web/src/zod-config.ts`), `img-src 'self' blob: data:`, `worker-src 'none'`, `frame-ancestors 'none'`, `upgrade-insecure-requests` with an `https:` `APP_URL`), set by the request middleware in `apps/web/src/start.ts`. Two paths differ: `/media/*` gets `default-src 'none'; sandbox` (see [Image storage](#image-storage)), and `/preview-frame`, the document of the sandboxed iframe that shows the mail preview, gets a policy of its own (`default-src 'none'`, scripts with the nonce only, inline styles, `img-src 'self' https:` so the preview can show images of imported templates, `frame-ancestors 'self'`, `X-Frame-Options: SAMEORIGIN`; only GET, other methods get `405`, and an unreadable setting an empty `503`). The built assets under `/assets/` and the icons under `/social/` never reach that middleware: Nitro's static handler (Node), Vercel's CDN and Cloudflare's Workers assets serve them. They get the base headers (`Content-Security-Policy: frame-ancestors 'none'` instead of the page policy, as a file has no nonce) from each platform's configuration (`apps/web/src/platform/static-headers.ts`): a Nitro route rule on Node, the routes of `.vercel/output/config.json` on Vercel, and a `_headers` file in `dist/cloudflare/client` on Cloudflare.
 - **Errors:** pages show a generic error or not-found page, and a failed server function sends a generic error to the browser. The server logs only the error's code or name, also for Better Auth's own errors, and a 5xx response of Better Auth only as `better auth HTTP <status>`, so no query parameters, tokens or addresses end up in the logs.
 - **Contact settings** are on `/admin/contact-settings` (admins only): the members area and the partners area, the areas that see each protected field per kind of contact, the protection of custom fields and the weeks after which the member data counts as stale. The setup makes „Mitglieder“ the members area and „Finanzen“ the partners area. **Instances set up before this version** have neither: an admin chooses both there once. Until then nobody can import, maintain partners or set suppressions and opt-outs.
 - **Imports** take at most 10,000 rows (4,000,000 bytes compressed, 16 MiB unpacked). A server function call with form data (only the import sends any) above 4.5 MB is answered with 413 before its body is read, one whose body breaks off with 400 (`apps/web/src/platform/body-limit.ts`), so a large request cannot fill the memory of a Node server; Vercel refuses such requests itself.
@@ -187,10 +231,10 @@ Contacts are the club's members and partners (`/contacts`). Everyone with at lea
 `.github/workflows/ci.yml` runs on every push and every pull request:
 
 - `check`: `vp check`, `pnpm check:catalog`, `pnpm check:vite-plus`, `pnpm cve` (dependency advisories) and, on pull requests, commitlint over all commits of the pull request
-- `test`: `vp test --coverage`, with a PostgreSQL service container (trust authentication, so the workflow holds no password) and `TEST_POSTGRES_URL`, so the concurrency tests run as well; then the SonarQube Cloud scan (see [Security scanning](#security-scanning))
-- `build`: the three targets. The job also checks that `nodemailer` and `pg` (with `pg-pool` and `pg-protocol`) do not end up in the Cloudflare bundle: it fails on their module paths (`node_modules/pg-pool/…`), which the bundle keeps in comments and source maps, but not on the copy of pg's `package.json` that Neon's driver carries as text.
+- `test`: `vp test --coverage`, with a PostgreSQL and a SeaweedFS service container (trust authentication, so the workflow holds no password) and `TEST_POSTGRES_URL` and `TEST_S3_URL`, so the concurrency and storage tests run as well; then the SonarQube Cloud scan (see [Security scanning](#security-scanning))
+- `build`: the three targets. The job also checks that `nodemailer`, `pg` (with `pg-pool` and `pg-protocol`), `s3mini` and `@vercel/blob` do not end up in the Cloudflare bundle: it fails on their module paths (`node_modules/pg-pool/…`), which the bundle keeps in comments and source maps, but not on the copy of pg's `package.json` that Neon's driver carries as text.
 - `docker`: builds `docker/Dockerfile` (without pushing)
-- `e2e`: the end-to-end tests, against PostgreSQL and Mailpit as service containers
+- `e2e`: the end-to-end tests, against PostgreSQL, Mailpit and SeaweedFS as service containers
 
 `voidzero-dev/setup-vp` sets up Vite+, Node (from `.node-version`) and pnpm (from `packageManager`), and installs the dependencies with `--frozen-lockfile`. A newer push cancels the running checks of the same branch or pull request; on `main`, every commit keeps its run.
 
@@ -205,7 +249,7 @@ Three scanners look at the code and the dependencies. None needs a secret except
   - Fix a finding by updating the dependency or, when the parent has no fix yet, with a scoped entry in `overrides` (like the esbuild one in `pnpm-workspace.yaml`).
 - **SonarQube Cloud** analyzes in CI, not through Automatic Analysis (that cannot import coverage).
   - `sonar-project.properties` holds the organization `mheob`, the project key `mheob_vereinsbote` and the paths. The `test` job runs `vp test --coverage` (provider v8, report `coverage/lcov.info`, configured in the root `vite.config.ts`) and then the scan action. The scan runs on pushes to `main` and on pull requests of this repository, not on forks (they get no secrets).
-  - The quality gate asks for 80 % coverage on new code. It counts the unit tests only, so `sonar.coverage.exclusions` leaves out the code that runs only inside the framework or a runtime and is tested end to end instead: routes, React components (`*.tsx`), server functions (thin wrappers around the tested `server/` modules), the router, the Node and Workers entry points and the migration CLIs. Plain modules next to them (hooks, helpers) still count. The test files themselves are excluded from the sources.
+  - The quality gate asks for 80 % coverage on new code. It counts the unit tests only, so `sonar.coverage.exclusions` leaves out the code that runs only inside the framework or a runtime and is tested end to end instead: routes, React components (`*.tsx`), server functions (thin wrappers around the tested `server/` modules), the router, the Node and Workers entry points, the migration CLIs and the sample mail CLI (`sample-cli.ts`). Plain modules next to them (hooks, helpers) still count. The test files themselves are excluded from the sources.
   - `sonar.cpd.exclusions` leaves the two dictionaries `i18n/de.ts` and `i18n/en.ts` out of the duplication check: they share their key structure by design.
   - Setup by the owner: in SonarQube Cloud import `mheob/vereinsbote` into the organization `mheob` (it gets the key `mheob_vereinsbote`), switch Automatic Analysis off in the project's administration (Analysis Method), create a token (My Account, Security) and add it as the repository secret `SONAR_TOKEN`. Optionally add the SonarQube Cloud check to the `main` ruleset as a required status check.
   - `@vitest/coverage-v8` must have the version of Vitest that Vite+ bundles. It is part of the `vite-plus toolchain` Renovate group and of `pnpm check:vite-plus`.

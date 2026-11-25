@@ -8,8 +8,12 @@ import { parseEnv } from '@/server/env';
 import type { Env } from '@/server/env';
 import { createSystemMailer } from '@/server/mail/system-mailer';
 import type { SystemMailer } from '@/server/mail/system-mailer';
+import { openStorage } from '@/server/storage/open-storage';
+import type { ObjectStorage } from '@/server/storage/storage';
 
 import { createBackgroundRunner } from './background';
+import { variablesOf } from './bindings';
+import type { Bindings } from './bindings';
 import { platformName } from './platform';
 import type { Platform } from './platform';
 import { createRequestScope } from './request-scope';
@@ -21,14 +25,20 @@ interface AppContext {
 	auth: Auth;
 	/** Stateless, shared by all requests of an isolate. */
 	mailer: SystemMailer;
+	/** Private storage for images, shared by all requests of an isolate; null when not set up. */
+	storage: ObjectStorage | null;
 	/** Keeps work (a login link, the next tick) alive after the response. */
 	platform: Platform;
 }
 
-/** What all requests of an isolate share: the environment, the stateless mailer, the platform. */
+/**
+ * What all requests of an isolate share: the environment, the stateless mailer, the storage, the
+ * platform. The R2 binding belongs to the isolate's `env`, not to a request, so it may live here.
+ */
 interface IsolateServices {
 	env: Env;
 	mailer: SystemMailer;
+	storage: ObjectStorage | null;
 	platform: Platform;
 }
 
@@ -41,7 +51,8 @@ interface DbServices {
 type EnvSource = Readonly<Record<string, string | undefined>>;
 
 interface CloudflareWorkers {
-	env: EnvSource;
+	/** Strings (variables, secrets) and objects (the R2 bucket). */
+	env: Bindings;
 	/** Missing in runtimes before `waitUntil` was exported (`createBackgroundRunner` warns then). */
 	waitUntil?: (promise: Promise<unknown>) => void;
 }
@@ -155,10 +166,14 @@ async function createSharedContext(): Promise<AppContext> {
 	try {
 		const env = parseEnv({ ...readProcessEnv() });
 		const mailer = createSystemMailer(env);
+		const storage = await openStorage(env, null);
 		const platform: Platform = { name: platformName(), waitUntil: runAfterResponse };
 		const driver = import.meta.env.VITE_VB_PLATFORM === 'vercel' ? 'neon' : 'pg';
-		const { auth, db } = await bindAuth({ env, mailer, platform }, await openAppDb(env, driver));
-		return { auth, db, env, mailer, platform };
+		const { auth, db } = await bindAuth(
+			{ env, mailer, platform, storage },
+			await openAppDb(env, driver),
+		);
+		return { auth, db, env, mailer, platform, storage };
 	} catch (error) {
 		// Do not keep a failed attempt, the next call retries.
 		cache.promise = undefined;
@@ -177,9 +192,15 @@ const cloudflare: { isolate?: Promise<IsolateServices> } = {};
 async function createIsolateServices(): Promise<IsolateServices> {
 	try {
 		const workers = await loadWorkers();
-		const env = parseEnv({ ...workers.env });
+		// Only the string bindings go to `parseEnv`; the R2 bucket goes to the storage.
+		const env = parseEnv(variablesOf(workers.env));
 		const waitUntil = createBackgroundRunner('cloudflare', () => workers.waitUntil ?? null);
-		return { env, mailer: createSystemMailer(env), platform: { name: 'cloudflare', waitUntil } };
+		return {
+			env,
+			mailer: createSystemMailer(env),
+			platform: { name: 'cloudflare', waitUntil },
+			storage: await openStorage(env, workers.env),
+		};
 	} catch (error) {
 		cloudflare.isolate = undefined;
 		throw error;
@@ -202,11 +223,11 @@ const requestServices = createRequestScope<DbServices>({
 
 async function getCloudflareContext(): Promise<AppContext> {
 	cloudflare.isolate ??= createIsolateServices();
-	const [{ env, mailer, platform }, { auth, db }] = await Promise.all([
+	const [{ env, mailer, platform, storage }, { auth, db }] = await Promise.all([
 		cloudflare.isolate,
 		requestServices.get(getRequest()),
 	]);
-	return { auth, db, env, mailer, platform };
+	return { auth, db, env, mailer, platform, storage };
 }
 
 /**
@@ -214,7 +235,8 @@ async function getCloudflareContext(): Promise<AppContext> {
  * database and the auth instance are created once per request, and calls within one request
  * share them.
  *
- * @returns The validated environment, the database client, the auth instance and the mailer.
+ * @returns The validated environment, the database client, the auth instance, the mailer and the
+ * storage.
  */
 async function getAppContext(): Promise<AppContext> {
 	if (import.meta.env.VITE_VB_PLATFORM === 'cloudflare') return getCloudflareContext();

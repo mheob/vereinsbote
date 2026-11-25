@@ -1,5 +1,10 @@
+// oxlint-disable-next-line import/no-unassigned-import -- zod's settings must be in place before any schema parses
+import './zod-config';
 import { createRouter } from '@tanstack/react-router';
+import { createIsomorphicFn } from '@tanstack/react-start';
+import { getRequest } from '@tanstack/react-start/server';
 
+import { cspNonceFor } from './platform/csp-nonce';
 import { routerDefaults } from './router-defaults';
 import { routeTree } from './routeTree.gen';
 
@@ -17,6 +22,14 @@ declare module '@tanstack/react-router' {
 	}
 }
 
+/**
+ * The Content Security Policy nonce of the request on the server (the same value as in the
+ * response header), nothing in the browser, which reads it from the document.
+ */
+const serverNonce = createIsomorphicFn().server(() => cspNonceFor(getRequest()));
+
 export function getRouter() {
-	return createRouter({ ...routerDefaults, routeTree });
+	// The nonce goes in when the router is made (TanStack/router issue #8789); Start puts it on
+	// its scripts and React Aria reads it from the `csp-nonce` meta tag.
+	return createRouter({ ...routerDefaults, routeTree, ssr: { nonce: serverNonce() } });
 }

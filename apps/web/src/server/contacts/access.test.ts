@@ -26,7 +26,7 @@ import { setUpClub, userWith } from './testing';
 async function insertMemberField(db: Db, name: string, protection: Protection): Promise<string> {
 	const [row] = await db
 		.insert(customFields)
-		.values({ kind: 'member', name, protection, type: 'text' })
+		.values({ kind: 'member', name, placeholderKey: name.toLowerCase(), protection, type: 'text' })
 		.returning({ id: customFields.id });
 	if (row === undefined) throw new Error('Inserting the custom field returned no row.');
 	return row.id;
