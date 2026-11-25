@@ -600,7 +600,7 @@ export const de = {
 	'templates.copied': 'Die Kopie „{name}“ wurde angelegt.',
 	'templates.createForbiddenText':
 		'Um Vorlagen anzulegen, brauchst du die Stufe „Bearbeiten“ in einem Bereich.',
-	'templates.createGone': 'Der Bereich gibt es nicht mehr.',
+	'templates.createGone': 'Den Bereich gibt es nicht mehr.',
 	'templates.createInvalid':
 		'Die Vorlage kann so nicht angelegt werden. Bitte prüfe Name und Betreff.',
 	'templates.createSubmit': 'Vorlage anlegen',

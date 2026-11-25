@@ -19,6 +19,7 @@ import {
 } from '@/server/templates/save-checks';
 
 import { AreaSelect } from './area-select';
+import { resolveAreaId } from './resolve-area';
 import {
 	isStartChoice,
 	namesAfterStartChange,
@@ -34,7 +35,7 @@ const START_LABELS: Readonly<Record<StartChoice, MessageKey>> = {
 };
 
 /** What the server refused. */
-type CreateState = Readonly<{ failure: 'nameTaken' | 'invalid' }> | null;
+type CreateState = Readonly<{ failure: 'nameTaken' | 'invalid' | 'gone' }> | null;
 
 /**
  * The form „Neue Vorlage“: the area (only those the user may edit), how to start, the name and the
@@ -59,7 +60,9 @@ export function CreateTemplateForm({
 	const t = useT();
 	const create = useServerFn(submitCreateTemplate);
 	const nameRef = useRef<HTMLInputElement>(null);
-	const [areaId, setAreaId] = useState(areas[0]?.id ?? '');
+	const [chosenAreaId, setChosenAreaId] = useState(areas[0]?.id ?? '');
+	// An area deleted in the meantime drops out of `areas` on reload; then the first one counts.
+	const areaId = resolveAreaId(areas, chosenAreaId);
 	const [start, setStart] = useState<StartChoice>('empty');
 	const [names, setNames] = useState<TemplateNames>(startDefaults('empty'));
 	const changeStart = useCallback(
@@ -87,10 +90,7 @@ export function CreateTemplateForm({
 				onCreated(result.id);
 				return null;
 			}
-			if (result.failure === 'gone') {
-				onGone();
-				return null;
-			}
+			if (result.failure === 'gone') onGone();
 			return { failure: result.failure };
 		},
 		null,
@@ -113,7 +113,7 @@ export function CreateTemplateForm({
 			<AreaSelect
 				areas={areas}
 				label={t('templates.areaLabel')}
-				onChange={setAreaId}
+				onChange={setChosenAreaId}
 				value={areaId}
 			/>
 			<RadioGroup className="flex flex-col gap-2" onChange={changeStart} value={start}>
@@ -149,6 +149,11 @@ export function CreateTemplateForm({
 			{state?.failure === 'invalid' ? (
 				<p className="text-red-700" role="alert">
 					{t('templates.createInvalid')}
+				</p>
+			) : null}
+			{state?.failure === 'gone' ? (
+				<p className="text-red-700" role="alert">
+					{t('templates.createGone')}
 				</p>
 			) : null}
 			<div>
