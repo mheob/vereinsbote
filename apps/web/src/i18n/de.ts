@@ -254,7 +254,7 @@ export const de = {
 	'imageUpload.invalidImage':
 		'Der Server hat das Bild nicht angenommen. Erlaubt sind JPEG und PNG bis 2 MB.',
 	'imageUpload.processing': 'Das Bild wird verarbeitet …',
-	'imageUpload.resized': 'Bild verkleinert: {before} → {after}',
+	'imageUpload.resized': 'Bild verkleinert: {before} → {after}.',
 	'imageUpload.storageMissing':
 		'Für Bilder ist noch kein Speicher eingerichtet. Bitte wende dich an den Betrieb.',
 	'imageUpload.svgNotAllowed':

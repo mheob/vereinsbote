@@ -12,8 +12,8 @@ import { uploadImage } from '@/functions/media';
 import { useLocale, useT } from '@/i18n/use-t';
 import type { MediaRecord } from '@/server/media/media';
 
-import { formatBytes } from './image-size';
 import { processImage } from './process-image';
+import { uploadedMessage } from './upload-message';
 
 type UploadTarget = Readonly<{ purpose: 'brand' } | { purpose: 'library'; areaId: string }>;
 
@@ -94,15 +94,7 @@ export function ImageUpload({
 				announce(t(`imageUpload.${outcome.failure}`), 'alert');
 				return;
 			}
-			const parts = [
-				t('imageUpload.resized', {
-					after: formatBytes(result.after, locale),
-					before: formatBytes(result.before, locale),
-				}),
-				...(result.flattenedGif ? [t('imageUpload.flattenedGif')] : []),
-				t('imageUpload.uploaded'),
-			];
-			announce(parts.join('. '), 'status');
+			announce(uploadedMessage(locale, result), 'status');
 			onUploaded(outcome.media);
 		},
 		[allowSvg, announce, locale, onUploaded, t, targetAreaId, targetPurpose, upload],

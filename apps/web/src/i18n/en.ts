@@ -252,7 +252,7 @@ export const en: Record<keyof typeof de, string> = {
 	'imageUpload.invalidImage':
 		'The server did not accept the image. JPEG and PNG up to 2 MB are allowed.',
 	'imageUpload.processing': 'The image is being processed …',
-	'imageUpload.resized': 'Image scaled down: {before} → {after}',
+	'imageUpload.resized': 'Image scaled down: {before} → {after}.',
 	'imageUpload.storageMissing': 'No storage is set up for images yet. Please contact the operator.',
 	'imageUpload.svgNotAllowed':
 		'SVG files are not allowed here. Please choose a JPEG, PNG, GIF or WebP.',
