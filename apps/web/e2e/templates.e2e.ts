@@ -423,8 +423,12 @@ test('an editor builds a template with the keyboard only', async () => {
 	await eva.keyboard.press('Enter');
 	await expectAnnounced(eva, 'Text an Position 1 von 6 verschoben');
 	await expect(blocks.getByRole('row').first()).toHaveAccessibleName(/^Text: Hallo/u);
-	// The focus comes back to the moved row before the next step.
 	await expect(eva.locator(':focus')).toHaveAccessibleName(/^Text: Hallo/u);
+	// The preview shows the new order. React Aria settles the focus a moment after a drop, so a
+	// user acts after that; the preview (which follows the change after its delay) tells when.
+	await expect(eva.frameLocator(PREVIEW_FRAME).locator('body')).toHaveText(
+		/Hallo Anna[\s\S]*Einladung zu/u,
+	);
 
 	// An image without an alt text is refused, with the focus at the field.
 	await addBlock(eva, 'Bild');
