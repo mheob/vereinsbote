@@ -38,6 +38,11 @@ export function AdminNav(): ReactNode {
 					</Link>
 				</li>
 				<li>
+					<Link className={linkClass} to="/admin/sending">
+						{t('admin.navSending')}
+					</Link>
+				</li>
+				<li>
 					<Link className={linkClass} to="/admin/brand">
 						{t('admin.navBrand')}
 					</Link>

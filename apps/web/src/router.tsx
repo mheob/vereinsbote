@@ -19,6 +19,11 @@ declare module '@tanstack/react-router' {
 		deletedContact?: string;
 		/** A partner was just created; its page announces „Gespeichert.“ once. */
 		partnerSaved?: boolean;
+		/** A connection or sender was just created or deleted; the overview of the sending announces it. */
+		sendingNotice?: {
+			kind: 'connectionCreated' | 'connectionDeleted' | 'senderCreated' | 'senderDeleted';
+			name: string;
+		};
 		/** A template was just copied (its page announces it) or deleted (the list announces it). */
 		templateNotice?: { kind: 'copied' | 'deleted'; name: string };
 	}

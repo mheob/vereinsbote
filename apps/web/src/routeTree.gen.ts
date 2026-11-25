@@ -33,9 +33,14 @@ import { Route as TemplatesTemplateIdRouteImport } from './routes/templates/$tem
 import { Route as TemplatesNewRouteImport } from './routes/templates/new'
 import { Route as AdminLayoutsIndexRouteImport } from './routes/admin/layouts/index'
 import { Route as AdminLayoutsLayoutIdRouteImport } from './routes/admin/layouts/$layoutId'
+import { Route as AdminSendingIndexRouteImport } from './routes/admin/sending/index'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ContactsImportMembersRouteImport } from './routes/contacts/import/members'
 import { Route as ContactsImportPartnersRouteImport } from './routes/contacts/import/partners'
+import { Route as AdminSendingConnectionsConnectionIdRouteImport } from './routes/admin/sending/connections.$connectionId'
+import { Route as AdminSendingConnectionsNewRouteImport } from './routes/admin/sending/connections.new'
+import { Route as AdminSendingSendersSenderIdRouteImport } from './routes/admin/sending/senders.$senderId'
+import { Route as AdminSendingSendersNewRouteImport } from './routes/admin/sending/senders.new'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -157,6 +162,11 @@ const AdminLayoutsLayoutIdRoute = AdminLayoutsLayoutIdRouteImport.update({
   path: '/layouts/$layoutId',
   getParentRoute: () => AdminRouteRoute,
 } as any)
+const AdminSendingIndexRoute = AdminSendingIndexRouteImport.update({
+  id: '/sending/',
+  path: '/sending/',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -171,6 +181,29 @@ const ContactsImportPartnersRoute = ContactsImportPartnersRouteImport.update({
   id: '/import/partners',
   path: '/import/partners',
   getParentRoute: () => ContactsRouteRoute,
+} as any)
+const AdminSendingConnectionsConnectionIdRoute =
+  AdminSendingConnectionsConnectionIdRouteImport.update({
+    id: '/sending/connections/$connectionId',
+    path: '/sending/connections/$connectionId',
+    getParentRoute: () => AdminRouteRoute,
+  } as any)
+const AdminSendingConnectionsNewRoute =
+  AdminSendingConnectionsNewRouteImport.update({
+    id: '/sending/connections/new',
+    path: '/sending/connections/new',
+    getParentRoute: () => AdminRouteRoute,
+  } as any)
+const AdminSendingSendersSenderIdRoute =
+  AdminSendingSendersSenderIdRouteImport.update({
+    id: '/sending/senders/$senderId',
+    path: '/sending/senders/$senderId',
+    getParentRoute: () => AdminRouteRoute,
+  } as any)
+const AdminSendingSendersNewRoute = AdminSendingSendersNewRouteImport.update({
+  id: '/sending/senders/new',
+  path: '/sending/senders/new',
+  getParentRoute: () => AdminRouteRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -201,6 +234,11 @@ export interface FileRoutesByFullPath {
   '/contacts/import/members': typeof ContactsImportMembersRoute
   '/contacts/import/partners': typeof ContactsImportPartnersRoute
   '/admin/layouts/': typeof AdminLayoutsIndexRoute
+  '/admin/sending/': typeof AdminSendingIndexRoute
+  '/admin/sending/connections/$connectionId': typeof AdminSendingConnectionsConnectionIdRoute
+  '/admin/sending/connections/new': typeof AdminSendingConnectionsNewRoute
+  '/admin/sending/senders/$senderId': typeof AdminSendingSendersSenderIdRoute
+  '/admin/sending/senders/new': typeof AdminSendingSendersNewRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -227,6 +265,11 @@ export interface FileRoutesByTo {
   '/contacts/import/members': typeof ContactsImportMembersRoute
   '/contacts/import/partners': typeof ContactsImportPartnersRoute
   '/admin/layouts': typeof AdminLayoutsIndexRoute
+  '/admin/sending': typeof AdminSendingIndexRoute
+  '/admin/sending/connections/$connectionId': typeof AdminSendingConnectionsConnectionIdRoute
+  '/admin/sending/connections/new': typeof AdminSendingConnectionsNewRoute
+  '/admin/sending/senders/$senderId': typeof AdminSendingSendersSenderIdRoute
+  '/admin/sending/senders/new': typeof AdminSendingSendersNewRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -257,6 +300,11 @@ export interface FileRoutesById {
   '/contacts/import/members': typeof ContactsImportMembersRoute
   '/contacts/import/partners': typeof ContactsImportPartnersRoute
   '/admin/layouts/': typeof AdminLayoutsIndexRoute
+  '/admin/sending/': typeof AdminSendingIndexRoute
+  '/admin/sending/connections/$connectionId': typeof AdminSendingConnectionsConnectionIdRoute
+  '/admin/sending/connections/new': typeof AdminSendingConnectionsNewRoute
+  '/admin/sending/senders/$senderId': typeof AdminSendingSendersSenderIdRoute
+  '/admin/sending/senders/new': typeof AdminSendingSendersNewRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -288,6 +336,11 @@ export interface FileRouteTypes {
     | '/contacts/import/members'
     | '/contacts/import/partners'
     | '/admin/layouts/'
+    | '/admin/sending/'
+    | '/admin/sending/connections/$connectionId'
+    | '/admin/sending/connections/new'
+    | '/admin/sending/senders/$senderId'
+    | '/admin/sending/senders/new'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -314,6 +367,11 @@ export interface FileRouteTypes {
     | '/contacts/import/members'
     | '/contacts/import/partners'
     | '/admin/layouts'
+    | '/admin/sending'
+    | '/admin/sending/connections/$connectionId'
+    | '/admin/sending/connections/new'
+    | '/admin/sending/senders/$senderId'
+    | '/admin/sending/senders/new'
   id:
     | '__root__'
     | '/'
@@ -343,6 +401,11 @@ export interface FileRouteTypes {
     | '/contacts/import/members'
     | '/contacts/import/partners'
     | '/admin/layouts/'
+    | '/admin/sending/'
+    | '/admin/sending/connections/$connectionId'
+    | '/admin/sending/connections/new'
+    | '/admin/sending/senders/$senderId'
+    | '/admin/sending/senders/new'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -530,6 +593,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminLayoutsLayoutIdRouteImport
       parentRoute: typeof AdminRouteRoute
     }
+    '/admin/sending/': {
+      id: '/admin/sending/'
+      path: '/sending'
+      fullPath: '/admin/sending/'
+      preLoaderRoute: typeof AdminSendingIndexRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -551,6 +621,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ContactsImportPartnersRouteImport
       parentRoute: typeof ContactsRouteRoute
     }
+    '/admin/sending/connections/$connectionId': {
+      id: '/admin/sending/connections/$connectionId'
+      path: '/sending/connections/$connectionId'
+      fullPath: '/admin/sending/connections/$connectionId'
+      preLoaderRoute: typeof AdminSendingConnectionsConnectionIdRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/sending/connections/new': {
+      id: '/admin/sending/connections/new'
+      path: '/sending/connections/new'
+      fullPath: '/admin/sending/connections/new'
+      preLoaderRoute: typeof AdminSendingConnectionsNewRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/sending/senders/$senderId': {
+      id: '/admin/sending/senders/$senderId'
+      path: '/sending/senders/$senderId'
+      fullPath: '/admin/sending/senders/$senderId'
+      preLoaderRoute: typeof AdminSendingSendersSenderIdRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/sending/senders/new': {
+      id: '/admin/sending/senders/new'
+      path: '/sending/senders/new'
+      fullPath: '/admin/sending/senders/new'
+      preLoaderRoute: typeof AdminSendingSendersNewRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
   }
 }
 
@@ -562,6 +660,11 @@ interface AdminRouteRouteChildren {
   AdminIndexRoute: typeof AdminIndexRoute
   AdminLayoutsLayoutIdRoute: typeof AdminLayoutsLayoutIdRoute
   AdminLayoutsIndexRoute: typeof AdminLayoutsIndexRoute
+  AdminSendingIndexRoute: typeof AdminSendingIndexRoute
+  AdminSendingConnectionsConnectionIdRoute: typeof AdminSendingConnectionsConnectionIdRoute
+  AdminSendingConnectionsNewRoute: typeof AdminSendingConnectionsNewRoute
+  AdminSendingSendersSenderIdRoute: typeof AdminSendingSendersSenderIdRoute
+  AdminSendingSendersNewRoute: typeof AdminSendingSendersNewRoute
 }
 
 const AdminRouteRouteChildren: AdminRouteRouteChildren = {
@@ -572,6 +675,12 @@ const AdminRouteRouteChildren: AdminRouteRouteChildren = {
   AdminIndexRoute: AdminIndexRoute,
   AdminLayoutsLayoutIdRoute: AdminLayoutsLayoutIdRoute,
   AdminLayoutsIndexRoute: AdminLayoutsIndexRoute,
+  AdminSendingIndexRoute: AdminSendingIndexRoute,
+  AdminSendingConnectionsConnectionIdRoute:
+    AdminSendingConnectionsConnectionIdRoute,
+  AdminSendingConnectionsNewRoute: AdminSendingConnectionsNewRoute,
+  AdminSendingSendersSenderIdRoute: AdminSendingSendersSenderIdRoute,
+  AdminSendingSendersNewRoute: AdminSendingSendersNewRoute,
 }
 
 const AdminRouteRouteWithChildren = AdminRouteRoute._addFileChildren(

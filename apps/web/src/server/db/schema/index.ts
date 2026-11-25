@@ -6,5 +6,6 @@ export * from './auth';
 export * from './brand';
 export * from './contacts';
 export * from './media';
+export * from './sending';
 export * from './system';
 export * from './templates';
