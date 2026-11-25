@@ -550,6 +550,30 @@ test('a block in a column opens its form beside the columns form', async () => {
 	await expectNoA11yViolations(eva, [PREVIEW_FRAME]);
 });
 
+// oxlint-disable-next-line max-statements -- one flow, step by step, as the editor sees it
+test('a field whose editor does not load shows the error at the field and loads again', async () => {
+	// The chunk of the one-line fields fails, as on a broken connection or after a deploy.
+	const chunk = /\/assets\/inline-field-[\w-]+\.js$/u;
+	await eva.route(chunk, async (route) => route.abort('connectionfailed'));
+	await openEditor(eva, 'Sommerfest');
+	await eva.getByRole('button', { name: 'Einstellungen' }).press('Enter');
+	const preheader = eva.getByRole('group', { name: 'Vorschautext' });
+	await expect(preheader.getByRole('alert')).toHaveText(
+		'Das Feld konnte nicht geladen werden. Prüfe die Verbindung und lade es erneut; hilft das nicht, lade die Seite neu.',
+	);
+	// Only the field fails, not the editor around it.
+	await expect(
+		eva.getByRole('heading', { exact: true, level: 1, name: 'Sommerfest' }),
+	).toBeVisible();
+	await expect(eva.getByRole('button', { name: 'Speichern' })).toBeEnabled();
+	await expectNoA11yViolations(eva, [PREVIEW_FRAME]);
+
+	await eva.unroute(chunk);
+	await preheader.getByRole('button', { name: 'Feld erneut laden' }).press('Enter');
+	await expect(eva.getByRole('textbox', { name: 'Vorschautext' })).toBeEditable();
+	await expect(preheader).toHaveCount(0);
+});
+
 // oxlint-disable-next-line max-statements -- one flow, step by step, as the editor sees it in two tabs
 test('two tabs: the second save is refused', async () => {
 	await openEditor(eva, 'Sommerfest');
