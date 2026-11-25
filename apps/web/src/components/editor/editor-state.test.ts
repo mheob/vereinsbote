@@ -12,6 +12,7 @@ import {
 	editorReducer,
 	locateBlock,
 	moveAnnouncement,
+	openTopLevelBlock,
 	salutationFormPatch,
 } from './editor-state';
 import type { EditorAction, EditorState } from './editor-state';
@@ -339,5 +340,23 @@ describe(salutationFormPatch, () => {
 			salutationForm: 'sie',
 			salutationTexts: texts,
 		});
+	});
+});
+
+describe(openTopLevelBlock, () => {
+	const blocks = [text('a'), columns('c', [divider('l')], [text('r')])];
+
+	it('is the selected block of the top level', () => {
+		expect(openTopLevelBlock(blocks, 'a')?.id).toBe('a');
+	});
+
+	it('is the columns block that holds a selected block of a column', () => {
+		expect(openTopLevelBlock(blocks, 'l')?.id).toBe('c');
+		expect(openTopLevelBlock(blocks, 'r')?.id).toBe('c');
+	});
+
+	it('is nothing without a selection or for an unknown block', () => {
+		expect(openTopLevelBlock(blocks, null)).toBeUndefined();
+		expect(openTopLevelBlock(blocks, 'x')).toBeUndefined();
 	});
 });

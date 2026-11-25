@@ -487,6 +487,32 @@ test('an editor is warned before leaving with unsaved changes', async () => {
 	await expect(eva).toHaveURL(/\/templates$/u);
 });
 
+// oxlint-disable-next-line max-statements -- one flow, step by step, as the editor sees it
+test('a block in a column opens its form beside the columns form', async () => {
+	await openEditor(eva, 'Sommerfest');
+	await addBlock(eva, 'Zwei Spalten');
+	const left = eva.getByRole('grid', { name: 'Linke Spalte' });
+	await expect(left).toBeVisible();
+	await eva.getByRole('button', { name: 'Baustein links hinzufügen' }).press('Enter');
+	await expect(eva.getByRole('menu')).toBeVisible();
+	await eva.getByRole('menuitem', { exact: true, name: 'Überschrift' }).press('Enter');
+	// The form of the new block shows, and the columns and their list stay.
+	await expect(left.getByRole('row')).toHaveCount(1);
+	await expect(
+		eva.getByRole('heading', { level: 3, name: 'Überschrift bearbeiten' }),
+	).toBeVisible();
+	await expect(
+		eva.getByRole('heading', { level: 3, name: 'Zwei Spalten bearbeiten' }),
+	).toBeVisible();
+	const heading = eva.getByRole('textbox', { exact: true, name: 'Text' });
+	await heading.press('End');
+	await eva.keyboard.type('Aus der Spalte');
+	await expect(eva.frameLocator(PREVIEW_FRAME).getByText('Aus der Spalte')).toBeVisible();
+	await eva.getByRole('button', { name: 'Speichern' }).press('Enter');
+	await expectAnnounced(eva, 'Die Vorlage ist gespeichert.');
+	await expectNoA11yViolations(eva, [PREVIEW_FRAME]);
+});
+
 // oxlint-disable-next-line max-statements -- one flow, step by step, as the editor sees it in two tabs
 test('two tabs: the second save is refused', async () => {
 	await openEditor(eva, 'Sommerfest');

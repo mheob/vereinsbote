@@ -8,6 +8,7 @@ import type { Warning } from '@/mail/checks/block-checks';
 import { BLOCK_TYPES } from './block-factory';
 import { BlockForm } from './block-form';
 import { BlockList } from './block-list';
+import { openTopLevelBlock } from './editor-state';
 import type { EditorView } from './editor-view';
 import { FindingsPanel } from './findings-panel';
 
@@ -38,7 +39,7 @@ export function BlockPane({
 }>): ReactNode {
 	const t = useT();
 	const chosen = useMemo(
-		() => blocks.find(({ id }) => id === view.selectedId),
+		() => openTopLevelBlock(blocks, view.selectedId),
 		[blocks, view.selectedId],
 	);
 	return (

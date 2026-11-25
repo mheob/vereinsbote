@@ -143,6 +143,18 @@ function holdsSelection(block: Block, selectedId: string | null): boolean {
 }
 
 /**
+ * The top-level block whose form is open: the selected block, or the columns block that holds
+ * the selected block of a column.
+ *
+ * @param blocks The blocks of the top level.
+ * @param selectedId The selected block, or null.
+ * @returns The block, or undefined without a selection.
+ */
+function openTopLevelBlock(blocks: readonly Block[], selectedId: string | null): Block | undefined {
+	return blocks.find((block) => holdsSelection(block, selectedId));
+}
+
+/**
  * A copy of a list with an item inserted.
  *
  * @param list The list.
@@ -449,6 +461,7 @@ export {
 	editorReducer,
 	locateBlock,
 	moveAnnouncement,
+	openTopLevelBlock,
 	salutationFormPatch,
 };
 export type { BlockLocation, ColumnTarget, EditorAction, EditorState, SettingsPatch };
