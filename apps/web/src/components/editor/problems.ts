@@ -57,10 +57,11 @@ const blockField = (field: string, blockId: string): ProblemPlace => ({
 /**
  * The place of a placeholder or syntax problem.
  *
- * @param where `subject`, `preheader`, `salutation.<case>` or `block.<id>`.
- * @returns The place.
+ * @param where `subject`, `preheader`, `salutation.<case>`, `block.<id>`, `layout` or `html`.
+ * @returns The place, or null for the HTML of an import, which has no field of its own.
  */
-function placeOfWhere(where: string): ProblemPlace {
+function placeOfWhere(where: string): ProblemPlace | null {
+	if (where === 'html') return null;
 	return where.startsWith(BLOCK_PREFIX)
 		? blockField('content', where.slice(BLOCK_PREFIX.length))
 		: setting(where);
@@ -81,18 +82,14 @@ function imageBlockOf(blocks: readonly Block[], mediaId: string): string | null 
 }
 
 /**
- * Where a problem of the name, the subject, the preview text or the layout shows.
+ * Where a problem of the name, the subject or the preview text shows.
  *
  * @param problem The problem.
  * @returns The place.
  */
 function fieldPlace(
-	problem: Extract<
-		SaveProblem,
-		{ kind: 'nameEmpty' | 'subjectEmpty' | 'tooLong' | 'htmlNotYetSupported' }
-	>,
+	problem: Extract<SaveProblem, { kind: 'nameEmpty' | 'subjectEmpty' | 'tooLong' }>,
 ): ProblemPlace {
-	if (problem.kind === 'htmlNotYetSupported') return setting('layout');
 	if (problem.kind === 'subjectEmpty') return setting('subject');
 	if (problem.kind === 'tooLong' && problem.field !== 'name') return setting(problem.field);
 	return { blockId: null, focusKey: 'name', inSettings: false };
@@ -110,9 +107,12 @@ function problemPlace(problem: SaveProblem, blocks: readonly Block[]): ProblemPl
 	switch (problem.kind) {
 		case 'nameEmpty':
 		case 'subjectEmpty':
-		case 'tooLong':
-		case 'htmlNotYetSupported': {
+		case 'tooLong': {
 			return fieldPlace(problem);
+		}
+		case 'contentMissing':
+		case 'contentRepeated': {
+			return setting('layout');
 		}
 		case 'altMissing': {
 			return blockField('alt', problem.blockId);
@@ -121,6 +121,7 @@ function problemPlace(problem: SaveProblem, blocks: readonly Block[]): ProblemPl
 			return blockField('href', problem.blockId);
 		}
 		case 'placeholderForbidden':
+		case 'placeholderInAttribute':
 		case 'placeholderUnknown':
 		case 'syntax': {
 			return placeOfWhere(problem.where);
@@ -151,6 +152,12 @@ function problemMessage(
 	if (problem.kind === 'tooLong') return t(`editor.problem.${problem.field}TooLong`);
 	if (problem.kind === 'placeholderForbidden' || problem.kind === 'placeholderUnknown') {
 		return t(`editor.problem.${problem.kind}`, { name: label(problem.key) });
+	}
+	if (problem.kind === 'placeholderInAttribute') {
+		return t('editor.problem.placeholderInAttribute', {
+			attribute: problem.attribute,
+			name: label(problem.key),
+		});
 	}
 	return t(`editor.problem.${problem.kind}`);
 }

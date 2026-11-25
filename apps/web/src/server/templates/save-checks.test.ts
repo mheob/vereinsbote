@@ -17,6 +17,7 @@ import type { AllowedPlaceholders } from './allowed-placeholders';
 import {
 	blockWhere,
 	checkTemplateForSave,
+	prepareTemplateForSave,
 	MAX_TEMPLATE_NAME_LENGTH,
 	MAX_TEMPLATE_PREHEADER_LENGTH,
 	MAX_TEMPLATE_SUBJECT_LENGTH,
@@ -221,18 +222,80 @@ const CASES: readonly Case[] = [
 		name: 'an image of another area',
 	},
 	{
-		expected: [{ kind: 'htmlNotYetSupported' }],
-		input: withBody({ html: '<p>Hallo</p>', kind: 'html' }),
-		name: 'an HTML template',
+		expected: [{ key: 'contact.birthDate', kind: 'placeholderForbidden', where: 'html' }],
+		input: withBody({ html: '<p>Zum {{contact.birthDate}}</p>', kind: 'html' }),
+		name: 'the birth date in an HTML template of an area that may not see it',
 	},
 	{
-		expected: [{ kind: 'htmlNotYetSupported' }],
+		expected: [{ key: 'foo.bar', kind: 'placeholderUnknown', where: 'html' }],
+		input: withBody({ html: '<p>{{foo.bar}}</p>', kind: 'html' }),
+		name: 'an unknown key in an HTML template',
+	},
+	{
+		expected: [{ kind: 'syntax', where: 'html' }],
+		input: withBody({ html: '<p>{{contact.firstName</p>', kind: 'html' }),
+		name: 'a broken placeholder in an HTML template',
+	},
+	{
+		expected: [
+			{
+				attribute: 'href',
+				key: 'contact.firstName',
+				kind: 'placeholderInAttribute',
+				where: 'html',
+			},
+		],
+		input: withBody({ html: '<a href="{{contact.firstName}}">x</a>', kind: 'html' }),
+		name: 'contact data in a link of an HTML template',
+	},
+	{
+		expected: [{ kind: 'mediaForeign', mediaId: FOREIGN_IMAGE }],
+		input: withBody({ html: `<img src="/media/${FOREIGN_IMAGE}.png" alt="">`, kind: 'html' }),
+		name: 'an image of another area in an HTML template',
+	},
+	{
+		expected: [],
+		input: withBody({
+			html: `<p>{{salutation}}</p><img src="/media/${OWN_IMAGE}.png" alt="">`,
+			kind: 'html',
+		}),
+		name: 'an HTML template with an image of the area',
+	},
+	{
+		expected: [{ kind: 'contentMissing' }],
 		input: withBody({
 			blocks: [],
 			kind: 'blocks',
-			layout: { html: '<div>{{content}}</div>', kind: 'own' },
+			layout: { html: '<div>Kopf</div>', kind: 'own' },
 		}),
-		name: 'an own layout',
+		name: 'an own layout without content',
+	},
+	{
+		expected: [{ kind: 'contentRepeated' }],
+		input: withBody({
+			blocks: [],
+			kind: 'blocks',
+			layout: { html: '<div>{{content}}</div><div>{{content}}</div>', kind: 'own' },
+		}),
+		name: 'an own layout with content twice',
+	},
+	{
+		expected: [{ key: 'contact.birthDate', kind: 'placeholderForbidden', where: 'layout' }],
+		input: withBody({
+			blocks: [],
+			kind: 'blocks',
+			layout: { html: '<p>{{contact.birthDate}}</p><div>{{content}}</div>', kind: 'own' },
+		}),
+		name: 'the birth date in an own layout of an area that may not see it',
+	},
+	{
+		expected: [],
+		input: withBody({
+			blocks: [],
+			kind: 'blocks',
+			layout: { html: '<p>{{brand.name}}</p><div>{{content}}</div>', kind: 'own' },
+		}),
+		name: 'an own layout with content',
 	},
 	{
 		expected: [{ key: 'content', kind: 'placeholderForbidden', where: 'block.h' }],
@@ -340,5 +403,43 @@ describe(checkTemplateForSave, () => {
 			salutationTexts: DEFAULT_SALUTATIONS.sie,
 		};
 		expect(checkTemplateForSave(sie, EVENTS, AREA_IMAGES)).toStrictEqual([]);
+	});
+
+	describe(prepareTemplateForSave, () => {
+		it('gives the HTML of a template cleaned', () => {
+			const dirty = withBody({
+				html: '<p onclick="x()">Hallo {{salutation}}</p><script>alert(1)</script>',
+				kind: 'html',
+			});
+			const { input, problems } = prepareTemplateForSave(dirty, EVENTS, AREA_IMAGES);
+			expect(problems).toStrictEqual([]);
+			expect(input.body).toStrictEqual({
+				html: "<!DOCTYPE html><html lang='de'><head></head><body><p>Hallo {{salutation}}</p></body></html>",
+				kind: 'html',
+			});
+			expect(prepareTemplateForSave(input, EVENTS, AREA_IMAGES).input).toStrictEqual(input);
+		});
+
+		it('gives the own layout of a block template cleaned', () => {
+			const dirty = withBody({
+				blocks: [],
+				kind: 'blocks',
+				layout: { html: '<div>{{content}}</div><script>alert(1)</script>', kind: 'own' },
+			});
+			const { input, problems } = prepareTemplateForSave(dirty, EVENTS, AREA_IMAGES);
+			expect(problems).toStrictEqual([]);
+			expect(JSON.stringify(input.body)).not.toContain('script');
+		});
+
+		it('leaves a template with problems as it is', () => {
+			const dirty = withBody({ html: '<p>{{foo.bar}}</p><script>x()</script>', kind: 'html' });
+			const { input, problems } = prepareTemplateForSave(dirty, EVENTS, AREA_IMAGES);
+			expect(problems).toHaveLength(1);
+			expect(input).toBe(dirty);
+		});
+
+		it('leaves blocks and a global layout as they are', () => {
+			expect(prepareTemplateForSave(VALID, EVENTS, AREA_IMAGES).input).toBe(VALID);
+		});
 	});
 });

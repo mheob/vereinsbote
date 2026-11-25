@@ -399,11 +399,84 @@ describe(compileMail, () => {
 			layout: { html: layout, kind: 'html' },
 		} as const;
 		const mail = await filled(source([], { body }), ANNA);
-		expect(mail.html).toMatch(/^<html><head><title>Verein<\/title><\/head><body class="x">/u);
+		expect(mail.html).toMatch(
+			/^<html><head><title>Verein<\/title><style>.*<\/style><\/head><body class="x">/u,
+		);
 		expect(mail.html).toContain('<p>Kopf Anna</p><table role="presentation"');
 		expect(mail.html).toContain('Hallo Anna</p>');
 		expect(mail.html).toMatch(/<\/table><p>Fuß Verein<\/p><\/body><\/html>$/u);
 		expect(mail.text).toBe('Kopf Anna\n\nHallo Anna\n\nFuß Verein');
+	});
+
+	it('adds the rule that stacks columns to the head of an HTML layout', async () => {
+		const layout = '<html><head><title>x</title></head><body>{{content}}</body></html>';
+		const body = {
+			blocks: [GREETING],
+			kind: 'blocks',
+			layout: { html: layout, kind: 'html' },
+		} as const;
+		const mail = await filled(source([], { body }), ANNA);
+		expect(mail.html).toMatch(
+			/^<html><head><title>x<\/title><style>@media only screen and \(max-width: 620px\) \{ \.vb-column \{ display: block !important;[^<]*<\/style><\/head><body>/u,
+		);
+		expect(mail.html.split('.vb-column {')).toHaveLength(2);
+	});
+
+	it('adds the rule that stacks columns before {{content}} when the layout has no head', async () => {
+		const layout = '<html><body><p>Kopf</p>{{content}}</body></html>';
+		const body = {
+			blocks: [GREETING],
+			kind: 'blocks',
+			layout: { html: layout, kind: 'html' },
+		} as const;
+		const mail = await filled(source([], { body }), ANNA);
+		expect(mail.html).toMatch(
+			/^<html><body><p>Kopf<\/p><style>@media[^<]*\.vb-column[^<]*<\/style><table/u,
+		);
+	});
+
+	it('writes the rule that stacks columns once in the standard layout', async () => {
+		const mail = await filled(source([GREETING]), ANNA);
+		expect(mail.html.split('.vb-column {')).toHaveLength(2);
+	});
+
+	it('puts a brand value into a style element as it is and escapes it in an attribute', async () => {
+		const brand: Brand = {
+			...DEFAULT_BRAND,
+			fonts: { ...DEFAULT_BRAND.fonts, text: 'times' },
+		};
+		const html =
+			"<style>p{font-family:{{brand.fontFamily}}}</style><p style='font-family:{{brand.fontFamily}}'>x</p>";
+		const mail = await filled(source([], { body: { html, kind: 'html' } }), ANNA, brand);
+		expect(mail.html).toContain('<style>p{font-family:"Times New Roman", Times, serif}</style>');
+		expect(mail.html).toContain("style='font-family:&quot;Times New Roman&quot;, Times, serif'");
+	});
+
+	it('puts a brand colour into a style element and marks a contact placeholder in the text', async () => {
+		const html = '<style>td{color:{{brand.primaryColor}}}</style><p>{{salutation}}</p>';
+		const mail = await compiled(source([], { body: { html, kind: 'html' } }));
+		expect(fixedText(mail.html)).toContain(
+			`<style>td{color:${DEFAULT_BRAND.colors.primary}}</style>`,
+		);
+		expect(slotCount(mail.html)).toBe(1);
+	});
+
+	it('cannot leave a style element through a brand value or a fallback', async () => {
+		const brand: Brand = { ...DEFAULT_BRAND, name: 'a</style><script>alert(1)</script>{}' };
+		const html =
+			'<STYLE>p{content:"{{brand.name}}";x:{{brand.register | "</style><script>alert(2)</script>"}}}</STYLE><p>x</p>';
+		const mail = await filled(source([], { body: { html, kind: 'html' } }), ANNA, brand);
+		expect(mail.html).not.toContain('<script');
+		expect(mail.html.split('</STYLE>')).toHaveLength(2);
+		expect(mail.html.toLowerCase().split('</style')).toHaveLength(2);
+	});
+
+	it('gives the images of an HTML template the origin of the app', async () => {
+		const html = `<img src='/media/${MEDIA_ID}.png' alt=''><img src="/media/${LOGO_ID}.jpg" alt="">`;
+		const mail = await filled(source([], { body: { html, kind: 'html' } }), ANNA);
+		expect(mail.html).toBe(
+			`<img src='https://verein.example/media/${MEDIA_ID}.png' alt=''><img src="https://verein.example/media/${LOGO_ID}.jpg" alt="">`,
+		);
 	});
 
 	it('puts the preview text at the start of the body of an HTML layout', async () => {

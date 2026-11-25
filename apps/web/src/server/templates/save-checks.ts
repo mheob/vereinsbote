@@ -10,7 +10,10 @@ import { SALUTATION_CASES } from '@/mail/placeholders/salutation';
 import type { SalutationTexts } from '@/mail/placeholders/salutation';
 import { parsePlaceholders } from '@/mail/placeholders/syntax';
 import type { TemplateBody, TemplateInput } from '@/mail/templates/template-schema';
+import { importHtml } from '@/server/html-import/import-html';
+import type { ImportKind, ImportRefusal } from '@/server/html-import/import-html';
 
+import { allowedLayoutPlaceholders } from './allowed-placeholders';
 import type { AllowedPlaceholders } from './allowed-placeholders';
 
 /** The longest template name, counted after trimming. */
@@ -27,7 +30,8 @@ const SALUTATION_TEXT_KEYS: ReadonlySet<string> = new Set([
 
 /**
  * Why a template cannot be stored. `where` names the place of a placeholder: `subject`,
- * `preheader`, `salutation.<case>` or `block.<id>` (`blockWhere`).
+ * `preheader`, `salutation.<case>`, `block.<id>` (`blockWhere`), `html` (an HTML template) or
+ * `layout` (an own HTML layout).
  */
 type SaveProblem =
 	| { readonly kind: 'nameEmpty' }
@@ -36,14 +40,21 @@ type SaveProblem =
 	| { readonly kind: 'altMissing'; readonly blockId: string }
 	| { readonly kind: 'placeholderUnknown'; readonly key: string; readonly where: string }
 	| { readonly kind: 'placeholderForbidden'; readonly key: string; readonly where: string }
+	| {
+			readonly kind: 'placeholderInAttribute';
+			readonly key: string;
+			readonly attribute: string;
+			readonly where: string;
+	  }
+	| { readonly kind: 'contentMissing' }
+	| { readonly kind: 'contentRepeated' }
 	| { readonly kind: 'syntax'; readonly where: string }
 	| { readonly kind: 'tooBig' }
 	| { readonly kind: 'mediaForeign'; readonly mediaId: string }
-	| { readonly kind: 'linkMissing'; readonly blockId: string }
-	| { readonly kind: 'htmlNotYetSupported' };
+	| { readonly kind: 'linkMissing'; readonly blockId: string };
 
-/** HTML (a template or an own layout) waits for the HTML import, which checks it (Task 16). */
-const HTML_NOT_YET_SUPPORTED: SaveProblem = { kind: 'htmlNotYetSupported' };
+/** The HTML of a template or an own layout: the place of its placeholders in a problem. */
+type HtmlPlace = 'html' | 'layout';
 
 const encoder = new TextEncoder();
 
@@ -175,26 +186,96 @@ function leafProblems(
 }
 
 /**
- * Checks the body: every block, or the HTML that the HTML import will check.
+ * A problem for a refusal of the HTML import.
+ *
+ * @param refusal The refusal.
+ * @param where The place of the HTML.
+ * @returns The problem.
+ */
+function problemOfRefusal(refusal: ImportRefusal, where: HtmlPlace): SaveProblem {
+	if (refusal.kind === 'tooLarge') return { kind: 'tooBig' };
+	if (refusal.kind === 'placeholderUnknown' || refusal.kind === 'placeholderForbidden') {
+		return { key: refusal.key, kind: refusal.kind, where };
+	}
+	if (refusal.kind === 'placeholderInAttribute') {
+		return { attribute: refusal.attribute, key: refusal.key, kind: refusal.kind, where };
+	}
+	if (refusal.kind === 'mediaForeign') return { kind: refusal.kind, mediaId: refusal.mediaId };
+	return refusal.kind === 'syntax' ? { kind: 'syntax', where } : { kind: refusal.kind };
+}
+
+/** The HTML of a body, cleaned, and what is wrong with it. */
+interface CheckedHtml {
+	readonly html: string;
+	readonly problems: readonly SaveProblem[];
+}
+
+/**
+ * Imports the HTML of a template or an own layout: the same cleaning and checks as the import
+ * dialog. Stored HTML is always what this gives, so a request that skips the dialog cannot bring
+ * in a script.
+ *
+ * @param html The HTML.
+ * @param where `html` for an HTML template, `layout` for an own layout.
+ * @param area What the area allows.
+ * @param area.allowed The placeholders of the area.
+ * @param area.areaMediaIds The images of the area's library.
+ * @returns The cleaned HTML (the input when there are problems) and the problems.
+ */
+function checkHtml(
+	html: string,
+	where: HtmlPlace,
+	area: Readonly<{ allowed: AllowedPlaceholders; areaMediaIds: ReadonlySet<string> }>,
+): CheckedHtml {
+	const { allowed, areaMediaIds } = area;
+	const kind: ImportKind =
+		where === 'html'
+			? { allowed, areaMediaIds, kind: 'template' }
+			: {
+					allowed: allowedLayoutPlaceholders('template', allowed),
+					areaMediaIds,
+					kind: 'ownLayout',
+				};
+	// The images the template shows are `/media/<file>` paths, so the app's origin is not needed.
+	const result = importHtml(html, kind, '');
+	return result.ok
+		? { html: result.html, problems: [] }
+		: { html, problems: result.refusals.map((refusal) => problemOfRefusal(refusal, where)) };
+}
+
+/** A body with the HTML cleaned, and its problems in document order. */
+interface CheckedBody {
+	readonly body: TemplateBody;
+	readonly problems: readonly SaveProblem[];
+}
+
+/**
+ * Checks the body: every block, or the HTML of an import.
  *
  * @param body The body.
  * @param allowed The placeholders of the area.
  * @param areaMediaIds The images of the area's library.
- * @returns The problems in document order.
+ * @returns The body with cleaned HTML and the problems in document order.
  */
-function bodyProblems(
+function checkBody(
 	body: TemplateBody,
 	allowed: AllowedPlaceholders,
 	areaMediaIds: ReadonlySet<string>,
-): SaveProblem[] {
-	if (body.kind === 'html') return [HTML_NOT_YET_SUPPORTED];
+): CheckedBody {
+	if (body.kind === 'html') {
+		const checked = checkHtml(body.html, 'html', { allowed, areaMediaIds });
+		return { body: { ...body, html: checked.html }, problems: checked.problems };
+	}
 	const leaves = body.blocks.flatMap((block: Block): ColumnBlock[] =>
 		block.type === 'columns' ? [...block.left, ...block.right] : [block],
 	);
-	return [
-		...leaves.flatMap((block) => leafProblems(block, allowed, areaMediaIds)),
-		...(body.layout.kind === 'own' ? [HTML_NOT_YET_SUPPORTED] : []),
-	];
+	const problems = leaves.flatMap((block) => leafProblems(block, allowed, areaMediaIds));
+	if (body.layout.kind !== 'own') return { body, problems };
+	const layout = checkHtml(body.layout.html, 'layout', { allowed, areaMediaIds });
+	return {
+		body: { ...body, layout: { ...body.layout, html: layout.html } },
+		problems: [...problems, ...layout.problems],
+	};
 }
 
 /**
@@ -208,8 +289,41 @@ function unique(problems: readonly SaveProblem[]): SaveProblem[] {
 }
 
 /**
- * The problems that keep a template from being stored. A template above 256 KB as JSON is
- * refused as a whole, without looking further.
+ * Checks a template and cleans its HTML: the problems that keep it from being stored, and the
+ * template as it is stored (the HTML of an import or an own layout cleaned by the HTML import, the
+ * input itself when there are problems or no HTML). A template above 256 KB as JSON is refused as
+ * a whole, without looking further.
+ *
+ * @param input The template.
+ * @param allowed The placeholders of its area (`allowedTemplatePlaceholders`).
+ * @param areaMediaIds The images of its area's library.
+ * @returns The template to store, and the problems, each once, in the order of the editor.
+ */
+function prepareTemplateForSave(
+	input: TemplateInput,
+	allowed: AllowedPlaceholders,
+	areaMediaIds: ReadonlySet<string>,
+): { input: TemplateInput; problems: SaveProblem[] } {
+	if (encoder.encode(JSON.stringify(input)).byteLength > MAX_TEMPLATE_JSON_BYTES) {
+		return { input, problems: [{ kind: 'tooBig' }] };
+	}
+	const checked = checkBody(input.body, allowed, areaMediaIds);
+	const problems = unique([
+		...fieldProblems(input),
+		...textProblems(input.subject, 'subject', allowed),
+		...textProblems(input.preheader, 'preheader', allowed),
+		...salutationProblems(input.salutationTexts),
+		...checked.problems,
+	]);
+	const hasHtml = input.body.kind === 'html' || input.body.layout.kind === 'own';
+	return {
+		input: problems.length === 0 && hasHtml ? { ...input, body: checked.body } : input,
+		problems,
+	};
+}
+
+/**
+ * The problems that keep a template from being stored.
  *
  * @param input The template.
  * @param allowed The placeholders of its area (`allowedTemplatePlaceholders`).
@@ -221,16 +335,7 @@ function checkTemplateForSave(
 	allowed: AllowedPlaceholders,
 	areaMediaIds: ReadonlySet<string>,
 ): SaveProblem[] {
-	if (encoder.encode(JSON.stringify(input)).byteLength > MAX_TEMPLATE_JSON_BYTES) {
-		return [{ kind: 'tooBig' }];
-	}
-	return unique([
-		...fieldProblems(input),
-		...textProblems(input.subject, 'subject', allowed),
-		...textProblems(input.preheader, 'preheader', allowed),
-		...salutationProblems(input.salutationTexts),
-		...bodyProblems(input.body, allowed, areaMediaIds),
-	]);
+	return prepareTemplateForSave(input, allowed, areaMediaIds).problems;
 }
 
 export {
@@ -239,5 +344,6 @@ export {
 	MAX_TEMPLATE_NAME_LENGTH,
 	MAX_TEMPLATE_PREHEADER_LENGTH,
 	MAX_TEMPLATE_SUBJECT_LENGTH,
+	prepareTemplateForSave,
 };
 export type { SaveProblem };

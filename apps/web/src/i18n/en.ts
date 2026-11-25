@@ -343,14 +343,17 @@ export const en: Record<keyof typeof de, string> = {
 	'editor.previewShowing': 'The preview now shows {name}.',
 	'editor.previewValuesNote': 'The values apply to this preview only and are not saved.',
 	'editor.problem.altMissing': 'Please enter an alternative text or mark the image as decorative.',
-	'editor.problem.htmlNotYetSupported':
-		'Own HTML layouts are not possible yet. Please choose another layout.',
+	'editor.problem.contentMissing':
+		'The layout needs the placeholder “Content” exactly once, as a text section of its own.',
+	'editor.problem.contentRepeated': 'The layout may contain the placeholder “Content” only once.',
 	'editor.problem.linkMissing': 'Please enter a link.',
 	'editor.problem.mediaForeign':
 		'The image is not in the library of this area. Please choose another one.',
 	'editor.problem.nameEmpty': 'Please enter a name.',
 	'editor.problem.nameTooLong': 'The name may be at most 100 characters long.',
 	'editor.problem.placeholderForbidden': 'The placeholder “{name}” is not allowed in this area.',
+	'editor.problem.placeholderInAttribute':
+		'The placeholder “{name}” must not stand in “{attribute}”; only values from the brand are allowed there.',
 	'editor.problem.placeholderUnknown': 'The placeholder “{name}” does not exist.',
 	'editor.problem.preheaderTooLong': 'The preview text may be at most 200 characters long.',
 	'editor.problem.subjectEmpty': 'Please enter a subject.',

@@ -146,6 +146,16 @@ function withBlocks(blocks: readonly Block[], layout: TemplateLayout = STANDARD)
 }
 
 /**
+ * The HTML of a body.
+ *
+ * @param body The body.
+ * @returns The HTML of an HTML template; an empty text for blocks.
+ */
+function htmlOfBody(body: TemplateInput['body']): string {
+	return body.kind === 'html' ? body.html : '';
+}
+
+/**
  * Uploads a library image to an area.
  *
  * @param setUp The club.
@@ -411,12 +421,36 @@ describe(saveTemplate, () => {
 		await expect(getTemplate(c.db, c.editor, id)).resolves.toMatchObject({ version: 1 });
 	});
 
-	it('refuses HTML until the HTML import comes', async () => {
+	it('stores the cleaned HTML of an import', async () => {
 		const c = await club();
-		const html = input({ body: { html: '<p>Hallo</p>', kind: 'html' } });
-		const error = await failureOf(createTemplate(c.db, c.editor, c.membersAreaId, html));
+		const html = input({
+			body: {
+				html: '<p onclick="x()">Hallo {{salutation}}</p><script>alert(1)</script>',
+				kind: 'html',
+			},
+		});
+		const { id } = await createTemplate(c.db, c.editor, c.membersAreaId, html);
+		const stored = await getTemplate(c.db, c.editor, id);
+		expect(stored.body).toStrictEqual({
+			html: "<!DOCTYPE html><html lang='de'><head></head><body><p>Hallo {{salutation}}</p></body></html>",
+			kind: 'html',
+		});
+	});
+
+	it('reports a placeholder in an HTML template that the field protection no longer allows', async () => {
+		const c = await club();
+		const html = input({ body: { html: '<p>Zum {{contact.birthDate}}</p>', kind: 'html' } });
+		const { id } = await createTemplate(c.db, c.editor, c.membersAreaId, html);
+		await setFieldAreas(c.db, c.admin, {
+			areaIds: [c.partnersAreaId],
+			fieldKey: 'birthDate',
+			kind: 'member',
+		});
+		const error = await failureOf(saveTemplate(c.db, c.editor, id, html, 1));
 		expect(error).toBeInstanceOf(TemplateInvalidError);
-		expect(error).toMatchObject({ problems: [{ kind: 'htmlNotYetSupported' }] });
+		expect(error).toMatchObject({
+			problems: [{ key: 'contact.birthDate', kind: 'placeholderForbidden', where: 'html' }],
+		});
 	});
 
 	it('refuses input that does not pass the schema', async () => {
@@ -511,6 +545,54 @@ describe('images of templates', () => {
 		await saveTemplate(c.db, c.editor, id, input(), 1);
 		await expect(c.db.select().from(templateMedia)).resolves.toStrictEqual([]);
 		await expect(deleteImage()).resolves.toBeDefined();
+	});
+
+	it('tracks the images of an HTML template and of an own layout', async () => {
+		const c = await club();
+		const bodyImage = await libraryImage(c, c.membersAreaId);
+		const layoutImage = await libraryImage(c, c.membersAreaId);
+		const body = {
+			html: `<img src="/media/${bodyImage}.png" alt="a"><p>x</p>`,
+			kind: 'html',
+		} as const;
+		const { id } = await createTemplate(c.db, c.editor, c.membersAreaId, input({ body }));
+		const own = {
+			blocks: [],
+			kind: 'blocks',
+			layout: {
+				html: `<img src="/media/${layoutImage}.png" alt="b"><div>{{content}}</div>`,
+				kind: 'own',
+			},
+		} as const;
+		const other = await createTemplate(
+			c.db,
+			c.editor,
+			c.membersAreaId,
+			input({ body: own, name: 'Eigenes Layout' }),
+		);
+		const rows = await c.db.select().from(templateMedia);
+		expect(rows).toHaveLength(2);
+		expect(rows).toContainEqual({ mediaId: bodyImage, templateId: id });
+		expect(rows).toContainEqual({ mediaId: layoutImage, templateId: other.id });
+		await expect(c.db.delete(media).where(eq(media.id, bodyImage))).rejects.toThrow();
+		await expect(c.db.delete(media).where(eq(media.id, layoutImage))).rejects.toThrow();
+	});
+
+	it('releases the image of an HTML template when the template stops using it', async () => {
+		const c = await club();
+		const imageId = await libraryImage(c, c.membersAreaId);
+		const body = { html: `<img src="/media/${imageId}.png" alt="a">`, kind: 'html' } as const;
+		const { id } = await createTemplate(c.db, c.editor, c.membersAreaId, input({ body }));
+		await saveTemplate(c.db, c.editor, id, input(), 1);
+		await expect(c.db.delete(media).where(eq(media.id, imageId))).resolves.toBeDefined();
+	});
+
+	it('refuses an image of another area in an HTML template', async () => {
+		const c = await club();
+		const imageId = await libraryImage(c, c.eventsAreaId);
+		const body = { html: `<img src="/media/${imageId}.png" alt="">`, kind: 'html' } as const;
+		const error = await failureOf(createTemplate(c.db, c.editor, c.membersAreaId, input({ body })));
+		expect(error).toMatchObject({ problems: [{ kind: 'mediaForeign', mediaId: imageId }] });
 	});
 
 	it('refuses an image of another area', async () => {
@@ -625,6 +707,34 @@ describe(duplicateTemplate, () => {
 		await expect(
 			duplicateTemplate(c.db, null, c.editor, withoutImage.id, c.eventsAreaId, 'Ohne Bild'),
 		).resolves.toStrictEqual({ id: expect.any(String) as unknown });
+	});
+
+	it('copies the images of an HTML template into another area', async () => {
+		const c = await club();
+		const imageId = await libraryImage(c, c.membersAreaId);
+		const body = {
+			html: `<p>Hallo</p><img src="/media/${imageId}.png" alt="a">`,
+			kind: 'html',
+		} as const;
+		const { id } = await createTemplate(c.db, c.editor, c.membersAreaId, input({ body }));
+		const duplicated = await duplicateTemplate(
+			c.db,
+			c.storage,
+			c.editor,
+			id,
+			c.eventsAreaId,
+			'Kopie',
+		);
+		const rows = await c.db
+			.select()
+			.from(templateMedia)
+			.where(eq(templateMedia.templateId, duplicated.id));
+		expect(rows).toHaveLength(1);
+		const copiedImage = rows.map(({ mediaId }) => mediaId).join('');
+		expect(copiedImage).not.toBe(imageId);
+		const copy = await getTemplate(c.db, c.editor, duplicated.id);
+		expect(htmlOfBody(copy.body)).toContain(`/media/${copiedImage}.png`);
+		expect(htmlOfBody(copy.body)).not.toContain(imageId);
 	});
 
 	it('refuses to duplicate when a placeholder is not allowed in the target area', async () => {

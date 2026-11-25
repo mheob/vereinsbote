@@ -80,8 +80,26 @@ describe(problemPlace, () => {
 		expect(problemPlace({ kind: 'mediaForeign', mediaId: 'other' }, blocks)).toBeNull();
 	});
 
-	it('puts an own HTML layout at the layout and a too big template nowhere', () => {
-		expect(problemPlace({ kind: 'htmlNotYetSupported' }, blocks)?.focusKey).toBe('layout');
+	it('puts the problems of an own HTML layout at the layout', () => {
+		expect(problemPlace({ kind: 'contentMissing' }, blocks)?.focusKey).toBe('layout');
+		expect(problemPlace({ kind: 'contentRepeated' }, blocks)?.focusKey).toBe('layout');
+		expect(
+			problemPlace({ key: 'contact.city', kind: 'placeholderForbidden', where: 'layout' }, blocks)
+				?.focusKey,
+		).toBe('layout');
+	});
+
+	it('puts the problems of the HTML of an import and a too big template nowhere', () => {
+		expect(
+			problemPlace({ key: 'contact.city', kind: 'placeholderForbidden', where: 'html' }, blocks),
+		).toBeNull();
+		expect(problemPlace({ kind: 'syntax', where: 'html' }, blocks)).toBeNull();
+		expect(
+			problemPlace(
+				{ attribute: 'href', key: 'salutation', kind: 'placeholderInAttribute', where: 'html' },
+				blocks,
+			),
+		).toBeNull();
 		expect(problemPlace({ kind: 'tooBig' }, blocks)).toBeNull();
 	});
 });
@@ -95,6 +113,13 @@ describe(problemMessage, () => {
 				t,
 			),
 		).toBe('editor.problem.placeholderUnknown{"name":"«contact.birthDate»"}');
+		expect(
+			problemMessage(
+				{ attribute: 'href', key: 'salutation', kind: 'placeholderInAttribute', where: 'html' },
+				label,
+				t,
+			),
+		).toBe('editor.problem.placeholderInAttribute{"attribute":"href","name":"«salutation»"}');
 		expect(problemMessage({ field: 'subject', kind: 'tooLong' }, label, t)).toBe(
 			'editor.problem.subjectTooLong',
 		);

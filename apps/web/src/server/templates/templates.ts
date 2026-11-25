@@ -16,13 +16,14 @@ import {
 	templateBodySchema,
 	templateInputSchema,
 } from '@/mail/templates/template-schema';
-import type { TemplateBody, TemplateInput } from '@/mail/templates/template-schema';
+import type { TemplateBody, TemplateInput, TemplateLayout } from '@/mail/templates/template-schema';
 import { writeAudit } from '@/server/audit/audit';
 import type { AuditAction } from '@/server/audit/audit';
 import { UnknownAreaError } from '@/server/contacts/errors';
 import type { Db } from '@/server/db/client';
 import { isUniqueViolation } from '@/server/db/errors';
 import { areas, layouts, media, templateMedia, templates, user } from '@/server/db/schema';
+import { htmlMediaIds, swapHtmlMediaIds } from '@/server/html-import/media-refs';
 import { mediaStorageKey, newMediaId } from '@/server/media/ids';
 import { assertArea, canAccessArea } from '@/server/permissions/principal';
 import type { Principal } from '@/server/permissions/principal';
@@ -38,7 +39,7 @@ import {
 	TemplateNameTakenError,
 	TemplateNotFoundError,
 } from './errors';
-import { checkTemplateForSave } from './save-checks';
+import { checkTemplateForSave, prepareTemplateForSave } from './save-checks';
 
 /** A stored template as its editor loads it. */
 interface TemplateRecord extends TemplateInput {
@@ -73,13 +74,17 @@ interface WriteContext {
 type ImageCopies = ReadonlyMap<string, string>;
 
 /**
- * The images a body shows.
+ * The images a body shows: those of its blocks, of its HTML and of its own HTML layout.
  *
  * @param body The body.
  * @returns The media ids, each once.
  */
 function mediaIdsOf(body: TemplateBody): string[] {
-	return body.kind === 'blocks' ? collectMediaIds(body.blocks) : [];
+	if (body.kind === 'html') return htmlMediaIds(body.html);
+	const ids = collectMediaIds(body.blocks);
+	return body.layout.kind === 'own'
+		? [...new Set([...ids, ...htmlMediaIds(body.layout.html)])]
+		: ids;
 }
 
 /**
@@ -170,14 +175,20 @@ async function lockAreaMedia(
  * @param tx The transaction.
  * @param context The area and its placeholders.
  * @param input The template.
+ * @returns The template to store: the HTML of an import or an own layout is the cleaned HTML.
  * @throws {LayoutNotFoundError} When the chosen global layout is gone.
  * @throws {TemplateInvalidError} When the template does not pass the save checks.
  */
-async function assertSavable(tx: Db, context: WriteContext, input: TemplateInput): Promise<void> {
+async function assertSavable(
+	tx: Db,
+	context: WriteContext,
+	input: TemplateInput,
+): Promise<TemplateInput> {
 	await lockLayout(tx, sharedLayoutIdOf(input.body));
 	const areaMediaIds = await lockAreaMedia(tx, context.areaId, mediaIdsOf(input.body));
-	const problems = checkTemplateForSave(input, context.allowed, areaMediaIds);
-	if (problems.length > 0) throw new TemplateInvalidError(problems);
+	const checked = prepareTemplateForSave(input, context.allowed, areaMediaIds);
+	if (checked.problems.length > 0) throw new TemplateInvalidError(checked.problems);
+	return checked.input;
 }
 
 /**
@@ -407,8 +418,8 @@ async function createTemplate(
 	return withUniqueName(async () =>
 		db.transaction(async (tx) => {
 			await lockArea(tx, areaId);
-			await assertSavable(tx, context, parsed);
-			const id = await insertTemplate(tx, context, parsed);
+			const checked = await assertSavable(tx, context, parsed);
+			const id = await insertTemplate(tx, context, checked);
 			await logTemplate(tx, {
 				action: 'template.created',
 				actor,
@@ -490,13 +501,13 @@ async function saveTemplate(
 	return withUniqueName(async () =>
 		db.transaction(async (tx) => {
 			await lockVersion(tx, id, version);
-			await assertSavable(tx, context, parsed);
+			const checked = await assertSavable(tx, context, parsed);
 			const next = version + 1;
 			await tx
 				.update(templates)
-				.set({ ...rowValues(parsed, actor.userId), version: next })
+				.set({ ...rowValues(checked, actor.userId), version: next })
 				.where(eq(templates.id, id));
-			await linkMedia(tx, id, parsed.body);
+			await linkMedia(tx, id, checked.body);
 			await logTemplate(tx, {
 				action: 'template.updated',
 				actor,
@@ -517,7 +528,10 @@ async function saveTemplate(
  */
 function withCopiedImages(input: TemplateInput, copies: ImageCopies): TemplateInput {
 	const { body } = input;
-	if (body.kind !== 'blocks' || copies.size === 0) return input;
+	if (copies.size === 0) return input;
+	if (body.kind === 'html') {
+		return { ...input, body: { ...body, html: swapHtmlMediaIds(body.html, copies) } };
+	}
 	const swap = (block: ColumnBlock): ColumnBlock =>
 		block.type === 'image' && block.mediaId !== null
 			? { ...block, mediaId: copies.get(block.mediaId) ?? block.mediaId }
@@ -527,7 +541,11 @@ function withCopiedImages(input: TemplateInput, copies: ImageCopies): TemplateIn
 			? { ...block, left: block.left.map(swap), right: block.right.map(swap) }
 			: swap(block),
 	);
-	return { ...input, body: { ...body, blocks } };
+	const layout: TemplateLayout =
+		body.layout.kind === 'own'
+			? { ...body.layout, html: swapHtmlMediaIds(body.layout.html, copies) }
+			: body.layout;
+	return { ...input, body: { ...body, blocks, layout } };
 }
 
 /**
@@ -667,8 +685,8 @@ async function insertCopy(
 	await lockArea(tx, context.areaId);
 	await insertImageCopies(tx, context, copy.copies);
 	const input = withCopiedImages(copy.input, copy.copies);
-	await assertSavable(tx, context, input);
-	const id = await insertTemplate(tx, context, input);
+	const checked = await assertSavable(tx, context, input);
+	const id = await insertTemplate(tx, context, checked);
 	await logTemplate(tx, {
 		action: 'template.duplicated',
 		actor: context.actor,

@@ -351,8 +351,10 @@ export const de = {
 		'Die Werte gelten nur für diese Vorschau und werden nicht gespeichert.',
 	'editor.problem.altMissing':
 		'Bitte gib einen Alternativtext ein oder markiere das Bild als dekorativ.',
-	'editor.problem.htmlNotYetSupported':
-		'Eigene HTML-Layouts sind noch nicht möglich. Bitte wähle ein anderes Layout.',
+	'editor.problem.contentMissing':
+		'Das Layout braucht den Platzhalter „Inhalt“ genau einmal, als eigenen Textabschnitt.',
+	'editor.problem.contentRepeated':
+		'Das Layout darf den Platzhalter „Inhalt“ nur einmal enthalten.',
 	'editor.problem.linkMissing': 'Bitte gib einen Link ein.',
 	'editor.problem.mediaForeign':
 		'Das Bild gehört nicht zur Bildersammlung dieses Bereichs. Bitte wähle ein anderes.',
@@ -360,6 +362,8 @@ export const de = {
 	'editor.problem.nameTooLong': 'Der Name darf höchstens 100 Zeichen lang sein.',
 	'editor.problem.placeholderForbidden':
 		'Der Platzhalter „{name}“ ist in diesem Bereich nicht erlaubt.',
+	'editor.problem.placeholderInAttribute':
+		'Der Platzhalter „{name}“ darf nicht in „{attribute}“ stehen; dort sind nur Werte aus dem CD erlaubt.',
 	'editor.problem.placeholderUnknown': 'Den Platzhalter „{name}“ gibt es nicht.',
 	'editor.problem.preheaderTooLong': 'Der Vorschautext darf höchstens 200 Zeichen lang sein.',
 	'editor.problem.subjectEmpty': 'Bitte gib einen Betreff ein.',

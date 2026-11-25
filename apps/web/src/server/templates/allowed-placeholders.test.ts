@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vite-plus/test';
 import { createArea } from '@/server/areas/areas';
 import { customFieldKey } from '@/server/contacts/fields';
 import { setFieldAreas } from '@/server/contacts/settings';
+import type { CustomFieldRecord } from '@/server/contacts/settings';
 import { setUpClub } from '@/server/contacts/testing';
 import type { Db } from '@/server/db/client';
 import { customFields } from '@/server/db/schema';
@@ -175,15 +176,38 @@ describe(templatePlaceholders, () => {
 	});
 });
 
+const field = (placeholderKey: string, protection: 'base' | 'protected'): CustomFieldRecord => ({
+	id: `field-${placeholderKey}`,
+	kind: 'member',
+	name: placeholderKey,
+	placeholderKey,
+	protection,
+	type: 'text',
+});
+
 describe(allowedLayoutPlaceholders, () => {
 	it('limits global layouts to brand, base fields and content', () => {
-		const keys = allowedLayoutPlaceholders('global');
+		const { keys } = allowedLayoutPlaceholders('global', []);
 		expect(
 			lacking(keys, [...BASE_KEYS, 'content', 'brand.name', 'brand.primaryColor']),
 		).toStrictEqual([]);
-		expect(having(keys, [...PROTECTED_KEYS, 'salutation', 'contact.custom.notiz'])).toStrictEqual(
-			[],
-		);
+		expect(having(keys, [...PROTECTED_KEYS, 'salutation'])).toStrictEqual([]);
+	});
+
+	it('gives global layouts the base custom fields, not the protected ones', () => {
+		const { keys, known } = allowedLayoutPlaceholders('global', [
+			field('verein', 'base'),
+			field('notiz', 'protected'),
+		]);
+		expect(having(keys, ['contact.custom.verein', 'contact.custom.notiz'])).toStrictEqual([
+			'contact.custom.verein',
+		]);
+		expect(having(known, ['contact.custom.verein', 'contact.custom.notiz'])).toStrictEqual([
+			'contact.custom.verein',
+			'contact.custom.notiz',
+		]);
+		expect(known).toContain('contact.birthDate');
+		expect(known).not.toContain('contact.custom.other');
 	});
 
 	it("gives a template's own layout the template's placeholders and content", () => {
@@ -191,13 +215,10 @@ describe(allowedLayoutPlaceholders, () => {
 			{ member: new Set(['birthDate']), partner: new Set() },
 			[],
 		);
-		const keys = allowedLayoutPlaceholders('template', template);
+		const { keys, known } = allowedLayoutPlaceholders('template', template);
 		expect(
 			having(keys, ['content', 'contact.birthDate', 'salutation', 'contact.city']),
 		).toStrictEqual(['content', 'contact.birthDate', 'salutation']);
-	});
-
-	it("needs the template's placeholders for its own layout", () => {
-		expect(() => allowedLayoutPlaceholders('template')).toThrow(TypeError);
+		expect(known).toBe(template.known);
 	});
 });

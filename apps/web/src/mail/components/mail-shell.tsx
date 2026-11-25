@@ -2,12 +2,7 @@ import type { ReactNode } from 'react';
 
 import type { Locale } from '@/i18n/locale';
 
-/**
- * The one rule for phones: the content area takes the full width and the two columns stand below
- * each other. The layout works without it (classic Outlook, clients without `<style>`).
- */
-const MOBILE_RULE =
-	'@media only screen and (max-width: 620px) { .vb-container { width: 100% !important; max-width: 100% !important; } .vb-column { display: block !important; width: 100% !important; max-width: 100% !important; box-sizing: border-box; } .vb-page { padding: 0 !important; } }';
+import { MOBILE_RULE } from './mobile-rules';
 
 interface MailShellProps {
 	readonly children: ReactNode;

@@ -83,25 +83,66 @@ async function allowedTemplatePlaceholders(db: Db, areaId: string): Promise<Allo
 	return templatePlaceholders(deliveredByKind, [...members, ...partners]);
 }
 
+/** The placeholders of a layout: the allowed keys, and every key that exists. */
+interface LayoutPlaceholders {
+	readonly keys: ReadonlySet<string>;
+	readonly known: ReadonlySet<string>;
+}
+
+/** Every built-in key; the base of the `known` set of a layout. */
+const BUILTIN_KEYS = BUILTIN_PLACEHOLDERS.map(({ key }) => key);
+
 /**
- * The placeholders a layout may use: a global layout brand values, base fields and `content`; a
- * template's own layout what its template may use, and `content`.
+ * The placeholders of a global layout: brand values, the base fields of contacts (the built-in
+ * ones and the custom fields with protection `base`) and `content`.
  *
- * @param scope `global` for a shared layout, `template` for a template's own layout.
- * @param template The placeholders of the template; needed for `template`.
- * @returns The allowed keys.
- * @throws {TypeError} For `template` without the template's placeholders.
+ * @param scope `global`.
+ * @param customFields The custom fields of both kinds.
+ * @returns The allowed and the known keys.
  */
 function allowedLayoutPlaceholders(
-	scope: 'global' | 'template',
-	template?: AllowedPlaceholders,
-): ReadonlySet<string> {
-	if (scope === 'global') return GLOBAL_LAYOUT_KEYS;
-	if (template === undefined) {
-		throw new TypeError("A template's own layout needs the placeholders of the template.");
+	scope: 'global',
+	customFields: readonly Readonly<CustomFieldRecord>[],
+): LayoutPlaceholders;
+/**
+ * The placeholders of a template's own layout: what its template may use, and `content`.
+ *
+ * @param scope `template`.
+ * @param template The placeholders of the template.
+ * @returns The allowed and the known keys.
+ */
+function allowedLayoutPlaceholders(
+	scope: 'template',
+	template: AllowedPlaceholders,
+): LayoutPlaceholders;
+/**
+ * The placeholders a layout may use (Design 10.2). The scope is told by the second argument: a
+ * template's placeholders make its own layout, the custom fields make a global one.
+ *
+ * @param _scope `global` for a shared layout, `template` for a template's own layout.
+ * @param source The custom fields (`global`) or the placeholders of the template (`template`).
+ * @returns The allowed and the known keys.
+ */
+function allowedLayoutPlaceholders(
+	_scope: 'global' | 'template',
+	source: readonly Readonly<CustomFieldRecord>[] | AllowedPlaceholders,
+): LayoutPlaceholders {
+	if ('known' in source) {
+		return { keys: new Set([...source.keys, CONTENT_KEY]), known: source.known };
 	}
-	return new Set([...template.keys, CONTENT_KEY]);
+	return {
+		keys: new Set([
+			...GLOBAL_LAYOUT_KEYS,
+			...source
+				.filter((field) => field.protection === 'base')
+				.map((field) => customPlaceholderKey(field.placeholderKey)),
+		]),
+		known: new Set([
+			...BUILTIN_KEYS,
+			...source.map((field) => customPlaceholderKey(field.placeholderKey)),
+		]),
+	};
 }
 
 export { allowedLayoutPlaceholders, allowedTemplatePlaceholders, templatePlaceholders };
-export type { AllowedPlaceholders };
+export type { AllowedPlaceholders, LayoutPlaceholders };
