@@ -11,11 +11,18 @@ import {
 	TemplateInvalidError,
 	TemplateNameTakenError,
 	TemplateNotFoundError,
+	TemplateNotHtmlError,
 } from './errors';
 import { refusedPlaceholderKeys } from './refused-keys';
 import type { SaveProblem } from './save-checks';
 
 type CreateFailure = Readonly<{ ok: false; failure: 'nameTaken' | 'invalid' | 'gone' }>;
+
+/** Like `CreateFailure`, but a refusal by the save checks comes with its problems. */
+type CreateHtmlFailure = Readonly<
+	| { ok: false; failure: 'nameTaken' | 'gone' }
+	| { ok: false; failure: 'invalid'; problems: readonly SaveProblem[] }
+>;
 
 type DuplicateFailure = Readonly<
 	| { ok: false; failure: 'nameTaken' | 'storageMissing' | 'gone' }
@@ -41,6 +48,22 @@ function createFailure(error: unknown): CreateFailure | null {
 	if (error instanceof UnknownAreaError || error instanceof LayoutNotFoundError) {
 		return { failure: 'gone', ok: false };
 	}
+	return null;
+}
+
+/**
+ * The result for an error of creating a template from imported HTML. The problems of the save
+ * checks come along (a name, a subject, a placeholder), so the page can show each of them.
+ *
+ * @param error What was thrown.
+ * @returns The failure, or null when the error is not an expected refusal.
+ */
+function createHtmlFailure(error: unknown): CreateHtmlFailure | null {
+	if (error instanceof TemplateInvalidError) {
+		return { failure: 'invalid', ok: false, problems: error.problems };
+	}
+	if (error instanceof TemplateNameTakenError) return { failure: 'nameTaken', ok: false };
+	if (error instanceof UnknownAreaError) return { failure: 'gone', ok: false };
 	return null;
 }
 
@@ -92,8 +115,10 @@ function saveFailure(error: unknown): SaveFailure | null {
 	if (error instanceof TemplateInvalidError) {
 		return { failure: 'invalid', ok: false, problems: error.problems };
 	}
+	// A template of blocks keeps them: replacing HTML in one is refused without a problem to show.
+	if (error instanceof TemplateNotHtmlError) return { failure: 'invalid', ok: false, problems: [] };
 	return null;
 }
 
-export { createFailure, deleteFailure, duplicateFailure, saveFailure };
-export type { CreateFailure, DeleteFailure, DuplicateFailure, SaveFailure };
+export { createFailure, createHtmlFailure, deleteFailure, duplicateFailure, saveFailure };
+export type { CreateFailure, CreateHtmlFailure, DeleteFailure, DuplicateFailure, SaveFailure };

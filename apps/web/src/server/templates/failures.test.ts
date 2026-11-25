@@ -9,8 +9,15 @@ import {
 	TemplateInvalidError,
 	TemplateNameTakenError,
 	TemplateNotFoundError,
+	TemplateNotHtmlError,
 } from './errors';
-import { createFailure, deleteFailure, duplicateFailure, saveFailure } from './failures';
+import {
+	createFailure,
+	createHtmlFailure,
+	deleteFailure,
+	duplicateFailure,
+	saveFailure,
+} from './failures';
 
 describe(createFailure, () => {
 	it('turns the expected refusals into results', () => {
@@ -113,5 +120,34 @@ describe(saveFailure, () => {
 	it('leaves anything else an error', () => {
 		expect(saveFailure(new UnknownAreaError())).toBeNull();
 		expect(saveFailure(new Error('boom'))).toBeNull();
+	});
+});
+
+describe(createHtmlFailure, () => {
+	it('keeps the problems of the save checks and turns the other refusals into results', () => {
+		const problems = [
+			{ key: 'contact.birthDate', kind: 'placeholderForbidden', where: 'html' },
+		] as const;
+		expect(createHtmlFailure(new TemplateInvalidError(problems))).toStrictEqual({
+			failure: 'invalid',
+			ok: false,
+			problems,
+		});
+		expect(createHtmlFailure(new TemplateNameTakenError())).toStrictEqual({
+			failure: 'nameTaken',
+			ok: false,
+		});
+		expect(createHtmlFailure(new UnknownAreaError())).toStrictEqual({ failure: 'gone', ok: false });
+		expect(createHtmlFailure(new Error('boom'))).toBeNull();
+	});
+});
+
+describe('saveFailure for a template of blocks', () => {
+	it('refuses replacing its HTML as invalid without a problem to show', () => {
+		expect(saveFailure(new TemplateNotHtmlError())).toStrictEqual({
+			failure: 'invalid',
+			ok: false,
+			problems: [],
+		});
 	});
 });

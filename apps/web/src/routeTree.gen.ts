@@ -31,6 +31,8 @@ import { Route as MediaFileRouteImport } from './routes/media/$file'
 import { Route as TemplatesIndexRouteImport } from './routes/templates/index'
 import { Route as TemplatesTemplateIdRouteImport } from './routes/templates/$templateId'
 import { Route as TemplatesNewRouteImport } from './routes/templates/new'
+import { Route as AdminLayoutsIndexRouteImport } from './routes/admin/layouts/index'
+import { Route as AdminLayoutsLayoutIdRouteImport } from './routes/admin/layouts/$layoutId'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ContactsImportMembersRouteImport } from './routes/contacts/import/members'
 import { Route as ContactsImportPartnersRouteImport } from './routes/contacts/import/partners'
@@ -145,6 +147,16 @@ const TemplatesNewRoute = TemplatesNewRouteImport.update({
   path: '/new',
   getParentRoute: () => TemplatesRouteRoute,
 } as any)
+const AdminLayoutsIndexRoute = AdminLayoutsIndexRouteImport.update({
+  id: '/layouts/',
+  path: '/layouts/',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
+const AdminLayoutsLayoutIdRoute = AdminLayoutsLayoutIdRouteImport.update({
+  id: '/layouts/$layoutId',
+  path: '/layouts/$layoutId',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -184,9 +196,11 @@ export interface FileRoutesByFullPath {
   '/admin/': typeof AdminIndexRoute
   '/contacts/': typeof ContactsIndexRoute
   '/templates/': typeof TemplatesIndexRoute
+  '/admin/layouts/$layoutId': typeof AdminLayoutsLayoutIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/contacts/import/members': typeof ContactsImportMembersRoute
   '/contacts/import/partners': typeof ContactsImportPartnersRoute
+  '/admin/layouts/': typeof AdminLayoutsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -208,9 +222,11 @@ export interface FileRoutesByTo {
   '/admin': typeof AdminIndexRoute
   '/contacts': typeof ContactsIndexRoute
   '/templates': typeof TemplatesIndexRoute
+  '/admin/layouts/$layoutId': typeof AdminLayoutsLayoutIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/contacts/import/members': typeof ContactsImportMembersRoute
   '/contacts/import/partners': typeof ContactsImportPartnersRoute
+  '/admin/layouts': typeof AdminLayoutsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -236,9 +252,11 @@ export interface FileRoutesById {
   '/admin/': typeof AdminIndexRoute
   '/contacts/': typeof ContactsIndexRoute
   '/templates/': typeof TemplatesIndexRoute
+  '/admin/layouts/$layoutId': typeof AdminLayoutsLayoutIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/contacts/import/members': typeof ContactsImportMembersRoute
   '/contacts/import/partners': typeof ContactsImportPartnersRoute
+  '/admin/layouts/': typeof AdminLayoutsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -265,9 +283,11 @@ export interface FileRouteTypes {
     | '/admin/'
     | '/contacts/'
     | '/templates/'
+    | '/admin/layouts/$layoutId'
     | '/api/auth/$'
     | '/contacts/import/members'
     | '/contacts/import/partners'
+    | '/admin/layouts/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -289,9 +309,11 @@ export interface FileRouteTypes {
     | '/admin'
     | '/contacts'
     | '/templates'
+    | '/admin/layouts/$layoutId'
     | '/api/auth/$'
     | '/contacts/import/members'
     | '/contacts/import/partners'
+    | '/admin/layouts'
   id:
     | '__root__'
     | '/'
@@ -316,9 +338,11 @@ export interface FileRouteTypes {
     | '/admin/'
     | '/contacts/'
     | '/templates/'
+    | '/admin/layouts/$layoutId'
     | '/api/auth/$'
     | '/contacts/import/members'
     | '/contacts/import/partners'
+    | '/admin/layouts/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -492,6 +516,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TemplatesNewRouteImport
       parentRoute: typeof TemplatesRouteRoute
     }
+    '/admin/layouts/': {
+      id: '/admin/layouts/'
+      path: '/layouts'
+      fullPath: '/admin/layouts/'
+      preLoaderRoute: typeof AdminLayoutsIndexRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
+    '/admin/layouts/$layoutId': {
+      id: '/admin/layouts/$layoutId'
+      path: '/layouts/$layoutId'
+      fullPath: '/admin/layouts/$layoutId'
+      preLoaderRoute: typeof AdminLayoutsLayoutIdRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -522,6 +560,8 @@ interface AdminRouteRouteChildren {
   AdminContactSettingsRoute: typeof AdminContactSettingsRoute
   AdminUsersRoute: typeof AdminUsersRoute
   AdminIndexRoute: typeof AdminIndexRoute
+  AdminLayoutsLayoutIdRoute: typeof AdminLayoutsLayoutIdRoute
+  AdminLayoutsIndexRoute: typeof AdminLayoutsIndexRoute
 }
 
 const AdminRouteRouteChildren: AdminRouteRouteChildren = {
@@ -530,6 +570,8 @@ const AdminRouteRouteChildren: AdminRouteRouteChildren = {
   AdminContactSettingsRoute: AdminContactSettingsRoute,
   AdminUsersRoute: AdminUsersRoute,
   AdminIndexRoute: AdminIndexRoute,
+  AdminLayoutsLayoutIdRoute: AdminLayoutsLayoutIdRoute,
+  AdminLayoutsIndexRoute: AdminLayoutsIndexRoute,
 }
 
 const AdminRouteRouteWithChildren = AdminRouteRoute._addFileChildren(

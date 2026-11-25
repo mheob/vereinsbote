@@ -13,17 +13,10 @@ import { compareCodePoints } from '@/server/compare-code-points';
 import { createFindings, structureFindings } from './findings';
 // oxlint-disable-next-line unicorn/prefer-export-from -- the types are used in this file as well
 import type { FindingsCollector, ImportFinding } from './findings';
+import { GMAIL_CLIP_BYTES, MAX_IMPORT_BYTES } from './limits';
 import { createPlaceholderTokens, stripPrivateUse } from './placeholders';
 import type { PlaceholderKeys, PlaceholderTokens } from './placeholders';
 import { cleanDocument, writeTree } from './sanitize';
-
-const KIBIBYTE = 1024;
-const MAX_IMPORT_KIBIBYTES = 500;
-const GMAIL_CLIP_KIBIBYTES = 102;
-/** The most an import takes: 500 KB. */
-const MAX_IMPORT_BYTES = MAX_IMPORT_KIBIBYTES * KIBIBYTE;
-/** Gmail clips a mail above this size; the import warns. */
-const GMAIL_CLIP_BYTES = GMAIL_CLIP_KIBIBYTES * KIBIBYTE;
 
 /** What is imported, with what it may use. */
 type ImportKind =
@@ -242,5 +235,5 @@ function importedMediaIds(html: string, appOrigin: string): string[] {
 	);
 }
 
-export { GMAIL_CLIP_BYTES, importedMediaIds, importHtml, MAX_IMPORT_BYTES };
+export { importedMediaIds, importHtml };
 export type { ImportFinding, ImportKind, ImportRefusal, ImportResult };

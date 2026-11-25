@@ -5,6 +5,7 @@ import { isStartChoice, namesAfterStartChange, startDefaults } from './start-def
 describe(startDefaults, () => {
 	it('prefills nothing for an empty template and the starter texts for a starter', () => {
 		expect(startDefaults('empty')).toStrictEqual({ name: '', subject: '' });
+		expect(startDefaults('html')).toStrictEqual({ name: '', subject: '' });
 		expect(startDefaults('invitation')).toStrictEqual({
 			name: 'Einladung',
 			subject: 'Einladung zu [Veranstaltung]',
@@ -16,6 +17,7 @@ describe(isStartChoice, () => {
 	it('knows the choices only', () => {
 		expect(isStartChoice('empty')).toBe(true);
 		expect(isStartChoice('invitation')).toBe(true);
+		expect(isStartChoice('html')).toBe(true);
 		expect(isStartChoice('import')).toBe(false);
 	});
 });

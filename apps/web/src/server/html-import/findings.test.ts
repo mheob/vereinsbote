@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vite-plus/test';
 
-import { GMAIL_CLIP_BYTES, importHtml } from './import-html';
+import { importHtml } from './import-html';
 import type { ImportFinding, ImportKind } from './import-html';
+import { GMAIL_CLIP_BYTES } from './limits';
 import { findingsOf as findingsOfResult, imported } from './testing';
 
 const KIND: ImportKind = {

@@ -5,11 +5,11 @@
 import { STARTER_IDS, starterTemplate } from '@/mail/starters/starters';
 import type { StarterId } from '@/mail/starters/starters';
 
-/** How a new template starts: empty or from a starter. */
-type StartChoice = 'empty' | StarterId;
+/** How a new template starts: empty, from a starter or from imported HTML. */
+type StartChoice = 'empty' | 'html' | StarterId;
 
 /** The choices in the order the form offers them. */
-const START_CHOICES: readonly StartChoice[] = ['empty', ...STARTER_IDS];
+const START_CHOICES: readonly StartChoice[] = ['empty', ...STARTER_IDS, 'html'];
 
 /** The name and the subject of the form. */
 interface TemplateNames {
@@ -23,7 +23,7 @@ const NO_NAMES: TemplateNames = { name: '', subject: '' };
  * Whether a value is one of the choices.
  *
  * @param value Any value, e.g. what a radio group reports.
- * @returns True for `empty` and the ids of the starters.
+ * @returns True for `empty`, `html` and the ids of the starters.
  */
 function isStartChoice(value: string): value is StartChoice {
 	const choices: readonly string[] = START_CHOICES;
@@ -34,10 +34,10 @@ function isStartChoice(value: string): value is StartChoice {
  * The name and subject a start prefills.
  *
  * @param start The start.
- * @returns The defaults of a starter; empty texts for an empty template.
+ * @returns The defaults of a starter; empty texts for an empty template and imported HTML.
  */
 function startDefaults(start: StartChoice): TemplateNames {
-	if (start === 'empty') return NO_NAMES;
+	if (start === 'empty' || start === 'html') return NO_NAMES;
 	const { defaultName, defaultSubject } = starterTemplate(start);
 	return { name: defaultName, subject: defaultSubject };
 }

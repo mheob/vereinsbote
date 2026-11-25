@@ -14,14 +14,17 @@ import {
 } from 'react-aria-components';
 import type { Key } from 'react-aria-components';
 
+import type { Announce } from '@/components/announcements';
 import { ChevronIcon } from '@/components/icons';
 import { optionClass, popoverClass, selectButtonClass } from '@/components/styles';
 import { useT } from '@/i18n/use-t';
+import type { Brand } from '@/mail/brand/brand-schema';
 import type { TemplateInput, TemplateLayout } from '@/mail/templates/template-schema';
 import type { LayoutSource } from '@/server/templates/editor-data';
 import type { EditorPlaceholder } from '@/server/templates/editor-placeholders';
 
 import type { SettingsPatch } from './editor-state';
+import { OwnLayoutImport } from './own-layout-import';
 import { SalutationFields } from './salutation-fields';
 import { SyntaxEditor } from './syntax-editor';
 
@@ -30,6 +33,14 @@ const OWN = 'own';
 
 const triggerClass =
 	'flex items-center gap-2 rounded-md text-xl font-bold data-focus-visible:outline-2 data-focus-visible:outline-offset-2 data-focus-visible:outline-blue-700';
+
+/** What the import of an own layout needs besides the template's salutation texts. */
+interface LayoutImportContext {
+	readonly templateId: string;
+	readonly brand: Brand;
+	readonly appOrigin: string;
+	readonly announce: Announce;
+}
 
 /**
  * The key of a layout choice in the select.
@@ -125,6 +136,7 @@ function LayoutSelect({
  * @param props.errors The messages of refused fields, by `data-problem-focus`.
  * @param props.isReadOnly Whether the settings are read-only.
  * @param props.onSalutationReset Called after the salutation texts were reset.
+ * @param props.layoutImport What the import of an own layout needs; null for none.
  * @returns The settings.
  */
 export function SettingsPanel({
@@ -132,6 +144,7 @@ export function SettingsPanel({
 	input,
 	isExpanded,
 	isReadOnly,
+	layoutImport,
 	layouts,
 	onExpandedChange,
 	onLayout,
@@ -145,6 +158,7 @@ export function SettingsPanel({
 	onSettings: (patch: SettingsPatch) => void;
 	onLayout: (layout: TemplateLayout) => void;
 	layouts: readonly LayoutSource[];
+	layoutImport: LayoutImportContext | null;
 	placeholders: readonly EditorPlaceholder[];
 	errors: ReadonlyMap<string, string>;
 	isReadOnly: boolean;
@@ -162,6 +176,12 @@ export function SettingsPanel({
 			onSettings({ preheader });
 		},
 		[onSettings],
+	);
+	const importOwnLayout = useCallback(
+		(html: string) => {
+			onLayout({ html, kind: 'own' });
+		},
+		[onLayout],
 	);
 	const chevronClass = useMemo(
 		() => `transition-transform ${isExpanded ? '' : '-rotate-90'}`,
@@ -221,6 +241,16 @@ export function SettingsPanel({
 							layout={body.layout}
 							layouts={layouts}
 							onChange={onLayout}
+						/>
+					) : null}
+					{body.kind === 'blocks' && layoutImport !== null ? (
+						<OwnLayoutImport
+							announce={layoutImport.announce}
+							appOrigin={layoutImport.appOrigin}
+							brand={layoutImport.brand}
+							onImported={importOwnLayout}
+							salutationTexts={input.salutationTexts}
+							templateId={layoutImport.templateId}
 						/>
 					) : null}
 				</div>

@@ -227,6 +227,18 @@ export function TemplateEditor({
 		}),
 		[page.areaName, page.template.id, savedName, state.dirty, state.input.name, state.version],
 	);
+	const layoutImport = useMemo(
+		() =>
+			isReadOnly
+				? null
+				: {
+						announce,
+						appOrigin: page.appOrigin,
+						brand: page.brand,
+						templateId: page.template.id,
+					},
+		[announce, isReadOnly, page.appOrigin, page.brand, page.template.id],
+	);
 	const edit = useMemo(
 		() => (
 			<div className="flex flex-col gap-6">
@@ -235,6 +247,7 @@ export function TemplateEditor({
 					input={state.input}
 					isExpanded={settingsOpen}
 					isReadOnly={isReadOnly}
+					layoutImport={layoutImport}
 					layouts={page.layouts}
 					onExpandedChange={setSettingsOpen}
 					onLayout={setLayout}
@@ -258,6 +271,7 @@ export function TemplateEditor({
 			index.general,
 			isReadOnly,
 			jumpTo,
+			layoutImport,
 			page.layouts,
 			page.placeholders,
 			setLayout,

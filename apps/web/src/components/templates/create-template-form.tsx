@@ -13,12 +13,14 @@ import type { TemplateArea } from '@/functions/templates';
 import { submitCreateTemplate } from '@/functions/templates';
 import type { MessageKey } from '@/i18n/translate';
 import { useT } from '@/i18n/use-t';
+import type { Brand } from '@/mail/brand/brand-schema';
 import {
 	MAX_TEMPLATE_NAME_LENGTH,
 	MAX_TEMPLATE_SUBJECT_LENGTH,
 } from '@/server/templates/save-checks';
 
 import { AreaSelect } from './area-select';
+import { HtmlStart } from './html-start';
 import { resolveAreaId } from './resolve-area';
 import {
 	isStartChoice,
@@ -31,6 +33,7 @@ import type { StartChoice, TemplateNames } from './start-defaults';
 /** The label of each way to start. */
 const START_LABELS: Readonly<Record<StartChoice, MessageKey>> = {
 	empty: 'templates.start.empty',
+	html: 'templates.start.html',
 	invitation: 'templates.start.invitation',
 };
 
@@ -44,16 +47,22 @@ type CreateState = Readonly<{ failure: 'nameTaken' | 'invalid' | 'gone' }> | nul
  *
  * @param props The props.
  * @param props.areas The areas the user may edit; at least one.
+ * @param props.brand The brand, for the preview of an import.
+ * @param props.appOrigin The origin of the app, for the preview's image addresses.
  * @param props.onCreated Called with the id of the new template.
  * @param props.onGone Called when the area is gone, so the page loads it anew.
  * @returns The form.
  */
 export function CreateTemplateForm({
+	appOrigin,
 	areas,
+	brand,
 	onCreated,
 	onGone,
 }: Readonly<{
 	areas: readonly TemplateArea[];
+	brand: Brand;
+	appOrigin: string;
 	onCreated: (id: string) => void;
 	onGone: () => void;
 }>): ReactNode {
@@ -65,6 +74,7 @@ export function CreateTemplateForm({
 	const areaId = resolveAreaId(areas, chosenAreaId);
 	const [start, setStart] = useState<StartChoice>('empty');
 	const [names, setNames] = useState<TemplateNames>(startDefaults('empty'));
+	const [htmlNameTaken, setHtmlNameTaken] = useState(false);
 	const changeStart = useCallback(
 		(value: string) => {
 			if (!isStartChoice(value)) return;
@@ -74,6 +84,7 @@ export function CreateTemplateForm({
 		[start],
 	);
 	const changeName = useCallback((name: string) => {
+		setHtmlNameTaken(false);
 		setNames((current) => ({ ...current, name }));
 	}, []);
 	const changeSubject = useCallback((subject: string) => {
@@ -81,6 +92,8 @@ export function CreateTemplateForm({
 	}, []);
 	const [state, submitForm] = useActionState(
 		async (_previous: CreateState): Promise<CreateState> => {
+			// The HTML start has no submit button; Enter in a field does not reach this.
+			if (start === 'html') return null;
 			const result = await settle(
 				create({ data: { areaId, name: names.name.trim(), start, subject: names.subject.trim() } }),
 			);
@@ -98,12 +111,15 @@ export function CreateTemplateForm({
 	const onSubmit = useFormSubmit(submitForm);
 	const validationErrors = useMemo(
 		(): Readonly<Record<string, string>> =>
-			state?.failure === 'nameTaken' ? { name: t('templates.nameTaken') } : {},
-		[state, t],
+			state?.failure === 'nameTaken' || htmlNameTaken ? { name: t('templates.nameTaken') } : {},
+		[htmlNameTaken, state, t],
 	);
 	useEffect(() => {
-		if (state?.failure === 'nameTaken') nameRef.current?.focus();
-	}, [state]);
+		if (state?.failure === 'nameTaken' || htmlNameTaken) nameRef.current?.focus();
+	}, [htmlNameTaken, state]);
+	const nameTaken = useCallback(() => {
+		setHtmlNameTaken(true);
+	}, []);
 	return (
 		<PostForm
 			className="flex max-w-xl flex-col gap-6"
@@ -156,9 +172,21 @@ export function CreateTemplateForm({
 					{t('templates.createGone')}
 				</p>
 			) : null}
-			<div>
-				<SubmitButton>{t('templates.createSubmit')}</SubmitButton>
-			</div>
+			{start === 'html' ? (
+				<HtmlStart
+					appOrigin={appOrigin}
+					areaId={areaId}
+					brand={brand}
+					names={names}
+					onCreated={onCreated}
+					onGone={onGone}
+					onNameTaken={nameTaken}
+				/>
+			) : (
+				<div>
+					<SubmitButton>{t('templates.createSubmit')}</SubmitButton>
+				</div>
+			)}
 		</PostForm>
 	);
 }

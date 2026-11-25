@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vite-plus/test';
 
-import { importHtml, MAX_IMPORT_BYTES } from './import-html';
+import { importHtml } from './import-html';
 import type { ImportKind } from './import-html';
+import { MAX_IMPORT_BYTES } from './limits';
 import { findUnsafe, htmlOf, imported, refusalsOf } from './testing';
 
 const IMAGE = 'AAAAAAAAAAAAAAAAAAAAAA';

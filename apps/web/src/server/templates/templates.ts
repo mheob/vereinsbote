@@ -836,6 +836,7 @@ async function listLayoutChoices(db: Db): Promise<{ id: string; name: string; ht
 }
 
 export {
+	areaOfTemplate,
 	createFromStarter,
 	createTemplate,
 	deleteTemplate,

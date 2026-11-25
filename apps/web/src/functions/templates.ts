@@ -2,11 +2,14 @@ import { notFound } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
 import { z } from 'zod';
 
+import { fromForm } from '@/functions/from-form';
+import type { Brand } from '@/mail/brand/brand-schema';
 import { STARTER_IDS } from '@/mail/starters/starters';
 import { salutationTextsSchema, templateInputSchema } from '@/mail/templates/template-schema';
 import { MAX_SEARCH_LENGTH } from '@/server/contacts/list-query';
+import type { ImportFinding, ImportRefusal } from '@/server/html-import/import-html';
 import type { TemplateEditorData } from '@/server/templates/editor-data';
-import type { SaveFailure } from '@/server/templates/failures';
+import type { CreateHtmlFailure, SaveFailure } from '@/server/templates/failures';
 import type { PreviewContact } from '@/server/templates/preview-values';
 import type { TemplateSummary } from '@/server/templates/templates';
 
@@ -34,6 +37,26 @@ interface TemplateEditorPage extends TemplateEditorData {
 	/** The origin of the app, for the preview's image addresses. */
 	readonly appOrigin: string;
 }
+
+/** What the page "Neue Vorlage" needs: the areas the user may read and what a preview needs. */
+interface NewTemplatePage {
+	readonly areas: TemplateListPage['areas'];
+	readonly brand: Brand;
+	/** The origin of the app, for the preview's image addresses. */
+	readonly appOrigin: string;
+}
+
+/**
+ * What checking HTML for an import gave: the cleaned HTML with what was removed and warned about,
+ * or the refusals, or that the template of the import is gone.
+ */
+type CheckHtmlImportResult = Readonly<
+	| { ok: true; html: string; findings: readonly ImportFinding[] }
+	| { ok: false; refusals: readonly ImportRefusal[] }
+	| { ok: false; failure: 'gone' }
+>;
+
+type CreateHtmlTemplateResult = Readonly<{ ok: true; id: string }> | CreateHtmlFailure;
 
 type CreateTemplateResult = Readonly<
 	{ ok: true; id: string } | { ok: false; failure: 'nameTaken' | 'invalid' | 'gone' }
@@ -80,6 +103,32 @@ const valuesRequest = z.object({
 	salutation: salutationTextsSchema,
 	templateId: z.uuid(),
 });
+/** The most a form of an import carries as HTML before the server counts its bytes (500 KB). */
+const MAX_HTML_CHARACTERS = 4_000_000;
+const htmlField = z.string().max(MAX_HTML_CHARACTERS);
+const checkImportRequest = z.discriminatedUnion('target', [
+	z.object({ html: htmlField, target: z.literal('globalLayout') }),
+	z
+		.object({
+			areaId: z.uuid().optional(),
+			html: htmlField,
+			target: z.enum(['template', 'ownLayout']),
+			templateId: z.uuid().optional(),
+		})
+		.refine(({ areaId, templateId }) => areaId !== undefined || templateId !== undefined),
+]);
+const createHtmlRequest = z.object({
+	areaId: z.uuid(),
+	html: htmlField,
+	name: z.string().max(MAX_TEXT_INPUT),
+	subject: z.string().max(MAX_TEXT_INPUT),
+});
+const replaceHtmlRequest = z.object({
+	html: htmlField,
+	id: z.uuid(),
+	version: z.coerce.number().int().min(1),
+});
+
 const saveRequest = z.object({
 	id: z.uuid(),
 	input: templateInputSchema,
@@ -322,20 +371,139 @@ const loadPreviewValues = createServerFn({ method: 'POST' })
 		}
 	});
 
+/** The areas a template can be created in and what the preview of an import needs. */
+const loadNewTemplate = createServerFn({ method: 'GET' }).handler(
+	async (): Promise<NewTemplatePage> => {
+		const [{ requireRequestPrincipal }, { listAreas }, { getBrand }, { levelAtLeast }] =
+			await Promise.all([
+				import('@/platform/request-principal'),
+				import('@/server/areas/areas'),
+				import('@/server/brand/brand'),
+				import('@/server/permissions/levels'),
+			]);
+		const { context, principal } = await requireRequestPrincipal();
+		const listed = await listAreas(context.db, principal);
+		const areas = listed
+			.filter(({ level }) => level !== null)
+			.map(({ id, level, name }) => ({ canEdit: levelAtLeast(level, 'edit'), id, name }));
+		const { brand } = await getBrand(context.db);
+		return { appOrigin: context.env.appUrl.origin, areas, brand };
+	},
+);
+
+/**
+ * Cleans and checks HTML for an import and says what it removed and what it refuses; nothing is
+ * stored. The target decides what the HTML may use and who may import: `edit` in the area of a
+ * template or its own layout, the admin role for a global layout. A template that is gone comes
+ * back as `gone`.
+ */
+const checkHtmlImport = createServerFn({ method: 'POST' })
+	.validator(fromForm(checkImportRequest))
+	.handler(async ({ data }): Promise<CheckHtmlImportResult> => {
+		const [{ requireRequestPrincipal }, check, { TemplateNotFoundError }] = await Promise.all([
+			import('@/platform/request-principal'),
+			import('@/server/templates/import-check'),
+			import('@/server/templates/errors'),
+		]);
+		const { context, principal } = await requireRequestPrincipal();
+		try {
+			const result = await check.checkHtmlImport(
+				context.db,
+				principal,
+				data,
+				context.env.appUrl.origin,
+			);
+			return result.ok
+				? { findings: result.findings, html: result.html, ok: true }
+				: { ok: false, refusals: result.refusals };
+		} catch (error) {
+			if (error instanceof TemplateNotFoundError) return { failure: 'gone', ok: false };
+			throw error;
+		}
+	});
+
+/** Creates a template from imported HTML with the name and subject of the form. */
+const submitCreateHtmlTemplate = createServerFn({ method: 'POST' })
+	.validator(fromForm(createHtmlRequest))
+	.handler(async ({ data }): Promise<CreateHtmlTemplateResult> => {
+		const [{ requireRequestPrincipal }, templates, { createHtmlFailure }, { emptyTemplate }] =
+			await Promise.all([
+				import('@/platform/request-principal'),
+				import('@/server/templates/templates'),
+				import('@/server/templates/failures'),
+				import('@/mail/starters/starters'),
+			]);
+		const { context, principal } = await requireRequestPrincipal();
+		try {
+			const created = await templates.createTemplate(
+				context.db,
+				principal,
+				data.areaId,
+				{
+					...emptyTemplate({ name: data.name, subject: data.subject }),
+					body: { html: data.html, kind: 'html' },
+				},
+				context.env.appUrl.origin,
+			);
+			return { id: created.id, ok: true };
+		} catch (error) {
+			const failure = createHtmlFailure(error);
+			if (failure === null) throw error;
+			return failure;
+		}
+	});
+
+/**
+ * Puts new HTML into an HTML template, with the version the page loaded. A newer version, a
+ * template deleted meanwhile and the save checks' problems come back as results.
+ */
+const submitReplaceHtml = createServerFn({ method: 'POST' })
+	.validator(fromForm(replaceHtmlRequest))
+	.handler(async ({ data }): Promise<SaveTemplateResult> => {
+		const [{ requireRequestPrincipal }, replace, { saveFailure }] = await Promise.all([
+			import('@/platform/request-principal'),
+			import('@/server/templates/replace-html'),
+			import('@/server/templates/failures'),
+		]);
+		const { context, principal } = await requireRequestPrincipal();
+		try {
+			const saved = await replace.replaceTemplateHtml(
+				context.db,
+				principal,
+				data.id,
+				data.html,
+				data.version,
+				context.env.appUrl.origin,
+			);
+			return { ok: true, version: saved.version };
+		} catch (error) {
+			const failure = saveFailure(error);
+			if (failure === null) throw error;
+			return failure;
+		}
+	});
+
 export {
+	checkHtmlImport,
+	loadNewTemplate,
 	loadPreviewValues,
 	loadTemplateEditor,
 	loadTemplateList,
 	searchPreviewContacts,
+	submitCreateHtmlTemplate,
 	submitCreateTemplate,
 	submitDeleteTemplate,
 	submitDuplicate,
+	submitReplaceHtml,
 	submitTemplate,
 };
 export type {
+	CheckHtmlImportResult,
+	CreateHtmlTemplateResult,
 	CreateTemplateResult,
 	DeleteTemplateResult,
 	DuplicateResult,
+	NewTemplatePage,
 	PreviewValuesResult,
 	SaveTemplateResult,
 	TemplateArea,

@@ -11,6 +11,7 @@ import type { ReactNode } from 'react';
 import { useAnnouncer } from '@/components/announcements';
 import { clearHistoryNotice } from '@/components/contacts/history-notice';
 import { TemplateEditor } from '@/components/editor/template-editor';
+import { ReplaceHtmlSection } from '@/components/html-import/replace-html-section';
 import { linkClass } from '@/components/styles';
 import type { RemovedTemplate } from '@/components/templates/delete-template-dialog';
 import { loadTemplateEditor } from '@/functions/templates';
@@ -50,18 +51,32 @@ export const Route = createFileRoute('/templates/$templateId')({
 			},
 			[name, router],
 		);
+		// The page loads the template anew; the editor and the import start over from its new version
+		// (each with a key of its own: two siblings must not share one).
+		const onReplaced = useCallback(() => {
+			announce(t('htmlImport.replaced'), 'status');
+			startTransition(async () => router.invalidate());
+		}, [announce, router, t]);
 		return (
 			<>
 				<Link className={`self-start ${linkClass}`} to="/templates">
 					{t('templates.back')}
 				</Link>
 				<TemplateEditor
+					key={`editor-${page.template.version}`}
 					announce={announce}
 					announcement={announcement}
 					headingRef={headingRef}
 					onRemoved={onRemoved}
 					page={page}
 				/>
+				{page.template.body.kind === 'html' && page.canEdit ? (
+					<ReplaceHtmlSection
+						key={`replace-${page.template.version}`}
+						onReplaced={onReplaced}
+						page={page}
+					/>
+				) : null}
 			</>
 		);
 	},

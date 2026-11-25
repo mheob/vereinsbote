@@ -591,9 +591,10 @@ async function previewContact(page: Page, name: string): Promise<void> {
 	const search = page.getByRole('combobox', { name: 'Kontakt suchen' });
 	await search.fill(name);
 	await expect(search).toHaveValue(name);
-	const options = page.getByRole('option');
-	await expect(options).toHaveCount(1);
-	await options.click();
+	// Before the search filtered, ten contacts are listed; wait for the one with this name.
+	const option = page.getByRole('option', { name });
+	await expect(option).toHaveCount(1);
+	await option.click();
 	await expect(page).not.toHaveURL(new RegExp(name.split(' ')[0] ?? '', 'u'));
 	await expectAnnounced(page, `Die Vorschau zeigt jetzt ${name}.`);
 }
@@ -645,4 +646,251 @@ test('the preview names what a real contact lacks', async () => {
 	await previewContact(eva, 'Ben Bauer');
 	await expect(eva.getByText('Für diesen Kontakt fehlt: Ort')).toBeVisible();
 	await expectNoA11yViolations(eva, [PREVIEW_FRAME]);
+});
+
+/** One byte above the 500 KB an import takes. */
+const OVER_LIMIT_BYTES = 512_001;
+/** The title of the preview frame of an import. */
+const IMPORT_FRAME = 'iframe[title="Vorschau des importierten HTML"]';
+
+/** A mail from a text editor with a script, an event handler and a link that runs script. */
+const DIRTY_MAIL = [
+	'<html lang="de"><body>',
+	'<h1>Rundbrief im Herbst</h1>',
+	'<p onclick="alert(1)">Hallo {{salutation}},</p>',
+	'<script>document.title = "ausgeführt";</script>',
+	'<p><a href="javascript:alert(2)">Hier klicken</a></p>',
+	'</body></html>',
+].join('');
+
+/**
+ * Chooses a file in the import: the hidden file input of React Aria's file trigger.
+ *
+ * @param page The page with the import.
+ * @param file The name and the text of the file.
+ * @param file.name The name.
+ * @param file.text The text; its bytes are the size.
+ */
+async function chooseHtmlFile(
+	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- Playwright's page is a handle on the browser, mutable by design
+	page: Page,
+	file: Readonly<{ name: string; text: string }>,
+): Promise<void> {
+	await page
+		.locator('input[type="file"]')
+		.setInputFiles({ buffer: Buffer.from(file.text), mimeType: 'text/html', name: file.name });
+	await expect(page.getByLabel('HTML', { exact: true })).toHaveValue(file.text);
+}
+
+// oxlint-disable-next-line max-statements -- one flow, step by step, as the editor sees it
+test('an editor imports html with a script and sees it removed', async () => {
+	test.slow();
+	await eva.goto('/templates/new');
+	await expect(eva.getByRole('button', { name: 'Vorlage anlegen' })).toBeEnabled();
+	await choose(eva, { label: 'Bereich', option: 'Veranstaltungen' });
+	await eva.getByText('HTML importieren', { exact: true }).click();
+	await expect(eva.getByRole('radio', { name: 'HTML importieren' })).toBeChecked();
+	await expect(eva.getByRole('button', { name: 'Vorlage anlegen' })).toHaveCount(0);
+	await eva.getByLabel('Name', { exact: true }).fill('Rundbrief');
+	await eva.getByLabel('Betreff').fill('Neues aus dem Verein');
+	await expectNoA11yViolations(eva);
+
+	// More than 500 KB is refused in the browser, before anything is sent.
+	await eva.locator('input[type="file"]').setInputFiles({
+		buffer: Buffer.alloc(OVER_LIMIT_BYTES, 'a'),
+		mimeType: 'text/html',
+		name: 'zu-gross.html',
+	});
+	await expect(eva.getByText('Das HTML ist zu groß (höchstens 500 KB).')).toBeVisible();
+
+	await chooseHtmlFile(eva, { name: 'rundbrief.html', text: DIRTY_MAIL });
+	await expect(eva.getByRole('button', { name: 'Übernehmen' })).toBeDisabled();
+	await eva.getByRole('button', { name: 'Prüfen' }).click();
+	await expectAnnounced(eva, 'Das HTML wurde geprüft. Du kannst es übernehmen.');
+	await expect(eva.getByRole('heading', { level: 3, name: 'Entfernt' })).toBeVisible();
+	await expect(eva.getByText('Skripte: 1')).toBeVisible();
+	await expect(eva.getByText('Ereignis-Attribute wie onclick: 1')).toBeVisible();
+	await expect(
+		eva.getByText('Links und Bilder mit unsicherer Adresse, zum Beispiel javascript: 1'),
+	).toBeVisible();
+	await expect(eva.getByRole('heading', { level: 3, name: 'Warnungen' })).toBeVisible();
+	await expect(
+		eva.getByText('Der Link-Text „Hier klicken“ sagt ohne seine Umgebung wenig.'),
+	).toBeVisible();
+
+	// The preview shows the cleaned mail with the sample contact; the script did not run.
+	const preview = eva.frameLocator(IMPORT_FRAME);
+	await expect(preview.getByRole('heading', { name: 'Rundbrief im Herbst' })).toBeVisible();
+	await expect(preview.getByText('Hallo Liebe Anna,')).toBeVisible();
+	await expect(preview.locator('script')).toHaveCount(0);
+	await expect(preview.locator('[onclick]')).toHaveCount(0);
+	// The link text stays, the address that runs script does not.
+	await expect(preview.getByText('Hier klicken')).toBeVisible();
+	await expect(preview.locator('a[href*="javascript"]')).toHaveCount(0);
+	await expectNoA11yViolations(eva, [IMPORT_FRAME]);
+
+	await eva.getByRole('button', { name: 'Übernehmen' }).click();
+	await expect(eva).toHaveURL(/\/templates\/[\w-]{36}$/u);
+	await expect(
+		eva.getByRole('heading', { exact: true, level: 1, name: 'Rundbrief' }),
+	).toBeVisible();
+	await expect(
+		eva.getByText(
+			'Diese Vorlage besteht aus importiertem HTML und kann hier nur angesehen werden.',
+		),
+	).toBeVisible();
+	await expect(eva.getByRole('heading', { level: 2, name: 'Neues HTML einfügen' })).toBeVisible();
+	await expect(eva.frameLocator(PREVIEW_FRAME).getByText('Rundbrief im Herbst')).toBeVisible();
+	await expect(eva.frameLocator(PREVIEW_FRAME).locator('script')).toHaveCount(0);
+	await expectNoA11yViolations(eva, [PREVIEW_FRAME, IMPORT_FRAME]);
+});
+
+// oxlint-disable-next-line max-statements -- one flow, step by step, as the admin and the editor see it
+test('an admin imports a global layout and an editor uses it', async () => {
+	test.slow();
+	await admin.goto('/admin/layouts');
+	await expect(admin).toHaveTitle('Layouts – Vereinsbote');
+	await expect(
+		admin.getByRole('heading', { exact: true, level: 1, name: 'Layouts' }),
+	).toBeVisible();
+	await expect(admin.getByText('Es gibt noch keine Layouts.')).toBeVisible();
+	await expect(
+		admin.getByRole('navigation', { name: 'Verwaltung' }).getByRole('link', { name: 'Layouts' }),
+	).toBeVisible();
+	await expect(admin.getByRole('button', { name: 'Prüfen' })).toBeEnabled();
+	await expectNoA11yViolations(admin);
+
+	await admin.getByLabel('Name', { exact: true }).fill('Vereinsrahmen');
+	await chooseHtmlFile(admin, {
+		name: 'rahmen.html',
+		text: '<html lang="de"><body><div><p>Rahmen-Kopf von {{brand.name}}</p>{{content}}<p>Rahmen-Fuß</p></div></body></html>',
+	});
+	await admin.getByRole('button', { name: 'Prüfen' }).click();
+	await expectAnnounced(admin, 'Das HTML wurde geprüft. Du kannst es übernehmen.');
+	await expect(admin.frameLocator(IMPORT_FRAME).getByText('Rahmen-Kopf von')).toBeVisible();
+	await expect(
+		admin.frameLocator(IMPORT_FRAME).getByText('Einladung zum Sommerfest'),
+	).toBeVisible();
+	await expectNoA11yViolations(admin, [IMPORT_FRAME]);
+	await admin.getByRole('button', { name: 'Übernehmen' }).click();
+	await expectAnnounced(admin, 'Das Layout „Vereinsrahmen“ wurde angelegt.');
+	const table = admin.getByRole('grid', { name: 'Alle Layouts' });
+	await expect(table.getByRole('link', { exact: true, name: 'Vereinsrahmen' })).toBeVisible();
+	await expect(table.getByText('nicht genutzt')).toBeVisible();
+	await expect(admin.getByRole('button', { name: 'Vereinsrahmen löschen' })).toBeEnabled();
+
+	// The editor chooses it in the settings of a template; the preview shows the frame.
+	await openEditor(eva, 'Sommerfest');
+	await eva.getByRole('button', { name: 'Einstellungen' }).press('Enter');
+	await eva.getByRole('button', { name: / Layout$/u }).click();
+	await eva.getByRole('option', { name: 'Vereinsrahmen' }).click();
+	await expect(eva.frameLocator(PREVIEW_FRAME).getByText('Rahmen-Fuß')).toBeVisible();
+	await eva.getByRole('button', { name: 'Speichern' }).press('Enter');
+	await expectAnnounced(eva, 'Die Vorlage ist gespeichert.');
+
+	// A layout in use cannot be deleted, and the list says how often it is used.
+	await admin.goto('/admin/layouts');
+	await expect(admin.getByText('genutzt in 1 Vorlage')).toBeVisible();
+	await expect(admin.getByRole('button', { name: 'Vereinsrahmen löschen' })).toBeDisabled();
+
+	// Its own page replaces the HTML.
+	await admin.getByRole('link', { name: 'HTML von Vereinsrahmen ersetzen' }).click();
+	await expect(admin).toHaveTitle('Layout – Vereinsbote');
+	await expect(
+		admin.getByRole('heading', { exact: true, level: 1, name: 'Vereinsrahmen' }),
+	).toBeVisible();
+	await expect(admin.getByRole('button', { name: 'Prüfen' })).toBeEnabled();
+	await chooseHtmlFile(admin, {
+		name: 'rahmen2.html',
+		text: '<html lang="de"><body><div>{{content}}<p>Neuer Rahmen-Fuß</p></div></body></html>',
+	});
+	await admin.getByRole('button', { name: 'Prüfen' }).click();
+	await expectAnnounced(admin, 'Das HTML wurde geprüft. Du kannst es übernehmen.');
+	await expectNoA11yViolations(admin, [IMPORT_FRAME]);
+	await admin.getByRole('button', { name: 'Übernehmen' }).click();
+	await expectAnnounced(admin, 'Das Layout wurde ersetzt.');
+	// The form starts over: one import, empty.
+	await expect(admin.getByRole('button', { name: 'Prüfen' })).toHaveCount(1);
+	await expect(admin.getByLabel('HTML', { exact: true })).toHaveValue('');
+	await openEditor(eva, 'Sommerfest');
+	await expect(eva.frameLocator(PREVIEW_FRAME).getByText('Neuer Rahmen-Fuß')).toBeVisible();
+});
+
+// oxlint-disable-next-line max-statements -- one flow, step by step, as the admin sees it
+test('a layout without {{content}} is refused', async () => {
+	await admin.goto('/admin/layouts');
+	await expect(admin.getByRole('button', { name: 'Prüfen' })).toBeEnabled();
+	await admin.getByLabel('Name', { exact: true }).fill('Ohne Inhalt');
+	await chooseHtmlFile(admin, {
+		name: 'leer.html',
+		text: '<html lang="de"><body><p>Nur ein Rahmen</p></body></html>',
+	});
+	await admin.getByRole('button', { name: 'Prüfen' }).click();
+	await expect(admin.getByRole('alert').filter({ hasText: 'abgelehnt' })).toBeVisible();
+	await expect(admin.getByRole('heading', { level: 3, name: 'Abgelehnt' })).toBeVisible();
+	await expect(
+		admin.getByText(
+			'Das Layout braucht den Platzhalter „Inhalt“ genau einmal, als eigenen Textabschnitt.',
+		),
+	).toBeVisible();
+	await expect(admin.getByRole('button', { name: 'Übernehmen' })).toBeDisabled();
+	await expect(admin.frameLocator(IMPORT_FRAME).locator('body')).toHaveCount(0);
+	await expectNoA11yViolations(admin);
+	const table = admin.getByRole('grid', { name: 'Alle Layouts' });
+	await expect(table.getByRole('link', { name: 'Ohne Inhalt' })).toHaveCount(0);
+});
+
+// oxlint-disable-next-line max-statements -- one flow, step by step, as the editor sees it
+test('an editor replaces the html of a template and imports an own layout', async () => {
+	test.slow();
+	// An HTML template has no save button: it is opened from the list and waits for its import.
+	await eva.goto('/templates');
+	await eva
+		.getByRole('grid', { name: 'Vorlagen' })
+		.getByRole('link', { exact: true, name: 'Rundbrief' })
+		.click();
+	await expect(
+		eva.getByRole('heading', { exact: true, level: 1, name: 'Rundbrief' }),
+	).toBeVisible();
+	await expect(eva.getByRole('button', { name: 'Prüfen' })).toBeEnabled();
+	await chooseHtmlFile(eva, {
+		name: 'neu.html',
+		text: '<html lang="de"><body><h1>Rundbrief im Winter</h1><p>{{contact.birthDate}}</p></body></html>',
+	});
+	await eva.getByRole('button', { name: 'Prüfen' }).click();
+	// A placeholder the area does not see is refused with its own message; nothing is replaced.
+	await expect(eva.getByRole('heading', { level: 3, name: 'Abgelehnt' })).toBeVisible();
+	await expect(
+		eva.getByText('Der Platzhalter „Geburtsdatum“ ist in diesem Bereich nicht erlaubt.'),
+	).toBeVisible();
+	await expect(eva.getByRole('button', { name: 'Übernehmen' })).toBeDisabled();
+
+	await eva
+		.getByLabel('HTML', { exact: true })
+		.fill('<html lang="de"><body><h1>Rundbrief im Winter</h1></body></html>');
+	await eva.getByRole('button', { name: 'Prüfen' }).click();
+	await expectAnnounced(eva, 'Das HTML wurde geprüft. Du kannst es übernehmen.');
+	await eva.getByRole('button', { name: 'Übernehmen' }).click();
+	await expectAnnounced(eva, 'Das HTML wurde ersetzt.');
+	await expect(eva.frameLocator(PREVIEW_FRAME).getByText('Rundbrief im Winter')).toBeVisible();
+
+	// An own layout for a template of blocks: checked, taken over, saved with the template.
+	await openEditor(eva, 'Geburtstagsgruß');
+	await eva.getByRole('button', { name: 'Einstellungen' }).press('Enter');
+	await eva.getByRole('button', { name: 'Eigenes Layout importieren' }).press('Enter');
+	await eva
+		.getByLabel('HTML', { exact: true })
+		.fill('<html lang="de"><body><div><p>Eigener Kopf</p>{{content}}</div></body></html>');
+	await eva.getByRole('button', { name: 'Prüfen' }).click();
+	await expectAnnounced(eva, 'Das HTML wurde geprüft. Du kannst es übernehmen.');
+	await eva.getByRole('button', { name: 'Übernehmen' }).click();
+	await expectAnnounced(
+		eva,
+		'Das Layout wurde übernommen. Speichere die Vorlage, um es zu behalten.',
+	);
+	await expect(eva.frameLocator(PREVIEW_FRAME).getByText('Eigener Kopf')).toBeVisible();
+	await eva.getByRole('button', { name: 'Speichern' }).press('Enter');
+	await expectAnnounced(eva, 'Die Vorlage ist gespeichert.');
+	await openEditor(eva, 'Geburtstagsgruß');
+	await expect(eva.frameLocator(PREVIEW_FRAME).getByText('Eigener Kopf')).toBeVisible();
 });
