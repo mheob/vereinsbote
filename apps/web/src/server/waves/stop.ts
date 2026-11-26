@@ -5,7 +5,8 @@
  * entries stay. The outbox reads the wave's stop under a share lock whenever it takes an entry or
  * plans one again, so an entry that something planned while the stop ran is cancelled at its take.
  * Sending an uncertain entry again is a person's decision after checking it: the entry goes back
- * to `planned` with its id, so its Message-ID and idempotency key stay the same.
+ * to `planned` with its id, so its Message-ID and idempotency key stay the same, and starts anew
+ * (no attempts, no first attempt), so it goes out at least once.
  */
 import { and, eq, isNull } from 'drizzle-orm';
 
@@ -59,8 +60,10 @@ async function stopWave(db: Db, actor: Principal, waveId: string): Promise<{ can
 
 /**
  * Sends an uncertain entry of a wave again (Design 8.5): it goes back to `planned` and the next run
- * of the outbox takes it, with the same id, Message-ID and idempotency key. The admins' digest
- * reports it again if it fails again. A stopped wave sends nothing more.
+ * of the outbox takes it, with the same id, Message-ID and idempotency key. The person's decision
+ * starts the entry anew: no attempts and no first attempt, so it gets the attempts of a new mail
+ * and a new key window (ruling R7) and goes out at least once. The admins' digest reports it again
+ * if it fails again. A stopped wave sends nothing more.
  *
  * @param db The database.
  * @param actor Who decides; needs `send` in the wave's area.
@@ -79,7 +82,8 @@ async function resendUncertain(db: Db, actor: Principal, entryId: string): Promi
 	if (entry === undefined) throw new WaveEntryNotFoundError();
 	assertArea(actor, entry.areaId, 'send');
 	await db.transaction(async (tx) => {
-		// Held until the end, so a stop waits for this and then cancels the entry it planned.
+		// Read under a share lock: a stop that has marked the wave is waited for and seen. A stop that
+		// marks it only after this ends finds the entry planned; the outbox cancels it at its take.
 		const [wave] = await tx
 			.select({ stoppedAt: waves.stoppedAt })
 			.from(waves)
@@ -88,7 +92,14 @@ async function resendUncertain(db: Db, actor: Principal, entryId: string): Promi
 		if (wave?.stoppedAt !== null) throw new WaveEntryStateError();
 		const resent = await tx
 			.update(outboxEntries)
-			.set({ claimedAt: null, digestedAt: null, nextAttemptAt: null, status: 'planned' })
+			.set({
+				attempts: 0,
+				claimedAt: null,
+				digestedAt: null,
+				firstAttemptAt: null,
+				nextAttemptAt: null,
+				status: 'planned',
+			})
 			.where(and(eq(outboxEntries.id, entryId), eq(outboxEntries.status, 'uncertain')))
 			.returning({ id: outboxEntries.id });
 		if (resent.length === 0) throw new WaveEntryStateError();

@@ -158,9 +158,10 @@ describe(resendUncertain, () => {
 		const { c, entryIds, waveId } = await waveOfThree();
 		const [id = ''] = entryIds;
 		await setEntry(c.db, id, {
-			attempts: 1,
+			attempts: 3,
 			claimedAt: NOW,
 			digestedAt: NOW,
+			firstAttemptAt: NOW,
 			lastErrorCode: 'outbox.interrupted',
 			messageId: '<unklar@example.org>',
 			status: 'uncertain',
@@ -168,8 +169,10 @@ describe(resendUncertain, () => {
 		await resendUncertain(c.db, c.sender, id);
 		const [row] = await c.db.select().from(outboxEntries).where(eq(outboxEntries.id, id));
 		expect(row).toMatchObject({
-			attempts: 1,
+			attempts: 0,
 			digestedAt: null,
+			firstAttemptAt: null,
+			id,
 			messageId: '<unklar@example.org>',
 			nextAttemptAt: null,
 			status: 'planned',

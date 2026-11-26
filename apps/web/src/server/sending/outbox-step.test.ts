@@ -12,11 +12,12 @@ import { mailConnections, outboxEntries, senders } from '@/server/db/schema';
 import { createTestDb } from '@/server/db/test-db';
 import type { TickStep } from '@/server/tick/tick';
 import { wavePreparer } from '@/server/waves/preparer';
-import { stopWave } from '@/server/waves/stop';
+import { resendUncertain, stopWave } from '@/server/waves/stop';
 import { confirmTestWave, setUpWaveClub, waveEntryIds } from '@/server/waves/testing';
 import type { WaveClub } from '@/server/waves/testing';
 
 import { openSenderTransport } from './open-transport';
+import { MAX_ATTEMPTS } from './outbox';
 import type { ClaimedEntry, EntryPreparer, PreparedMail } from './outbox';
 import { KICK_BUDGET_MS, createOutboxStep, kickOutbox, kickRun } from './outbox-step';
 import type { OutboxDeps } from './outbox-step';
@@ -1465,6 +1466,37 @@ describe(createOutboxStep, () => {
 			await runStep({ clock, db }, waveStep(providers.fetch, clock));
 			await expect(readEntry(db, id)).resolves.toMatchObject(state);
 			expect(mailRequests(providers.calls)).toBe(requests);
+		},
+	);
+
+	it.each([
+		{ answer: 200, state: { attempts: 1, lastErrorCode: null, status: 'sent' } },
+		{ answer: 500, state: { attempts: 1, lastErrorCode: 'resend.server', status: 'planned' } },
+	] as const)(
+		'sends a resent entry once with its key, past its attempts and its key window: $answer',
+		async ({ answer, state }) => {
+			const { c, db, id } = await waveEntryOn('resend');
+			await db
+				.update(outboxEntries)
+				.set({
+					attempts: MAX_ATTEMPTS,
+					firstAttemptAt: new Date(START),
+					lastErrorCode: 'outbox.keyExpired',
+					messageId: '<resent@example.org>',
+					status: 'uncertain',
+				})
+				.where(eq(outboxEntries.id, id));
+			await resendUncertain(db, c.sender, id);
+			const providers = fakeProviders({ send: answer });
+			const clock = testClock();
+			clock.advance(2 * DAY_MS);
+			await runStep({ clock, db }, waveStep(providers.fetch, clock));
+			await expect(readEntry(db, id)).resolves.toMatchObject({
+				...state,
+				firstAttemptAt: clock.now(),
+				messageId: '<resent@example.org>',
+			});
+			expect(resendRequests(providers.calls)).toMatchObject({ keys: [id], versions: 1 });
 		},
 	);
 
