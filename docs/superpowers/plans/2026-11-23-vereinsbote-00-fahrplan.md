@@ -41,7 +41,7 @@ Die Details stehen in Teilplan 1 unter „Global Constraints“ und „Task 1“
 
 - **Aus dem Abschluss-Review von Teilplan 1** (verbindlich für die genannten Teilpläne):
   - Teilplan 3: vollständige Content-Security-Policy, bevor Editor, HTML-Import und Vorschau kommen.
-  - Teilplan 4: Tageslimit pro Adresse für Anmeldelinks (Schutz des Versandkontingents); Bestätigungsschritt für Magic Links, damit Mail-Scanner sie nicht verbrauchen; AES-GCM mit zugeordneten Daten (AAD) pro gespeicherter Einstellung; fehlgeschlagene Einladungen erneut senden.
+  - Teilplan 4: Tageslimit pro Adresse für Anmeldelinks (Schutz des Versandkontingents); Bestätigungsschritt für Magic Links, damit Mail-Scanner sie nicht verbrauchen; AES-GCM mit zugeordneten Daten (AAD) pro gespeicherter Einstellung; fehlgeschlagene Einladungen erneut senden. – **umgesetzt in Teilplan 4a (PR offen):** alle vier Punkte (Tageslimit von 10 Anmeldelinks pro Adresse und Klubtag, Bestätigungsseite `/login/confirm`, `encryptSecret`/`secretAad` für die Zugangsdaten der Anbindungen, `resendInvitation`); als erledigt gilt der Punkt mit dem Merge von 4a.
   - Teilplan 7: Aufbewahrungsfristen inkl. Aktivitätsprotokoll.
   - Teilplan 7 (aus dem Design von Teilplan 2): Ansicht und Löschfrist für verwaiste Sperren und Widersprüche (Kontakt nicht mehr im Bestand).
   - Später: automatisierter Smoke-Test der Cloudflare-Laufzeit in CI.

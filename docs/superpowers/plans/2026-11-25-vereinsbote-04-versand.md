@@ -541,7 +541,7 @@ it('never hands one entry to two concurrent runs', …)           // zwei Läufe
   - `apps/web/src/server/mail/system-mailer.ts` (wird zur Fassade auf `server/sending/system-mailer.ts`; `SystemMail` neu), `apps/web/src/server/mail/testing.ts`
   - `apps/web/src/platform/context.ts` (Mailer pro DB, Entscheidung 12)
   - Aufrufer: `apps/web/src/server/auth/auth.ts` (`sendLoginLink`), `apps/web/src/server/users/users.ts` (`sendInvitation`), `apps/web/src/server/contacts/stale-import.ts` (`sendWarning`, Schritt bekommt den Mailer aus `ctx`)
-  - `apps/web/src/server/frame.ts` und `apps/web/src/routes/admin/index.tsx` (Hinweis „Noch kein Absender für Systemmails“ für Admins)
+  - `apps/web/src/server/frame.ts` und `apps/web/src/routes/index.tsx` (Hinweis „Noch kein Absender für Systemmails“ für Admins; gebaut auf `/`, die Startseite, nicht auf `/admin`, denn `routes/admin/index.tsx` leitet nur weiter)
   - `apps/web/src/i18n/{de,en}.ts` (`mail.system.*`: Überschrift, Absätze, Button für Anmeldelink, Einladung, Warnungen)
 - Test: `apps/web/src/server/sending/{system-mail,system-mailer}.test.ts`, bestehende Tests von `auth`, `users`, `stale-import`, `frame`
 
@@ -556,7 +556,7 @@ export function composeSystemMail(content: SystemMailContent, subject: string, b
   Promise<{ html: string; text: string; layout: 'brand' | 'plain' }>      // CD-Standard-Layout, sonst schlicht
 // server/mail/system-mailer.ts (neu)
 export interface SystemMail { readonly to: string; readonly locale: Locale; readonly subject: string; readonly content: SystemMailContent }
-export interface SystemMailer { readonly send: (mail: Readonly<SystemMail>) => Promise<void> }
+export interface SystemMailer { readonly send: (mail: Readonly<SystemMail>) => Promise<void> }   // Stand nach Task 9: dazu `prepare(mail | null): Promise<SystemMailDelivery | null>` (siehe Hinweis unten)
 export function createSystemMailer(deps: Readonly<{ env: Env; db: Db; fetch?: typeof fetch; now?: () => Date }>): SystemMailer
 export function hasSystemSender(db: Db): Promise<boolean>
 ```
@@ -564,6 +564,7 @@ export function hasSystemSender(db: Db): Promise<boolean>
 **Regeln:**
 - Systemabsender gesetzt → `openSenderTransport`, Mail `kind: 'system'` (Graph JSON ohne Ablage, Resend ohne Archiv-Kopie), `countSent`, kein Postausgang. Ein Fehler wirft weiter (die Aufrufer protokollieren ihn wie bisher über `errorLabel`).
 - Kein Systemabsender: `DEV_SMTP_URL` auf dem Node-Pfad (wie bisher, nun mit HTML aus `composeSystemMail`), sonst `MailerNotConfiguredError`.
+- **Nachtrag aus Task 9:** `SystemMailer` hat zusätzlich `prepare(mail | null)`. Es macht die ganze Datenbankarbeit einer Mail (Systemabsender, entschlüsselte Zugangsdaten, CD, Zählung) in der Anfrage und gibt die Zustellung zurück, die ohne Datenbank eine Makrotask nach der Antwort läuft (Anmeldelinks, `createLinkSender`); `prepare(null)` führt dieselben Anweisungen aus und zählt nichts, damit Dauer und Ergebnis einer Anmeldelink-Anfrage nicht verraten, ob die Adresse eingeladen ist. `send` ist `prepare` plus Zustellung.
 - `composeSystemMail` rendert Überschrift, Absätze und Button als Bausteine des Standard-Layouts mit `locale` (die festen Texte des Layouts liegen schon zweisprachig vor). Globale Layouts gelten nicht. Bei `missingBrand`, `invalid` oder Ausnahme: schlichte Fassung (Text und einfaches HTML ohne CD).
 - Der Link (Anmeldelink, Einladung) steht in den Bausteinen als fertige URL, nicht als Platzhalter.
 
