@@ -7,6 +7,7 @@
 /** A notice in the history state. */
 type HistoryNoticeKey =
 	| 'deletedContact'
+	| 'occasionNotice'
 	| 'partnerSaved'
 	| 'sendingCheck'
 	| 'sendingNotice'

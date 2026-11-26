@@ -14,6 +14,7 @@ import { Route as AdminRouteRouteImport } from './routes/admin/route'
 import { Route as ContactsRouteRouteImport } from './routes/contacts/route'
 import { Route as ImagesRouteImport } from './routes/images'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as OccasionsRouteRouteImport } from './routes/occasions/route'
 import { Route as PreviewFrameRouteImport } from './routes/preview-frame'
 import { Route as SetupRouteImport } from './routes/setup'
 import { Route as TemplatesRouteRouteImport } from './routes/templates/route'
@@ -29,6 +30,9 @@ import { Route as ContactsContactIdRouteImport } from './routes/contacts/$contac
 import { Route as ContactsNewRouteImport } from './routes/contacts/new'
 import { Route as LoginConfirmRouteImport } from './routes/login_.confirm'
 import { Route as MediaFileRouteImport } from './routes/media/$file'
+import { Route as OccasionsIndexRouteImport } from './routes/occasions/index'
+import { Route as OccasionsOccasionIdRouteImport } from './routes/occasions/$occasionId'
+import { Route as OccasionsNewRouteImport } from './routes/occasions/new'
 import { Route as TemplatesIndexRouteImport } from './routes/templates/index'
 import { Route as TemplatesTemplateIdRouteImport } from './routes/templates/$templateId'
 import { Route as TemplatesNewRouteImport } from './routes/templates/new'
@@ -66,6 +70,11 @@ const ImagesRoute = ImagesRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OccasionsRouteRoute = OccasionsRouteRouteImport.update({
+  id: '/occasions',
+  path: '/occasions',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PreviewFrameRoute = PreviewFrameRouteImport.update({
@@ -143,6 +152,21 @@ const MediaFileRoute = MediaFileRouteImport.update({
   path: '/media/$file',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OccasionsIndexRoute = OccasionsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => OccasionsRouteRoute,
+} as any)
+const OccasionsOccasionIdRoute = OccasionsOccasionIdRouteImport.update({
+  id: '/$occasionId',
+  path: '/$occasionId',
+  getParentRoute: () => OccasionsRouteRoute,
+} as any)
+const OccasionsNewRoute = OccasionsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => OccasionsRouteRoute,
+} as any)
 const TemplatesIndexRoute = TemplatesIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -216,6 +240,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteRouteWithChildren
   '/contacts': typeof ContactsRouteRouteWithChildren
+  '/occasions': typeof OccasionsRouteRouteWithChildren
   '/templates': typeof TemplatesRouteRouteWithChildren
   '/images': typeof ImagesRoute
   '/login': typeof LoginRoute
@@ -231,10 +256,13 @@ export interface FileRoutesByFullPath {
   '/contacts/new': typeof ContactsNewRoute
   '/login/confirm': typeof LoginConfirmRoute
   '/media/$file': typeof MediaFileRoute
+  '/occasions/$occasionId': typeof OccasionsOccasionIdRoute
+  '/occasions/new': typeof OccasionsNewRoute
   '/templates/$templateId': typeof TemplatesTemplateIdRoute
   '/templates/new': typeof TemplatesNewRoute
   '/admin/': typeof AdminIndexRoute
   '/contacts/': typeof ContactsIndexRoute
+  '/occasions/': typeof OccasionsIndexRoute
   '/templates/': typeof TemplatesIndexRoute
   '/admin/layouts/$layoutId': typeof AdminLayoutsLayoutIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -263,10 +291,13 @@ export interface FileRoutesByTo {
   '/contacts/new': typeof ContactsNewRoute
   '/login/confirm': typeof LoginConfirmRoute
   '/media/$file': typeof MediaFileRoute
+  '/occasions/$occasionId': typeof OccasionsOccasionIdRoute
+  '/occasions/new': typeof OccasionsNewRoute
   '/templates/$templateId': typeof TemplatesTemplateIdRoute
   '/templates/new': typeof TemplatesNewRoute
   '/admin': typeof AdminIndexRoute
   '/contacts': typeof ContactsIndexRoute
+  '/occasions': typeof OccasionsIndexRoute
   '/templates': typeof TemplatesIndexRoute
   '/admin/layouts/$layoutId': typeof AdminLayoutsLayoutIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -284,6 +315,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteRouteWithChildren
   '/contacts': typeof ContactsRouteRouteWithChildren
+  '/occasions': typeof OccasionsRouteRouteWithChildren
   '/templates': typeof TemplatesRouteRouteWithChildren
   '/images': typeof ImagesRoute
   '/login': typeof LoginRoute
@@ -299,10 +331,13 @@ export interface FileRoutesById {
   '/contacts/new': typeof ContactsNewRoute
   '/login_/confirm': typeof LoginConfirmRoute
   '/media/$file': typeof MediaFileRoute
+  '/occasions/$occasionId': typeof OccasionsOccasionIdRoute
+  '/occasions/new': typeof OccasionsNewRoute
   '/templates/$templateId': typeof TemplatesTemplateIdRoute
   '/templates/new': typeof TemplatesNewRoute
   '/admin/': typeof AdminIndexRoute
   '/contacts/': typeof ContactsIndexRoute
+  '/occasions/': typeof OccasionsIndexRoute
   '/templates/': typeof TemplatesIndexRoute
   '/admin/layouts/$layoutId': typeof AdminLayoutsLayoutIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -321,6 +356,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/contacts'
+    | '/occasions'
     | '/templates'
     | '/images'
     | '/login'
@@ -336,10 +372,13 @@ export interface FileRouteTypes {
     | '/contacts/new'
     | '/login/confirm'
     | '/media/$file'
+    | '/occasions/$occasionId'
+    | '/occasions/new'
     | '/templates/$templateId'
     | '/templates/new'
     | '/admin/'
     | '/contacts/'
+    | '/occasions/'
     | '/templates/'
     | '/admin/layouts/$layoutId'
     | '/api/auth/$'
@@ -368,10 +407,13 @@ export interface FileRouteTypes {
     | '/contacts/new'
     | '/login/confirm'
     | '/media/$file'
+    | '/occasions/$occasionId'
+    | '/occasions/new'
     | '/templates/$templateId'
     | '/templates/new'
     | '/admin'
     | '/contacts'
+    | '/occasions'
     | '/templates'
     | '/admin/layouts/$layoutId'
     | '/api/auth/$'
@@ -388,6 +430,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/contacts'
+    | '/occasions'
     | '/templates'
     | '/images'
     | '/login'
@@ -403,10 +446,13 @@ export interface FileRouteTypes {
     | '/contacts/new'
     | '/login_/confirm'
     | '/media/$file'
+    | '/occasions/$occasionId'
+    | '/occasions/new'
     | '/templates/$templateId'
     | '/templates/new'
     | '/admin/'
     | '/contacts/'
+    | '/occasions/'
     | '/templates/'
     | '/admin/layouts/$layoutId'
     | '/api/auth/$'
@@ -424,6 +470,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRouteRoute: typeof AdminRouteRouteWithChildren
   ContactsRouteRoute: typeof ContactsRouteRouteWithChildren
+  OccasionsRouteRoute: typeof OccasionsRouteRouteWithChildren
   TemplatesRouteRoute: typeof TemplatesRouteRouteWithChildren
   ImagesRoute: typeof ImagesRoute
   LoginRoute: typeof LoginRoute
@@ -471,6 +518,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/occasions': {
+      id: '/occasions'
+      path: '/occasions'
+      fullPath: '/occasions'
+      preLoaderRoute: typeof OccasionsRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/preview-frame': {
@@ -577,6 +631,27 @@ declare module '@tanstack/react-router' {
       fullPath: '/media/$file'
       preLoaderRoute: typeof MediaFileRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/occasions/': {
+      id: '/occasions/'
+      path: '/'
+      fullPath: '/occasions/'
+      preLoaderRoute: typeof OccasionsIndexRouteImport
+      parentRoute: typeof OccasionsRouteRoute
+    }
+    '/occasions/$occasionId': {
+      id: '/occasions/$occasionId'
+      path: '/$occasionId'
+      fullPath: '/occasions/$occasionId'
+      preLoaderRoute: typeof OccasionsOccasionIdRouteImport
+      parentRoute: typeof OccasionsRouteRoute
+    }
+    '/occasions/new': {
+      id: '/occasions/new'
+      path: '/new'
+      fullPath: '/occasions/new'
+      preLoaderRoute: typeof OccasionsNewRouteImport
+      parentRoute: typeof OccasionsRouteRoute
     }
     '/templates/': {
       id: '/templates/'
@@ -727,6 +802,22 @@ const ContactsRouteRouteWithChildren = ContactsRouteRoute._addFileChildren(
   ContactsRouteRouteChildren,
 )
 
+interface OccasionsRouteRouteChildren {
+  OccasionsOccasionIdRoute: typeof OccasionsOccasionIdRoute
+  OccasionsNewRoute: typeof OccasionsNewRoute
+  OccasionsIndexRoute: typeof OccasionsIndexRoute
+}
+
+const OccasionsRouteRouteChildren: OccasionsRouteRouteChildren = {
+  OccasionsOccasionIdRoute: OccasionsOccasionIdRoute,
+  OccasionsNewRoute: OccasionsNewRoute,
+  OccasionsIndexRoute: OccasionsIndexRoute,
+}
+
+const OccasionsRouteRouteWithChildren = OccasionsRouteRoute._addFileChildren(
+  OccasionsRouteRouteChildren,
+)
+
 interface TemplatesRouteRouteChildren {
   TemplatesTemplateIdRoute: typeof TemplatesTemplateIdRoute
   TemplatesNewRoute: typeof TemplatesNewRoute
@@ -747,6 +838,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRouteRoute: AdminRouteRouteWithChildren,
   ContactsRouteRoute: ContactsRouteRouteWithChildren,
+  OccasionsRouteRoute: OccasionsRouteRouteWithChildren,
   TemplatesRouteRoute: TemplatesRouteRouteWithChildren,
   ImagesRoute: ImagesRoute,
   LoginRoute: LoginRoute,

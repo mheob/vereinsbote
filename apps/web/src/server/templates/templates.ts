@@ -21,8 +21,17 @@ import { writeAudit } from '@/server/audit/audit';
 import type { AuditAction } from '@/server/audit/audit';
 import { UnknownAreaError } from '@/server/contacts/errors';
 import type { Db } from '@/server/db/client';
-import { isUniqueViolation } from '@/server/db/errors';
-import { areas, layouts, media, templateMedia, templates, user } from '@/server/db/schema';
+import { isForeignKeyViolationOf, isUniqueViolation } from '@/server/db/errors';
+import {
+	areas,
+	layouts,
+	media,
+	OCCASION_TEMPLATE_FK,
+	occasions,
+	templateMedia,
+	templates,
+	user,
+} from '@/server/db/schema';
 import { importedMediaIds } from '@/server/html-import/import-html';
 import { swapHtmlMediaIds } from '@/server/html-import/media-refs';
 import { mediaStorageKey, newMediaId } from '@/server/media/ids';
@@ -36,6 +45,7 @@ import type { AllowedPlaceholders } from './allowed-placeholders';
 import {
 	LayoutNotFoundError,
 	TemplateChangedError,
+	TemplateInUseError,
 	TemplateInvalidError,
 	TemplateNameTakenError,
 	TemplateNotFoundError,
@@ -359,6 +369,22 @@ async function lockVersion(tx: Db, id: string, version: number): Promise<void> {
 		.for('update');
 	if (row === undefined) throw new TemplateNotFoundError();
 	if (row.version !== version) throw new TemplateChangedError();
+}
+
+/**
+ * The names of the occasions that use a template, archived ones too, by name.
+ *
+ * @param db The database or transaction.
+ * @param templateId The template.
+ * @returns The names.
+ */
+async function occasionNamesOf(db: Db, templateId: string): Promise<string[]> {
+	const rows = await db
+		.select({ name: occasions.name })
+		.from(occasions)
+		.where(eq(occasions.templateId, templateId))
+		.orderBy(sql`lower(${occasions.name})`, occasions.name, occasions.id);
+	return rows.map(({ name }) => name);
 }
 
 /**
@@ -829,6 +855,7 @@ async function duplicateTemplate(
  * @throws {TemplateNotFoundError} When no template has the id.
  * @throws {ForbiddenError} Without `edit` in the area.
  * @throws {TemplateChangedError} When somebody saved since the page loaded the template.
+ * @throws {TemplateInUseError} While an occasion, an archived one too, uses the template.
  */
 // oxlint-disable-next-line max-params -- the plan's interface fixes these parameters
 async function deleteTemplate(
@@ -839,16 +866,26 @@ async function deleteTemplate(
 ): Promise<void> {
 	const areaId = await areaOfTemplate(db, id);
 	assertArea(actor, areaId, 'edit');
-	await db.transaction(async (tx) => {
-		await lockVersion(tx, id, version);
-		await tx.delete(templates).where(eq(templates.id, id));
-		await logTemplate(tx, {
-			action: 'template.deleted',
-			actor,
-			details: { areaId },
-			templateId: id,
+	try {
+		await db.transaction(async (tx) => {
+			await lockVersion(tx, id, version);
+			const using = await occasionNamesOf(tx, id);
+			if (using.length > 0) throw new TemplateInUseError(using);
+			await tx.delete(templates).where(eq(templates.id, id));
+			await logTemplate(tx, {
+				action: 'template.deleted',
+				actor,
+				details: { areaId },
+				templateId: id,
+			});
 		});
-	});
+	} catch (error) {
+		// An occasion made after the check: the foreign key of `occasions` refused the delete.
+		if (!isForeignKeyViolationOf(error, OCCASION_TEMPLATE_FK)) throw error;
+		const using = await occasionNamesOf(db, id);
+		if (using.length === 0) throw error;
+		throw new TemplateInUseError(using);
+	}
 }
 
 /**

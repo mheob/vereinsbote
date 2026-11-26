@@ -18,6 +18,8 @@ declare module '@tanstack/react-router' {
 	interface HistoryState {
 		/** The name of the partner just deleted; the contact list announces it once. */
 		deletedContact?: string;
+		/** An occasion was just deleted or archived on its page; the list announces it once. */
+		occasionNotice?: { kind: 'archived' | 'deleted'; name: string };
 		/** A partner was just created; its page announces „Gespeichert.“ once. */
 		partnerSaved?: boolean;
 		/** What the check of a new connection's credentials found; its page shows it once. */

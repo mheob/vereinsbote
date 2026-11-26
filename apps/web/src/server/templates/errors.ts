@@ -67,6 +67,20 @@ class LayoutInUseError extends Error {
 	}
 }
 
+/**
+ * A template cannot be deleted while occasions use it, archived ones included; `occasions` are
+ * their names (all of the template's own area).
+ */
+class TemplateInUseError extends Error {
+	public readonly occasions: readonly string[];
+
+	public constructor(occasions: readonly string[]) {
+		super('Occasions use the template.');
+		this.name = 'TemplateInUseError';
+		this.occasions = occasions;
+	}
+}
+
 /** Another global layout has the name, ignoring case. */
 class LayoutNameTakenError extends Error {
 	public constructor() {
@@ -98,6 +112,7 @@ export {
 	LayoutNameTakenError,
 	LayoutNotFoundError,
 	TemplateChangedError,
+	TemplateInUseError,
 	TemplateInvalidError,
 	TemplateNameTakenError,
 	TemplateNotFoundError,

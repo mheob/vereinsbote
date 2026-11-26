@@ -16,7 +16,8 @@ type RemovedTemplate = 'deleted' | 'gone';
 /**
  * The button „Löschen“ of a template and its dialog „{name} löschen?“. React Aria's modal keeps
  * the focus inside the dialog and returns it to the button when it closes. A template saved
- * since the page loaded it is not deleted; the dialog says so and the page loads it anew.
+ * since the page loaded it is not deleted; the dialog says so and the page loads it anew. A
+ * template that occasions use is not deleted either; the message names the occasions.
  *
  * @param props The props.
  * @param props.announce Announces a failure in the page's live region.
@@ -57,6 +58,8 @@ export function DeleteTemplateDialog({
 			} else if (result.failure === 'gone') {
 				announce(t('templates.gone'), 'alert');
 				onRemoved('gone');
+			} else if (result.failure === 'inUse') {
+				announce(t('templates.inUse', { names: result.occasions.join(', ') }), 'alert');
 			} else {
 				announce(t('templates.changed'), 'alert');
 			}

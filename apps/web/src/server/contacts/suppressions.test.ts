@@ -5,6 +5,7 @@ import { createArea } from '@/server/areas/areas';
 import type { Db } from '@/server/db/client';
 import { auditLog, contactOptOuts, contacts, contactSuppressions } from '@/server/db/schema';
 import { createTestDb } from '@/server/db/test-db';
+import { insertOccasion } from '@/server/occasions/testing';
 import { ForbiddenError } from '@/server/permissions/principal';
 
 import { getContact, listContacts } from './contacts';
@@ -270,7 +271,7 @@ describe(rekeyContactKey, () => {
 			{ contactKey: 'nr:100009', kind: 'partner' },
 			{ contactKey: 'email:x@example.org', kind: 'member' },
 		]);
-		const occasionId = UNKNOWN_ID;
+		const occasionId = await insertOccasion(db, admin, youthId);
 		await db
 			.insert(contactOptOuts)
 			.values([

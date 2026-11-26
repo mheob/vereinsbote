@@ -60,6 +60,13 @@ export function MainNav({ nav }: Readonly<{ nav: FrameInfo['nav'] }>): ReactNode
 						</Link>
 					</li>
 				) : null}
+				{nav.occasions ? (
+					<li>
+						<Link className={linkClass} to="/occasions">
+							{t('nav.occasions')}
+						</Link>
+					</li>
+				) : null}
 				{nav.templates ? (
 					<li>
 						<Link className={linkClass} to="/templates">

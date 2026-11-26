@@ -4,6 +4,7 @@ import { createArea } from '@/server/areas/areas';
 import type { Db } from '@/server/db/client';
 import { contactOptOuts, contacts, contactSuppressions, customFields } from '@/server/db/schema';
 import { createTestDb } from '@/server/db/test-db';
+import { insertOccasion } from '@/server/occasions/testing';
 import { ForbiddenError } from '@/server/permissions/principal';
 import type { Principal } from '@/server/permissions/principal';
 
@@ -237,6 +238,7 @@ describe(getContact, () => {
 		const db = await createTestDb();
 		const { admin, membersAreaId, partnersAreaId } = await setUpClub(db);
 		const { areaId: youthAreaId } = await createArea(db, admin, 'jugend');
+		const occasionId = await insertOccasion(db, admin, youthAreaId);
 		const id = await insertContact(db, { kind: 'member', memberNumber: '7' });
 		const other = await insertContact(db, { kind: 'member', memberNumber: '8' });
 		await insertContact(db, { customerNumber: '8', kind: 'partner' });
@@ -261,7 +263,7 @@ describe(getContact, () => {
 				scope: 'area',
 			},
 			{ areaId: membersAreaId, contactKey: 'nr:8', kind: 'partner', scope: 'area' },
-			{ contactKey: 'nr:7', kind: 'member', occasionId: UNKNOWN_ID, scope: 'occasion' },
+			{ contactKey: 'nr:7', kind: 'member', occasionId, scope: 'occasion' },
 		]);
 
 		const reader = await detail(db, await userWith(db, { [membersAreaId]: 'read' }), id);

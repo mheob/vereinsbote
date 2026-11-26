@@ -24,6 +24,7 @@ describe(loadFrameInfo, () => {
 				contacts: true,
 				importMembers: false,
 				importPartners: true,
+				occasions: true,
 				templates: true,
 			},
 		});
@@ -34,6 +35,7 @@ describe(loadFrameInfo, () => {
 				contacts: false,
 				importMembers: false,
 				importPartners: false,
+				occasions: false,
 				templates: false,
 			},
 			noSystemSender: false,
@@ -47,6 +49,7 @@ describe(loadFrameInfo, () => {
 				contacts: true,
 				importMembers: true,
 				importPartners: false,
+				occasions: true,
 				templates: true,
 			},
 		});
@@ -84,6 +87,7 @@ describe(loadFrameInfo, () => {
 				contacts: true,
 				importMembers: false,
 				importPartners: false,
+				occasions: true,
 				templates: true,
 			},
 			noSystemSender: false,

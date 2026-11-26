@@ -6,6 +6,7 @@ import { StorageNotConfiguredError } from '@/server/storage/storage';
 import {
 	LayoutNotFoundError,
 	TemplateChangedError,
+	TemplateInUseError,
 	TemplateInvalidError,
 	TemplateNameTakenError,
 	TemplateNotFoundError,
@@ -82,6 +83,11 @@ describe(deleteFailure, () => {
 		});
 		expect(deleteFailure(new TemplateChangedError())).toStrictEqual({
 			failure: 'changed',
+			ok: false,
+		});
+		expect(deleteFailure(new TemplateInUseError(['Einladungen']))).toStrictEqual({
+			failure: 'inUse',
+			occasions: ['Einladungen'],
 			ok: false,
 		});
 	});

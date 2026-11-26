@@ -19,6 +19,8 @@ interface FrameInfo {
 		contacts: boolean;
 		importMembers: boolean;
 		importPartners: boolean;
+		/** Occasions: `read` in any area (the admin role alone gives none). */
+		occasions: boolean;
 		/** Templates and image library: `read` in any area (the admin role alone gives none). */
 		templates: boolean;
 	}>;
@@ -92,6 +94,7 @@ async function loadFrameInfo(db: Db, principal: Principal, now: Date): Promise<F
 		contacts: access.canList,
 		importMembers: access.canManage.member,
 		importPartners: access.canManage.partner,
+		occasions: principal.areas.size > 0,
 		templates: principal.areas.size > 0,
 	};
 	const notice = await frameNotice(db, principal, { canImport: access.canManage.member, now });
