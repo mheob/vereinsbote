@@ -449,6 +449,7 @@ export const de = {
 		'Noch kein Absender für Systemmails: Anmeldelinks und Einladungen gehen erst danach raus.',
 	'home.noSystemSenderLink': 'Absender für Systemmails festlegen',
 	'home.sendingDisturbed': 'Mindestens eine Anbindung ist gestört: Darüber wird nichts versendet.',
+	'home.sendingHeading': 'Versand',
 	'home.sendingLink': 'Anbindungen ansehen',
 	'home.sendingSecretExpiring':
 		'Das Secret mindestens einer Anbindung läuft in weniger als 30 Tagen ab.',
@@ -841,16 +842,20 @@ export const de = {
 	'mail.system.login.validity': 'Der Link ist 15 Minuten gültig und funktioniert einmal.',
 	'mail.system.sendingDigest.button': 'Absender ansehen',
 	'mail.system.sendingDigest.heading': 'Neue Probleme im Postausgang',
-	'mail.system.sendingDigest.line': '{sender}: {failed} fehlgeschlagen, {uncertain} unsicher',
-	'mail.system.sendingDigest.subject': 'Fehlgeschlagene und unsichere Mails im Postausgang',
+	'mail.system.sendingDigest.line': '{sender}: {failed} fehlgeschlagen, {uncertain} unklar',
+	'mail.system.sendingDigest.subject': 'Fehlgeschlagene und unklare Mails im Postausgang',
 	'mail.system.sendingDigest.text':
-		'seit der letzten Zusammenfassung sind {failed} Mails fehlgeschlagen und {uncertain} unsicher. Je Absender:',
+		'seit der letzten Zusammenfassung sind {failed} Mails fehlgeschlagen und {uncertain} unklar. Je Absender:',
 	'mail.system.sendingDigest.unknownSender': 'Gelöschter Absender',
 	'mail.system.sendingDisturbed.button': 'Anbindung öffnen',
 	'mail.system.sendingDisturbed.heading': 'Die Anbindung ist gestört',
 	'mail.system.sendingDisturbed.subject': 'Die Anbindung {name} ist gestört',
 	'mail.system.sendingDisturbed.text':
 		'seit {date} lehnt der Anbieter die Zugangsdaten der Anbindung {name} ab (Code: {code}). Solange das so bleibt, wird über diese Anbindung nichts versendet. Bitte prüfe die Zugangsdaten.',
+	'mail.system.sendingDisturbed.textDomain':
+		'seit {date} nimmt Resend über die Anbindung {name} keine Mails an: Die Absender-Domain ist bei Resend nicht bestätigt (Code: {code}). Solange das so bleibt, wird über diese Anbindung nichts versendet. Bitte bestätige die Domain bei Resend.',
+	'mail.system.sendingDisturbed.textMailbox':
+		'seit {date} nimmt der Anbieter über die Anbindung {name} keine Mails an: Ein Absenderpostfach ist für die App nicht freigegeben oder existiert nicht (Code: {code}). Solange das so bleibt, wird über diese Anbindung nichts versendet. Bitte prüfe die Absenderpostfächer und ihre Freigabe in Exchange.',
 	'mail.system.sendingSecret.button': 'Anbindung öffnen',
 	'mail.system.sendingSecret.heading': 'Das Secret läuft bald ab',
 	'mail.system.sendingSecret.subject': 'Das Secret der Anbindung {name} läuft bald ab',
@@ -941,6 +946,8 @@ export const de = {
 		'Die Anbindung wird von {count} Absendern genutzt und kann nicht gelöscht werden.',
 	'sending.connectionInUseNote':
 		'Absender, die diese Anbindung nutzen: {count}. Sie lässt sich erst löschen, wenn keiner mehr dabei ist.',
+	'sending.connectionInUseOne':
+		'Die Anbindung wird von 1 Absender genutzt und kann nicht gelöscht werden.',
 	'sending.connectionInvalid': 'Bitte wähle eine Anbindung.',
 	'sending.connectionLabel': 'Anbindung',
 	'sending.connectionNewTitle': 'Anbindung anlegen',
@@ -961,6 +968,8 @@ export const de = {
 	'sending.deleteConnectionTitle': '„{name}“ löschen?',
 	'sending.deleteSenderText': 'Der Absender wird endgültig gelöscht.',
 	'sending.deleteSenderTitle': '{name} löschen?',
+	'sending.deleteSystemSenderText':
+		'Er verschickt die Systemmails: Danach gehen keine Anmeldelinks und Einladungen mehr raus, bis ein anderer Absender für Systemmails festgelegt ist.',
 	'sending.displayNameLabel': 'Anzeigename',
 	'sending.emailInvalid': 'Bitte gib eine gültige E-Mail-Adresse ein.',
 	'sending.emailTaken': 'Einen Absender mit dieser Adresse gibt es schon.',
@@ -1030,6 +1039,8 @@ export const de = {
 	'sending.sendersHeading': 'Absender',
 	'sending.stateColumn': 'Zustand',
 	'sending.stateDisturbed': 'Gestört seit {date}',
+	'sending.stateDomainRefused': 'Domain bei Resend nicht bestätigt (seit {date})',
+	'sending.stateMailboxRefused': 'Postfach nicht freigegeben oder nicht gefunden (seit {date})',
 	'sending.stateOk': 'In Ordnung',
 	'sending.systemClear': 'Markierung entfernen',
 	'sending.systemClearDone': 'Es gibt keinen Systemabsender mehr.',
@@ -1051,7 +1062,7 @@ export const de = {
 	'sending.testUnknown':
 		'Beschränkung nicht prüfbar: Das Postfach fehlt oder antwortete anders als erwartet.',
 	'sending.title': 'Versand',
-	'sending.uncertainColumn': 'Unsicher',
+	'sending.uncertainColumn': 'Unklar',
 	'sending.valueRequired': 'Bitte fülle dieses Feld aus.',
 	'sending.webhookSecretHelp': 'Optional. Für Rückläufer und Beschwerden per Webhook.',
 	'sending.webhookSecretLabel': 'Webhook-Signing-Secret',

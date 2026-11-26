@@ -8,6 +8,9 @@
  * Every warning follows the order of the stale-data warning: the marker in `system_state` is set
  * first, so two runs never send it twice, then the mails go, then the activity log. When the log
  * entry fails, the marker is given back and the next tick warns again.
+ *
+ * Before the warnings the step checks the system sender's Graph token (`checkSystemSender`), so a
+ * revoked or rotated secret shows as a disturbance even when no mail went through the sender.
  */
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 
@@ -22,7 +25,7 @@ import {
 	formatClubDate,
 	todayInClubZone,
 } from '@/server/contacts/calendar';
-import { activeAdmins, tickMailer } from '@/server/contacts/stale-import';
+import { WARNING_RETRY_MS, activeAdmins, tickMailer } from '@/server/contacts/stale-import';
 import type { Recipient } from '@/server/contacts/stale-import';
 import type { Db } from '@/server/db/client';
 import { mailConnections, outboxEntries, senders } from '@/server/db/schema';
@@ -32,14 +35,14 @@ import { clearState, getState, setState } from '@/server/system-state';
 import type { StateKey } from '@/server/system-state';
 import type { TickContext, TickStep } from '@/server/tick/tick';
 
+import { disturbanceReason } from './disturbance';
+import { checkSystemSender } from './system-mailer';
+
 /** The days before the expiry of a secret at which the admins are warned, once each. */
 // oxlint-disable-next-line no-magic-numbers -- the stages are the point of the list
 const SECRET_WARNING_DAYS = [30, 14, 7, 1] as const;
 
 type SecretStage = (typeof SECRET_WARNING_DAYS)[number];
-
-/** A warning nobody received waits this long before the next try. */
-const RETRY_AFTER_MS = 3_600_000;
 
 /** The club day of the last digest. */
 interface DigestMarker {
@@ -201,7 +204,7 @@ async function setWaiting(
 	const { [retryKey]: earlier, ...rest } = retry;
 	if (!waits && earlier === undefined) return;
 	const next = waits
-		? { ...rest, [retryKey]: new Date(run.now.getTime() + RETRY_AFTER_MS).toISOString() }
+		? { ...rest, [retryKey]: new Date(run.now.getTime() + WARNING_RETRY_MS).toISOString() }
 		: rest;
 	await setState(db, 'sending_warning_retry', next);
 }
@@ -504,6 +507,13 @@ const secretWatch: Watch<SecretStage> = {
 		secretExpiresOn === null ? null : secretWarningStage(secretExpiresOn, today),
 };
 
+/** The text of a disturbance by its reason. */
+const DISTURBANCE_TEXTS = {
+	credentials: 'mail.system.sendingDisturbed.text',
+	domain: 'mail.system.sendingDisturbed.textDomain',
+	mailbox: 'mail.system.sendingDisturbed.textMailbox',
+} as const;
+
 /** A connection the provider refuses: one warning per disturbance, told apart by its start. */
 const disturbanceWatch: Watch<string> = {
 	action: 'sending.disturbance_warned',
@@ -513,7 +523,7 @@ const disturbanceWatch: Watch<string> = {
 	texts: ({ connection, locale }, since) => ({
 		heading: translate(locale, 'mail.system.sendingDisturbed.heading'),
 		subject: translate(locale, 'mail.system.sendingDisturbed.subject', { name: connection.name }),
-		text: translate(locale, 'mail.system.sendingDisturbed.text', {
+		text: translate(locale, DISTURBANCE_TEXTS[disturbanceReason(connection.disturbedCode)], {
 			code: connection.disturbedCode ?? 'unknown',
 			date: formatClubDate(new Date(since), locale),
 			name: connection.name,
@@ -640,18 +650,39 @@ async function sendDigest(
 	});
 }
 
+const defaultFetch: typeof fetch = async (input, init) => fetch(input, init);
+
+/**
+ * Checks the system sender's token; a failure (the database, a secret that does not decrypt,
+ * which disturbs the connection) is logged by its code and does not stop the warnings.
+ *
+ * @param ctx The tick's context.
+ * @param fetchFn The `fetch` of the token request.
+ */
+async function checkSystemSenderSafely(ctx: TickContext, fetchFn: typeof fetch): Promise<void> {
+	try {
+		await checkSystemSender(ctx.db, ctx.env, { fetch: fetchFn, now: ctx.now });
+	} catch (error) {
+		// oxlint-disable-next-line no-console -- the code only
+		console.error('system sender check failed', errorLabel(error));
+	}
+}
+
 /**
  * Builds the tick step that warns the admins about the senders.
  *
  * @param createMailer Makes the mailer from the tick's context; tests pass a capturing one.
+ * @param fetchFn The `fetch` of the system sender's token check; tests pass a fake provider.
  * @returns The `sending-warnings` step.
  */
 function createSendingWarningsStep(
 	createMailer: (ctx: TickContext) => SystemMailer = tickMailer,
+	fetchFn: typeof fetch = defaultFetch,
 ): TickStep {
 	return {
 		name: 'sending-warnings',
 		async run(ctx) {
+			await checkSystemSenderSafely(ctx, fetchFn);
 			let admins: Promise<readonly Recipient[]> | null = null;
 			const run: Run = {
 				admins: async () => {

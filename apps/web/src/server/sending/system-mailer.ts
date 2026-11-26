@@ -12,6 +12,12 @@
  * credentials, the brand, the count) and returns the delivery, which renders the mail and calls
  * the provider without touching the database. On Cloudflare the request's database ends with the
  * response, and a login link is delivered after it (`createLinkSender`).
+ *
+ * A broken system sender must not stay unnoticed (Design 8.6): a secret that does not decrypt, and
+ * a refusal of the credentials, the mailbox or the domain when `send` runs (invitations, warnings,
+ * in a request or a tick), mark its connection disturbed like the outbox does. A login link
+ * delivered after the response cannot; `checkSystemSender`, run by every tick, fetches a Graph
+ * token instead.
  */
 import { eq } from 'drizzle-orm';
 
@@ -21,13 +27,16 @@ import { translate } from '@/i18n/translate';
 import { cleanHeaderText } from '@/mail/escape';
 import { getBrand } from '@/server/brand/brand';
 import type { BrandState } from '@/server/brand/brand';
+import { SecretDecryptError } from '@/server/crypto/secrets';
 import type { Db } from '@/server/db/client';
-import { senders } from '@/server/db/schema';
+import { mailConnections, senders } from '@/server/db/schema';
 import type { Env } from '@/server/env';
 import type { SmtpMail, SmtpTransport } from '@/server/mail/smtp-transport';
 
+import { disturbanceReason } from './disturbance';
 import { openSenderTransport } from './open-transport';
 import type { SenderTransport } from './open-transport';
+import { clearDisturbance, disturbConnection } from './outbox';
 import { countNothing, countSent } from './quota';
 import { composeSystemMail } from './system-mail';
 import type { SystemMailContent } from './system-mail';
@@ -76,14 +85,19 @@ class MailerNotConfiguredError extends Error {
 	}
 }
 
-/** The provider did not take a system mail; `code` is its failure code, e.g. `graph.unauthorized`. */
+/**
+ * The provider did not take a system mail; `code` is its failure code, e.g. `graph.unauthorized`,
+ * `refusedAccess` whether it refused the credentials, the mailbox or the domain.
+ */
 class SystemMailNotSentError extends Error {
 	public readonly code: string;
+	public readonly refusedAccess: boolean;
 
-	public constructor(code: string) {
+	public constructor(code: string, refusedAccess = false) {
 		super('The provider did not take the system mail.');
 		this.name = 'SystemMailNotSentError';
 		this.code = code;
+		this.refusedAccess = refusedAccess;
 	}
 }
 
@@ -92,19 +106,25 @@ type SmtpSend = (
 	mail: Readonly<Pick<SmtpMail, 'html' | 'subject' | 'text' | 'to'>>,
 ) => Promise<void>;
 
+/** The sender that sends the system mails and its connection. */
+interface SystemSender {
+	readonly id: string;
+	readonly connectionId: string;
+}
+
 /**
  * The sender that sends the system mails.
  *
  * @param db The database.
- * @returns Its id, or null when none is chosen.
+ * @returns It and its connection, or null when none is chosen.
  */
-async function systemSenderId(db: Db): Promise<string | null> {
+async function systemSender(db: Db): Promise<SystemSender | null> {
 	const [row] = await db
-		.select({ id: senders.id })
+		.select({ connectionId: senders.connectionId, id: senders.id })
 		.from(senders)
 		.where(eq(senders.isSystem, true))
 		.limit(1);
-	return row?.id ?? null;
+	return row ?? null;
 }
 
 /**
@@ -114,7 +134,37 @@ async function systemSenderId(db: Db): Promise<string | null> {
  * @returns True when one is.
  */
 async function hasSystemSender(db: Db): Promise<boolean> {
-	return (await systemSenderId(db)) !== null;
+	return (await systemSender(db)) !== null;
+}
+
+type OpenDeps = Readonly<{ fetch: typeof fetch; now: () => Date }>;
+
+/**
+ * Opens the transport of the system sender. A secret that does not decrypt (another app secret)
+ * disturbs the connection, like in the outbox, and the error goes on.
+ *
+ * @param db The database.
+ * @param env The environment.
+ * @param sender The system sender.
+ * @param deps `fetch` and the clock.
+ * @returns The transport.
+ * @throws {SecretDecryptError} When the secret does not decrypt.
+ */
+// oxlint-disable-next-line max-params -- the database, the environment, the sender and the deps
+async function openSystemTransport(
+	db: Db,
+	env: Env,
+	sender: Readonly<SystemSender>,
+	deps: OpenDeps,
+): Promise<SenderTransport> {
+	try {
+		return await openSenderTransport(db, env, sender.id, deps);
+	} catch (error) {
+		if (error instanceof SecretDecryptError) {
+			await disturbConnection(db, sender.connectionId, 'outbox.credentials', deps.now());
+		}
+		throw error;
+	}
 }
 
 /**
@@ -205,7 +255,114 @@ async function sendThrough(
 		replyTo: sender.replyTo,
 		to: mail.to,
 	});
-	if (!result.ok) throw new SystemMailNotSentError(result.code);
+	if (!result.ok) throw new SystemMailNotSentError(result.code, result.failure === 'unauthorized');
+}
+
+/** What a mailer works with: the database, the environment, `fetch`, the clock and SMTP. */
+interface MailerContext {
+	readonly db: Db;
+	readonly env: Env;
+	readonly fetch: typeof fetch;
+	readonly now: () => Date;
+	readonly smtp: SmtpSend | null;
+}
+
+/** The delivery of a mail, and the connection that sends it (null without a system sender). */
+interface Opening {
+	readonly delivery: SystemMailDelivery | null;
+	readonly connectionId: string | null;
+}
+
+const NOTHING_TO_DELIVER: Opening = { connectionId: null, delivery: null };
+
+/**
+ * The database work of a mail without a system sender: `DEV_SMTP_URL`, or none at all.
+ *
+ * @param ctx The mailer's context.
+ * @param mail The mail, or null to run the statements only.
+ * @returns The delivery through SMTP.
+ * @throws {MailerNotConfiguredError} For a mail without SMTP.
+ */
+async function openViaSmtp(
+	ctx: Readonly<MailerContext>,
+	mail: Readonly<SystemMail> | null,
+): Promise<Opening> {
+	const { smtp } = ctx;
+	if (smtp === null) {
+		if (mail === null) return NOTHING_TO_DELIVER;
+		throw new MailerNotConfiguredError();
+	}
+	const brand = await getBrand(ctx.db);
+	if (mail === null) return NOTHING_TO_DELIVER;
+	const delivery = async (): Promise<void> =>
+		smtp({ ...(await render(mail, brand, ctx.env)), to: mail.to });
+	return { connectionId: null, delivery };
+}
+
+/**
+ * The database work of a mail through the system sender: its transport, the brand and the count.
+ *
+ * @param ctx The mailer's context.
+ * @param sender The system sender.
+ * @param mail The mail, or null to run the statements only.
+ * @returns The delivery through the sender's transport, and its connection.
+ */
+async function openViaSender(
+	ctx: Readonly<MailerContext>,
+	sender: Readonly<SystemSender>,
+	mail: Readonly<SystemMail> | null,
+): Promise<Opening> {
+	const { db, env, now } = ctx;
+	const [opened, brand] = await Promise.all([
+		openSystemTransport(db, env, sender, { fetch: ctx.fetch, now }),
+		getBrand(db),
+	]);
+	// Counted before the delivery, which may run after the database has ended; a mail the
+	// provider then refuses still counts.
+	await (mail === null ? countNothing : countSent)(db, opened.scope, now());
+	const { connectionId } = sender;
+	if (mail === null) return { connectionId, delivery: null };
+	const delivery = async (): Promise<void> =>
+		sendThrough(opened, mail, await render(mail, brand, env));
+	return { connectionId, delivery };
+}
+
+/**
+ * The database work of a mail: the same statements with and without one.
+ *
+ * @param ctx The mailer's context.
+ * @param mail The mail, or null to run the statements only.
+ * @returns The delivery and the connection that sends it.
+ */
+async function openMail(
+	ctx: Readonly<MailerContext>,
+	mail: Readonly<SystemMail> | null,
+): Promise<Opening> {
+	const sender = await systemSender(ctx.db);
+	return sender === null ? openViaSmtp(ctx, mail) : openViaSender(ctx, sender, mail);
+}
+
+/**
+ * Delivers a mail while the database still runs (a request or a tick); a refusal of the
+ * credentials, the mailbox or the domain marks the connection disturbed, so the admins learn of it.
+ *
+ * @param ctx The mailer's context.
+ * @param opening The delivery and its connection.
+ * @throws {SystemMailNotSentError} When the provider did not take the mail.
+ */
+async function deliverNoting(
+	ctx: Readonly<MailerContext>,
+	opening: Readonly<Opening>,
+): Promise<void> {
+	try {
+		await opening.delivery?.();
+	} catch (error) {
+		const { connectionId } = opening;
+		if (error instanceof SystemMailNotSentError && error.refusedAccess && connectionId !== null) {
+			await disturbConnection(ctx.db, connectionId, error.code, ctx.now());
+		}
+		throw error;
+	}
 }
 
 /**
@@ -217,43 +374,76 @@ async function sendThrough(
  * @returns The mailer.
  */
 function createSystemMailer(deps: SystemMailerDeps): SystemMailer {
-	const { db, env } = deps;
-	const fetchFn: typeof fetch = deps.fetch ?? (async (input, init) => fetch(input, init));
-	const now = deps.now ?? ((): Date => new Date());
-	const smtp = smtpSend(env);
-
-	const prepare: SystemMailer['prepare'] = async (mail) => {
-		const senderId = await systemSenderId(db);
-		if (senderId === null) {
-			if (smtp === null) {
-				if (mail === null) return null;
-				throw new MailerNotConfiguredError();
-			}
-			const brand = await getBrand(db);
-			return mail === null
-				? null
-				: async () => smtp({ ...(await render(mail, brand, env)), to: mail.to });
-		}
-		const [opened, brand] = await Promise.all([
-			openSenderTransport(db, env, senderId, { fetch: fetchFn, now }),
-			getBrand(db),
-		]);
-		// Counted before the delivery, which may run after the database has ended; a mail the
-		// provider then refuses still counts.
-		await (mail === null ? countNothing : countSent)(db, opened.scope, now());
-		return mail === null
-			? null
-			: async () => sendThrough(opened, mail, await render(mail, brand, env));
+	const ctx: MailerContext = {
+		db: deps.db,
+		env: deps.env,
+		fetch: deps.fetch ?? (async (input, init) => fetch(input, init)),
+		now: deps.now ?? ((): Date => new Date()),
+		smtp: smtpSend(deps.env),
 	};
-
 	return {
-		prepare,
+		async prepare(mail) {
+			const { delivery } = await openMail(ctx, mail);
+			return delivery;
+		},
 		async send(mail) {
-			const delivery = await prepare(mail);
-			await delivery?.();
+			await deliverNoting(ctx, await openMail(ctx, mail));
 		},
 	};
 }
 
-export { MailerNotConfiguredError, SystemMailNotSentError, createSystemMailer, hasSystemSender };
+/**
+ * The connection of the system sender when a token can tell about it: not while a refused
+ * mailbox or domain disturbs it, which a token cannot disprove.
+ *
+ * @param db The database.
+ * @param sender The system sender.
+ * @returns When its disturbance began (null: none), or null when a token cannot tell.
+ */
+async function tokenCheckable(
+	db: Db,
+	sender: Readonly<SystemSender>,
+): Promise<{ since: Date | null } | null> {
+	const [connection] = await db
+		.select({ code: mailConnections.disturbedCode, since: mailConnections.disturbedSince })
+		.from(mailConnections)
+		.where(eq(mailConnections.id, sender.connectionId));
+	if (connection === undefined) return null;
+	const refusedMailbox =
+		connection.since !== null && disturbanceReason(connection.code) !== 'credentials';
+	return refusedMailbox ? null : { since: connection.since };
+}
+
+/**
+ * Checks the credentials of the system sender's Graph connection by fetching a token, once per
+ * tick (`sendingWarnings`): a refused token marks the connection disturbed, a token ends a
+ * disturbance of its credentials. A refused mailbox stays: a token says nothing about it. Resend
+ * has no token to fetch; its refusals show when `send` runs. This is the only way a refused login
+ * link delivered after the response (Cloudflare) comes to light.
+ *
+ * @param db The database.
+ * @param env The environment.
+ * @param deps `fetch` and the clock.
+ * @throws {SecretDecryptError} When the secret does not decrypt; the connection is disturbed then.
+ */
+async function checkSystemSender(db: Db, env: Env, deps: OpenDeps): Promise<void> {
+	const sender = await systemSender(db);
+	const connection = sender === null ? null : await tokenCheckable(db, sender);
+	if (sender === null || connection === null) return;
+	const { transport } = await openSystemTransport(db, env, sender, deps);
+	if (transport.probe === null) return;
+	const probed = await transport.probe();
+	if (probed.ok && connection.since !== null) await clearDisturbance(db, sender.connectionId);
+	if (!probed.ok && probed.failure === 'unauthorized') {
+		await disturbConnection(db, sender.connectionId, probed.code, deps.now());
+	}
+}
+
+export {
+	MailerNotConfiguredError,
+	SystemMailNotSentError,
+	checkSystemSender,
+	createSystemMailer,
+	hasSystemSender,
+};
 export type { SystemMail, SystemMailDelivery, SystemMailer, SystemMailerDeps };

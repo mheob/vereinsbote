@@ -22,6 +22,7 @@ import { ConnectionNotFoundError, SenderInvalidError, SenderNotFoundError } from
 import { checkMailboxRestriction, createGraphTransport, graphEndpoints } from './graph';
 import type { GraphDeps, GraphSettings, RestrictionResult } from './graph';
 import { DEFAULT_GRAPH_PER_MINUTE, DEFAULT_RESEND_PER_MINUTE } from './limits';
+import { countSent } from './quota';
 import { createResendTransport, resendEndpoint } from './resend';
 import { isMailAddress, loadSender } from './senders';
 import type { SenderSummary } from './senders';
@@ -284,8 +285,9 @@ async function storeOutcome(
 }
 
 /**
- * Runs the self test of a sender and stores what it found on the connection. The activity log
- * gets the outcome only, no address.
+ * Runs the self test of a sender and stores what it found on the connection. A test mail the
+ * provider took counts against the daily limit of the sender's scope (Design 8.3). The activity
+ * log gets the outcome only, no address.
  *
  * @param db The database.
  * @param env The environment.
@@ -312,6 +314,7 @@ async function runSelfTest(
 	const target = await selfTestTarget(db, actor, senderId, probeMailbox);
 	const opened = await openLoaded(db, target.sender, { ...deps, env });
 	const outcome = await performSelfTest(opened, target);
+	if (outcome.testMail === 'sent') await countSent(db, opened.result.scope, deps.now());
 	await storeOutcome(db, opened, outcome, deps.now());
 	await writeAudit(db, {
 		action: 'sender.self_tested',

@@ -22,6 +22,8 @@ const env = parseEnv({
 });
 
 const DAY_MS = 86_400_000;
+const HOUR_MS = 3_600_000;
+const HALF_AN_HOUR_MS = 1_800_000;
 const NOW = new Date('2026-11-24T10:00:00Z');
 
 function daysAfter(at: Date, days: number): Date {
@@ -135,7 +137,7 @@ describe(createStaleImportWarningStep, () => {
 		expect(mailer.sent).toHaveLength(2);
 	});
 
-	it('does not retry within the week without a mailer', async () => {
+	it('gives the week back when nobody was reached and tries again an hour later', async () => {
 		const db = await createTestDb();
 		await setUpClub(db);
 		await insertUser(db, {
@@ -149,13 +151,22 @@ describe(createStaleImportWarningStep, () => {
 		const step = createStaleImportWarningStep();
 		const report = await runTick({ db, env, now: () => NOW, steps: [step], storage: null });
 		expect(report).toMatchObject({ steps: [{ name: 'stale-import-warning', outcome: 'done' }] });
-		const [entry] = await warningEntries(db);
-		expect(entry).toMatchObject({
-			action: 'import.stale_warning',
-			details: { error: 'MailerNotConfiguredError', failed: 2, sent: 0 },
+		const claimed = await db
+			.select()
+			.from(systemState)
+			.where(eq(systemState.key, 'stale_import_warned_at'));
+		const unlogged = await warningEntries(db);
+		const mailer = new CapturingMailer();
+		await tickAt(db, new Date(NOW.getTime() + HALF_AN_HOUR_MS), mailer);
+		const withinTheHour = mailer.sent.length;
+		await tickAt(db, new Date(NOW.getTime() + HOUR_MS), mailer);
+		expect({ claimed, unlogged, withinTheHour }).toStrictEqual({
+			claimed: [],
+			unlogged: [],
+			withinTheHour: 0,
 		});
-		await runTick({ db, env, now: () => daysAfter(NOW, 0.1), steps: [step], storage: null });
-		await expect(warningEntries(db)).resolves.toHaveLength(1);
+		expect(mailer.sent).toHaveLength(2);
+		await expect(warningEntries(db)).resolves.toMatchObject([{ details: { failed: 0, sent: 2 } }]);
 	});
 
 	it('takes the claimed week back when the audit entry fails', async () => {

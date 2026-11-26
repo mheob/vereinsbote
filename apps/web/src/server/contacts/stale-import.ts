@@ -21,6 +21,13 @@ const WEEK_MS = DAYS_PER_WEEK * MS_PER_DAY;
 
 /** The warning goes out at most once in this time. */
 const STALE_WARNING_INTERVAL_MS = WEEK_MS;
+/** A warning nobody received waits this long before the next try (also the sending warnings). */
+const WARNING_RETRY_MS = 3_600_000;
+
+/** When the next try of a warning nobody received may start. */
+interface RetryMarker {
+	readonly at: string;
+}
 
 /** How old the last member import is, judged against the configured weeks. */
 interface ImportFreshness {
@@ -197,6 +204,18 @@ async function logWarning(
 }
 
 /**
+ * Whether a warning that reached nobody still waits for its next try.
+ *
+ * @param db The database.
+ * @param now The tick's instant.
+ * @returns True within an hour of that try.
+ */
+async function isWaiting(db: Db, now: Date): Promise<boolean> {
+	const retry = await getState<RetryMarker>(db, 'stale_import_retry_at');
+	return retry !== null && Date.parse(retry.at) > now.getTime();
+}
+
+/**
  * The system mailer of a tick: the tick's database, environment and clock.
  *
  * @param ctx The context of the tick.
@@ -207,8 +226,35 @@ function tickMailer(ctx: TickContext): SystemMailer {
 }
 
 /**
+ * Settles a warning after its mails: one that reached somebody is logged and stays claimed; one
+ * that reached nobody gives the week back and waits an hour, without a log entry.
+ *
+ * @param db The database.
+ * @param outcome What the mails came to.
+ * @param claim The value the claim of the week replaced (or null), and the tick's instant.
+ * @param claim.previous The value the claim replaced, or null.
+ * @param claim.now The tick's instant.
+ */
+async function settleWarning(
+	db: Db,
+	outcome: Readonly<SendOutcome>,
+	claim: Readonly<{ previous: unknown; now: Date }>,
+): Promise<void> {
+	if (outcome.sent === 0) {
+		await releaseWeek(db, claim.previous);
+		const at = new Date(claim.now.getTime() + WARNING_RETRY_MS).toISOString();
+		await setState(db, 'stale_import_retry_at', { at });
+		return;
+	}
+	await logWarning(db, outcome, claim.previous);
+	await clearState(db, 'stale_import_retry_at');
+}
+
+/**
  * Builds the tick step that warns the active admins once a week while the member data is old.
- * The week is claimed before sending: a failed mail is not retried before the next week.
+ * The week is claimed before sending, so no admin gets it twice. A warning that reached nobody (no
+ * system sender, the provider refused, no active admin) writes no log entry, gives the week back
+ * and is tried again an hour later, like the sending warnings.
  *
  * @param createMailer Makes the mailer from the tick's context; tests pass a capturing one.
  * @returns The `stale-import-warning` step.
@@ -220,20 +266,18 @@ function createStaleImportWarningStep(
 		name: 'stale-import-warning',
 		async run(ctx) {
 			const now = ctx.now();
-			const freshness = await getImportFreshness(ctx.db, now);
-			if (!freshness.stale || freshness.lastImportAt === null) return { moreWork: false };
+			const { lastImportAt, stale } = await getImportFreshness(ctx.db, now);
+			if (!stale || lastImportAt === null || (await isWaiting(ctx.db, now))) {
+				return { moreWork: false };
+			}
 			const previous = await getState<unknown>(ctx.db, 'stale_import_warned_at');
 			if (!(await claimWeek(ctx.db, now))) return { moreWork: false };
-			const recipients = await activeAdmins(ctx.db);
+			const link = new URL('/contacts/import/members', ctx.env.appUrl).toString();
 			const outcome = await sendWarnings(
-				{
-					lastImportAt: freshness.lastImportAt,
-					link: new URL('/contacts/import/members', ctx.env.appUrl).toString(),
-					mailer: createMailer(ctx),
-				},
-				recipients,
+				{ lastImportAt, link, mailer: createMailer(ctx) },
+				await activeAdmins(ctx.db),
 			);
-			await logWarning(ctx.db, outcome, previous);
+			await settleWarning(ctx.db, outcome, { now, previous });
 			return { moreWork: false };
 		},
 	};
@@ -243,6 +287,7 @@ const staleImportWarning = createStaleImportWarningStep();
 
 export {
 	STALE_WARNING_INTERVAL_MS,
+	WARNING_RETRY_MS,
 	activeAdmins,
 	createStaleImportWarningStep,
 	getImportFreshness,

@@ -437,6 +437,7 @@ export const en: Record<keyof typeof de, string> = {
 		'No sender for system mails yet: sign-in links and invitations go out only once one is set.',
 	'home.noSystemSenderLink': 'Set the sender for system mails',
 	'home.sendingDisturbed': 'At least one connection is disturbed: nothing is sent through it.',
+	'home.sendingHeading': 'Sending',
 	'home.sendingLink': 'View the connections',
 	'home.sendingSecretExpiring':
 		'The secret of at least one connection expires in less than 30 days.',
@@ -822,16 +823,20 @@ export const en: Record<keyof typeof de, string> = {
 	'mail.system.login.validity': 'The link is valid for 15 minutes and works once.',
 	'mail.system.sendingDigest.button': 'View the senders',
 	'mail.system.sendingDigest.heading': 'New problems in the outbox',
-	'mail.system.sendingDigest.line': '{sender}: {failed} failed, {uncertain} uncertain',
-	'mail.system.sendingDigest.subject': 'Failed and uncertain mails in the outbox',
+	'mail.system.sendingDigest.line': '{sender}: {failed} failed, {uncertain} unclear',
+	'mail.system.sendingDigest.subject': 'Failed and unclear mails in the outbox',
 	'mail.system.sendingDigest.text':
-		'since the last summary {failed} mails have failed and {uncertain} are uncertain. By sender:',
+		'since the last summary {failed} mails have failed and {uncertain} are unclear. By sender:',
 	'mail.system.sendingDigest.unknownSender': 'Deleted sender',
 	'mail.system.sendingDisturbed.button': 'Open the connection',
 	'mail.system.sendingDisturbed.heading': 'The connection is disturbed',
 	'mail.system.sendingDisturbed.subject': 'The connection {name} is disturbed',
 	'mail.system.sendingDisturbed.text':
 		'since {date} the provider has refused the credentials of the connection {name} (code: {code}). As long as that lasts, nothing is sent through it. Please check the credentials.',
+	'mail.system.sendingDisturbed.textDomain':
+		'since {date} Resend has not taken mail through the connection {name}: the sending domain is not verified at Resend (code: {code}). As long as that lasts, nothing is sent through it. Please verify the domain at Resend.',
+	'mail.system.sendingDisturbed.textMailbox':
+		'since {date} the provider has not taken mail through the connection {name}: a sender mailbox is not released to the app or does not exist (code: {code}). As long as that lasts, nothing is sent through it. Please check the sender mailboxes and their release in Exchange.',
 	'mail.system.sendingSecret.button': 'Open the connection',
 	'mail.system.sendingSecret.heading': 'The secret expires soon',
 	'mail.system.sendingSecret.subject': 'The secret of the connection {name} expires soon',
@@ -917,6 +922,7 @@ export const en: Record<keyof typeof de, string> = {
 	'sending.connectionInUse': 'The connection is used by {count} senders and cannot be deleted.',
 	'sending.connectionInUseNote':
 		'Senders that use this connection: {count}. It can only be deleted once none is left.',
+	'sending.connectionInUseOne': 'The connection is used by 1 sender and cannot be deleted.',
 	'sending.connectionInvalid': 'Please choose a connection.',
 	'sending.connectionLabel': 'Connection',
 	'sending.connectionNewTitle': 'Add a connection',
@@ -936,6 +942,8 @@ export const en: Record<keyof typeof de, string> = {
 	'sending.deleteConnectionTitle': 'Delete “{name}”?',
 	'sending.deleteSenderText': 'The sender is deleted for good.',
 	'sending.deleteSenderTitle': 'Delete {name}?',
+	'sending.deleteSystemSenderText':
+		'It sends the system mails: afterwards no sign-in links and invitations go out until another sender is set for system mails.',
 	'sending.displayNameLabel': 'Display name',
 	'sending.emailInvalid': 'Please enter a valid e-mail address.',
 	'sending.emailTaken': 'A sender with this address already exists.',
@@ -1003,6 +1011,8 @@ export const en: Record<keyof typeof de, string> = {
 	'sending.sendersHeading': 'Senders',
 	'sending.stateColumn': 'State',
 	'sending.stateDisturbed': 'Disturbed since {date}',
+	'sending.stateDomainRefused': 'Domain not verified at Resend (since {date})',
+	'sending.stateMailboxRefused': 'Mailbox not released or not found (since {date})',
 	'sending.stateOk': 'OK',
 	'sending.systemClear': 'Remove the mark',
 	'sending.systemClearDone': 'There is no system sender any more.',
@@ -1024,7 +1034,7 @@ export const en: Record<keyof typeof de, string> = {
 	'sending.testUnknown':
 		'Restriction could not be checked: the mailbox is missing or answered unexpectedly.',
 	'sending.title': 'Sending',
-	'sending.uncertainColumn': 'Uncertain',
+	'sending.uncertainColumn': 'Unclear',
 	'sending.valueRequired': 'Please fill in this field.',
 	'sending.webhookSecretHelp': 'Optional. For bounces and complaints by webhook.',
 	'sending.webhookSecretLabel': 'Webhook signing secret',

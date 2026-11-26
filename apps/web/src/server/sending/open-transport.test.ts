@@ -9,6 +9,7 @@ import { ForbiddenError } from '@/server/permissions/principal';
 import { updateConnection } from './connections';
 import { SenderInvalidError, SenderNotFoundError } from './errors';
 import { checkConnectionCredentials, openSenderTransport, runSelfTest } from './open-transport';
+import { quotaToday } from './quota';
 import {
 	fakeProviders,
 	graphConnection,
@@ -197,6 +198,19 @@ describe(runSelfTest, () => {
 		expect(stored?.disturbedSince).toStrictEqual(DISTURBED_SINCE);
 	});
 
+	it('counts an accepted test mail against the daily limit of its scope (Design 8.3)', async () => {
+		const { admin, db, senderId } = await disturbedGraphClub();
+		await runSelfTest(db, testEnv(), admin, senderId, null, {
+			fetch: fakeProviders().fetch,
+			now: () => NOW,
+		});
+		await runSelfTest(db, testEnv(), admin, senderId, null, {
+			fetch: fakeProviders({ token: HTTP_UNAUTHORIZED }).fetch,
+			now: () => NOW,
+		});
+		await expect(quotaToday(db, `sender:${senderId}`, NOW)).resolves.toMatchObject({ used: 1 });
+	});
+
 	it('reports a refused test mail of a resend sender', async () => {
 		const db = await createTestDb();
 		const { admin } = await setUpClub(db);
@@ -223,6 +237,9 @@ describe(runSelfTest, () => {
 		const sent = working.calls.find((call) => call.url.endsWith('/emails'));
 		expect(outcome).toStrictEqual({ restriction: null, testMail: 'sent', token: 'unchecked' });
 		expect(sent?.body).toContain('"to":["admin@example.org"]');
+		await expect(quotaToday(db, `connection:${resendId}`, NOW)).resolves.toMatchObject({
+			used: 1,
+		});
 	});
 
 	it('needs an admin', async () => {

@@ -10,7 +10,8 @@ import { CapturingMailer } from '@/server/mail/testing';
 import { runTick } from '@/server/tick/tick';
 import { insertUser } from '@/server/users/repo';
 
-import { graphConnection, resendConnection, senderOn, testEnv } from './testing';
+import { setSystemSender } from './senders';
+import { fakeProviders, graphConnection, resendConnection, senderOn, testEnv } from './testing';
 import { SECRET_WARNING_DAYS, createSendingWarningsStep, secretWarningStage } from './warnings';
 
 const DAY_MS = 86_400_000;
@@ -295,6 +296,42 @@ describe(createSendingWarningsStep, () => {
 		expect(counts).toStrictEqual([0, 1, 1, 2]);
 	});
 
+	it('finds a system sender whose token is refused and warns about it in the same tick', async () => {
+		const db = await createTestDb();
+		const { admin, connectionId, senderId } = await setUpGraph(db);
+		await setSystemSender(db, admin, senderId);
+		const mailer = new CapturingMailer();
+		const refusedToken = fakeProviders({ token: 401 });
+		await runTick({
+			db,
+			env: testEnv(),
+			now: () => NOW,
+			steps: [createSendingWarningsStep(() => mailer, refusedToken.fetch)],
+			storage: null,
+		});
+		const [row] = await db
+			.select({ code: mailConnections.disturbedCode, since: mailConnections.disturbedSince })
+			.from(mailConnections)
+			.where(eq(mailConnections.id, connectionId));
+		expect(row).toStrictEqual({ code: 'graph.unauthorized', since: NOW });
+		expect(mailer.sent.map((mail) => mail.subject)).toStrictEqual([
+			'Die Anbindung Microsoft 365 ist gestört',
+		]);
+	});
+
+	it('names a refused mailbox as such', async () => {
+		const db = await createTestDb();
+		const { connectionId } = await setUpGraph(db);
+		await db
+			.update(mailConnections)
+			.set({ disturbedCode: 'graph.mailbox', disturbedSince: NOW })
+			.where(eq(mailConnections.id, connectionId));
+		const mailer = new CapturingMailer();
+		await tickAt(db, NOW, mailer);
+		expect(textOf(mailer.sent[0])).toContain('Absenderpostfach');
+		expect(textOf(mailer.sent[0])).not.toContain('Zugangsdaten');
+	});
+
 	it('names the connection, the date and the code of a disturbance', async () => {
 		const db = await createTestDb();
 		const { connectionId } = await setUpGraph(db);
@@ -330,9 +367,9 @@ describe('the digest of the sending warnings', () => {
 		]);
 		await tickAt(db, NOW, mailer);
 		const [digest] = mailer.sent;
-		expect(digest?.subject).toBe('Fehlgeschlagene und unsichere Mails im Postausgang');
-		expect(textOf(digest)).toContain('verein@example.org: 2 fehlgeschlagen, 1 unsicher');
-		expect(textOf(digest)).toContain('news@example.org: 0 fehlgeschlagen, 1 unsicher');
+		expect(digest?.subject).toBe('Fehlgeschlagene und unklare Mails im Postausgang');
+		expect(textOf(digest)).toContain('verein@example.org: 2 fehlgeschlagen, 1 unklar');
+		expect(textOf(digest)).toContain('news@example.org: 0 fehlgeschlagen, 1 unklar');
 		expect(textOf(digest)).not.toContain('member@example.org');
 		const entries = await auditEntries(db, 'sending.digest_sent');
 		expect(entries.map((entry) => entry.details)).toStrictEqual([
@@ -358,7 +395,7 @@ describe('the digest of the sending warnings', () => {
 			])),
 		);
 		expect(counts).toStrictEqual([1, 1, 2, 2]);
-		expect(textOf(mailer.sent[1])).toContain('news@example.org: 1 fehlgeschlagen, 0 unsicher');
+		expect(textOf(mailer.sent[1])).toContain('news@example.org: 1 fehlgeschlagen, 0 unklar');
 		expect(textOf(mailer.sent[1])).not.toContain('verein@example.org');
 	});
 });
@@ -483,6 +520,6 @@ describe('the digest and the sweep', () => {
 			.set({ lastErrorCode: 'outbox.interrupted', status: 'uncertain' })
 			.where(eq(outboxEntries.status, 'sending'));
 		await tickAt(db, new Date('2026-11-26T09:00:00Z'), mailer);
-		expect(textOf(mailer.sent[1])).toContain('verein@example.org: 0 fehlgeschlagen, 1 unsicher');
+		expect(textOf(mailer.sent[1])).toContain('verein@example.org: 0 fehlgeschlagen, 1 unklar');
 	});
 });

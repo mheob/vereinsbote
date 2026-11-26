@@ -68,6 +68,8 @@ interface ConnectionSummary {
 	readonly name: string;
 	readonly secretExpiresOn: string | null;
 	readonly disturbedSince: Date | null;
+	/** The code of the provider's refusal (`disturbanceReason` reads it); null when not disturbed. */
+	readonly disturbedCode: string | null;
 	readonly restriction: RestrictionResult | null;
 	readonly perMinute: number | null;
 	readonly dailyLimit: number | null;
@@ -95,6 +97,7 @@ async function readConnections(db: Db, id?: string): Promise<ConnectionDetail[]>
 		.select({
 			clientId: mailConnections.clientId,
 			dailyLimit: mailConnections.dailyLimit,
+			disturbedCode: mailConnections.disturbedCode,
 			disturbedSince: mailConnections.disturbedSince,
 			hasWebhookSecret: sql<boolean>`${mailConnections.webhookSecretCiphertext} is not null`,
 			id: mailConnections.id,
@@ -128,6 +131,7 @@ async function listConnections(db: Db, actor: Principal): Promise<ConnectionSumm
 	const rows = await readConnections(db);
 	return rows.map((row) => ({
 		dailyLimit: row.dailyLimit,
+		disturbedCode: row.disturbedCode,
 		disturbedSince: row.disturbedSince,
 		id: row.id,
 		kind: row.kind,

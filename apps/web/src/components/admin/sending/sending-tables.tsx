@@ -7,9 +7,17 @@ import { linkClass } from '@/components/styles';
 import type { OverviewConnection, OverviewSender } from '@/functions/sending';
 import { useLocale, useT } from '@/i18n/use-t';
 import { formatClubDate } from '@/server/contacts/calendar';
+import { disturbanceReason } from '@/server/sending/disturbance';
 
 /** From how many days before the expiry of a secret the overview warns. */
 const SECRET_WARNING_DAYS = 30;
+
+/** What the overview says about a disturbance, by its reason. */
+const DISTURBANCE_STATES = {
+	credentials: 'sending.stateDisturbed',
+	domain: 'sending.stateDomainRefused',
+	mailbox: 'sending.stateMailboxRefused',
+} as const;
 
 const tableClass =
 	'w-full border-collapse outline-none data-focus-visible:outline-2 data-focus-visible:outline-blue-700';
@@ -26,8 +34,9 @@ interface State {
 }
 
 /**
- * What the overview says about a connection: disturbed, secret about to expire or expired,
- * restriction missing or not checkable; „In Ordnung“ when there is nothing to say.
+ * What the overview says about a connection: disturbed (credentials refused, or the mailbox or
+ * the domain), secret about to expire or expired, restriction missing or not checkable; „In
+ * Ordnung“ when there is nothing to say.
  *
  * @param connection The connection.
  * @param t The translation function.
@@ -43,7 +52,8 @@ function connectionStates(
 	if (connection.disturbedSince !== null) {
 		const since = new Date(connection.disturbedSince);
 		const date = formatClubDate(since, locale);
-		states.push({ isWarning: true, text: t('sending.stateDisturbed', { date }) });
+		const key = DISTURBANCE_STATES[disturbanceReason(connection.disturbedCode)];
+		states.push({ isWarning: true, text: t(key, { date }) });
 	}
 	const days = connection.secretDaysLeft;
 	if (days !== null && days <= SECRET_WARNING_DAYS) {

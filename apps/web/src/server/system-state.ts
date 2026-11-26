@@ -11,6 +11,7 @@ type StateKey =
 	| 'sending_warning_retry'
 	| 'setup_completed_at'
 	| 'setup_session_opened_at'
+	| 'stale_import_retry_at'
 	| 'stale_import_warned_at'
 	| 'tick_lock';
 
