@@ -162,6 +162,21 @@ async function setupCapturing(extraEnv: Readonly<Record<string, string>> = {}): 
 }
 
 /**
+ * A login link request to Better Auth's HTTP endpoint, as the login page sends it.
+ *
+ * @param email The address as sent by the client.
+ * @param ip The client address the proxy reports.
+ * @returns The request.
+ */
+function linkRequest(email: string, ip = '203.0.113.7'): Request {
+	return new Request(`${APP_URL}/api/auth/sign-in/magic-link`, {
+		body: JSON.stringify({ email }),
+		headers: { 'content-type': 'application/json', 'x-forwarded-for': ip },
+		method: 'POST',
+	});
+}
+
+/**
  * Requests a login link through Better Auth's HTTP endpoint, as the login page does.
  *
  * @param auth The auth instance.
@@ -169,13 +184,8 @@ async function setupCapturing(extraEnv: Readonly<Record<string, string>> = {}): 
  * @param ip The client address the proxy reports.
  * @returns The HTTP status of the response.
  */
-async function requestLinkOverHttp(auth: Auth, email: string, ip = '203.0.113.7'): Promise<number> {
-	const request = new Request(`${APP_URL}/api/auth/sign-in/magic-link`, {
-		body: JSON.stringify({ email }),
-		headers: { 'content-type': 'application/json', 'x-forwarded-for': ip },
-		method: 'POST',
-	});
-	const response = await handleAuthRequest(auth, request);
+async function requestLinkOverHttp(auth: Auth, email: string, ip?: string): Promise<number> {
+	const response = await handleAuthRequest(auth, linkRequest(email, ip));
 	// A delivery the request started has begun then, see `requestLink`.
 	await nextMacrotask();
 	return response.status;
@@ -510,6 +520,19 @@ describe('passwordless sign-in', () => {
 			expect(background).toHaveLength(1);
 			expect(attempted).toHaveLength(0);
 			await Promise.all(background);
+			expect(attempted).toMatchObject([{ to: 'anna@verein.de' }]);
+		});
+
+		it('starts the delivery only after the HTTP handler has answered', async () => {
+			const { delivered: attempted, mailer: recording } = fakeMailer(noDelivery);
+			const { auth, db } = await setup({ mailer: recording });
+			await insertUser(db, { email: 'anna@verein.de', name: 'Anna' });
+
+			const response = await handleAuthRequest(auth, linkRequest('anna@verein.de'));
+
+			expect(response.status).toBe(200);
+			expect(attempted).toHaveLength(0);
+			await nextMacrotask();
 			expect(attempted).toMatchObject([{ to: 'anna@verein.de' }]);
 		});
 

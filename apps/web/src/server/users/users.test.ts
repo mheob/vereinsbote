@@ -146,6 +146,52 @@ async function invitationOf(
 }
 
 /**
+ * The id of a user.
+ *
+ * @param db The database.
+ * @param email The normalized address.
+ * @returns The id.
+ */
+async function idOf(db: Db, email: string): Promise<string> {
+	const found = await findUserByEmail(db, email);
+	if (found === null) throw new Error(`No user ${email}.`);
+	return found.id;
+}
+
+/**
+ * A mailer whose first mail waits until it is released; later mails go at once.
+ *
+ * @returns The mailer, a promise that the first mail has started, its release and the mails.
+ */
+function slowFirstMailer(): {
+	mailer: SystemMailer;
+	started: Promise<null>;
+	release: () => void;
+	sent: string[];
+} {
+	const started = Promise.withResolvers<null>();
+	const gate = Promise.withResolvers<null>();
+	const sent: string[] = [];
+	const mailer: SystemMailer = {
+		prepare: vi.fn<SystemMailer['prepare']>(),
+		async send(mail) {
+			sent.push(mail.to);
+			if (sent.length > 1) return;
+			started.resolve(null);
+			await gate.promise;
+		},
+	};
+	return {
+		mailer,
+		release: () => {
+			gate.resolve(null);
+		},
+		sent,
+		started: started.promise,
+	};
+}
+
+/**
  * Invites Kim while the mail cannot be sent; the failure is logged and silenced here.
  *
  * @param db The database.
@@ -350,6 +396,21 @@ describe(resendInvitation, () => {
 			target: `user:${userId}`,
 		});
 		expect(JSON.stringify(entry)).not.toContain('@');
+	});
+
+	it('refuses a resend while the first invitation is still being sent', async () => {
+		const db = await createTestDb();
+		const a = await admin(db);
+		const slow = slowFirstMailer();
+		const invited = inviteUser(deps(db, slow.mailer), a, kimInvite);
+		await slow.started;
+
+		const resent = await resendInvitation(deps(db, slow.mailer), a, await idOf(db, 'kim@v.de'));
+		slow.release();
+		await invited;
+
+		expect(resent).toStrictEqual({ refused: 'tooSoon' });
+		expect(slow.sent).toStrictEqual(['kim@v.de']);
 	});
 
 	it('remembers a resend that failed again', async () => {

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test';
 
+import { LOGIN_CONFIRM_PATH } from '@/paths';
+
 import { BASE_SECURITY_HEADERS, headerRouteOf, securityHeadersFor } from './security-headers';
 import type { HeaderRoute } from './security-headers';
 
@@ -46,6 +48,15 @@ describe(securityHeadersFor, () => {
 		expect(headers['referrer-policy']).toBe(BASE_SECURITY_HEADERS['referrer-policy']);
 	});
 
+	it('keeps the token of a login link out of the referrers of the confirmation page', () => {
+		const headers = securityHeadersFor('loginConfirm', { https: true, nonce: 'abc' });
+		// Not `no-referrer`: a POST would then send `Origin: null`, and the CSRF check needs it.
+		expect(headers).toStrictEqual({
+			...securityHeadersFor('page', { https: true, nonce: 'abc' }),
+			'referrer-policy': 'strict-origin',
+		});
+	});
+
 	it('sandboxes images', () => {
 		const headers = securityHeadersFor('media', { https: true, nonce: 'abc' });
 		expect(headers['content-security-policy']).toBe("default-src 'none'; sandbox");
@@ -61,7 +72,14 @@ describe(headerRouteOf, () => {
 		['/', 'page'],
 		['/mediathek', 'page'],
 		['/preview-frame/x', 'page'],
+		['/login/confirm', 'loginConfirm'],
+		['/login', 'page'],
+		['/login/confirmed', 'page'],
 	])('routes %s to %s', (pathname, route) => {
 		expect(headerRouteOf(pathname)).toBe(route);
+	});
+
+	it('knows the path of the confirmation page that login links lead to', () => {
+		expect(headerRouteOf(LOGIN_CONFIRM_PATH)).toBe('loginConfirm');
 	});
 });

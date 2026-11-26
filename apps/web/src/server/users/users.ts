@@ -182,8 +182,10 @@ async function createInvitedUser(
 ): Promise<string> {
 	try {
 		return await db.transaction(async (tx) => {
+			// The time of the mail is stored before it goes, so a resend waits for it.
 			const { id } = await insertUser(tx, {
 				email: input.email,
+				invitationSent: true,
 				isAdmin: input.isAdmin,
 				locale: input.locale,
 				name: input.name.trim(),
@@ -204,26 +206,15 @@ async function createInvitedUser(
 }
 
 /**
- * Stores how the invitation mail of a user went.
+ * Stores whether the invitation mail of a user went out. Its time is stored before the mail goes
+ * (`createInvitedUser`, `claimInvitationResend`).
  *
  * @param db The database.
  * @param userId The user.
- * @param mail Whether it went out, and whether its time is stored already (a resend claims it).
- * @param mail.mailSent True when the mail went out.
- * @param mail.stampSentAt True to store now as the time of the mail.
+ * @param mailSent True when the mail went out.
  */
-async function recordInvitation(
-	db: Db,
-	userId: string,
-	{ mailSent, stampSentAt }: Readonly<{ mailSent: boolean; stampSentAt: boolean }>,
-): Promise<void> {
-	await db
-		.update(user)
-		.set({
-			invitationFailed: !mailSent,
-			...(stampSentAt ? { invitationSentAt: sql`now()` } : {}),
-		})
-		.where(eq(user.id, userId));
+async function recordInvitation(db: Db, userId: string, mailSent: boolean): Promise<void> {
+	await db.update(user).set({ invitationFailed: !mailSent }).where(eq(user.id, userId));
 }
 
 /**
@@ -252,7 +243,7 @@ async function inviteUser(
 		name: input.name.trim(),
 		to: normalizeEmail(input.email),
 	});
-	await recordInvitation(deps.db, userId, { mailSent, stampSentAt: true });
+	await recordInvitation(deps.db, userId, mailSent);
 	return { mailSent, userId };
 }
 
@@ -326,7 +317,7 @@ async function resendInvitation(
 		to: claimed.email,
 	});
 	await deps.db.transaction(async (tx) => {
-		await recordInvitation(tx, userId, { mailSent, stampSentAt: false });
+		await recordInvitation(tx, userId, mailSent);
 		await writeAudit(tx, {
 			action: 'user.invitation_resent',
 			actorUserId: actor.userId,

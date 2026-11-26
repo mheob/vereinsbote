@@ -30,7 +30,10 @@ async function createTemplate(): Promise<Blob> {
 const templateDump = await createTemplate();
 
 interface TestDbOptions {
-	/** Gets the SQL of every statement the database runs, e.g. to compare the statements of two calls. */
+	/**
+	 * Gets the SQL of every statement Drizzle runs, e.g. to compare the statements of two calls.
+	 * It does not see `BEGIN`/`COMMIT`: PGlite runs those itself inside `db.transaction`.
+	 */
 	readonly logQuery?: (query: string) => void;
 }
 
