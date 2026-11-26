@@ -16,6 +16,7 @@ export default defineConfig({
 	fullyParallel: false,
 	globalSetup: './e2e/global-setup.ts',
 	// One project per flow. `contacts` and `design` need the club that `fundament` sets up, so they run after it; `templates` needs the areas and the CD of those two.
+	// `sending` runs last: it sets the system sender, so from then on the app's mails go through the fake provider.
 	projects: [
 		{ name: 'fundament', testMatch: 'fundament.e2e.ts', use: { ...devices['Desktop Chrome'] } },
 		{
@@ -34,6 +35,12 @@ export default defineConfig({
 			dependencies: ['contacts', 'design'],
 			name: 'templates',
 			testMatch: 'templates.e2e.ts',
+			use: { ...devices['Desktop Chrome'] },
+		},
+		{
+			dependencies: ['templates'],
+			name: 'sending',
+			testMatch: 'sending.e2e.ts',
 			use: { ...devices['Desktop Chrome'] },
 		},
 	],
