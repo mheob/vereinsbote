@@ -255,8 +255,12 @@ function guardKeyLifetime(
 /**
  * Whether the entry's wave was stopped. The wave's row is read with a share lock: a stop in progress
  * (it updates the row) is waited for and then seen, so neither a take nor a stored outcome can slip
- * between a stop's cancellation and its end. Lock order: the entry first, then its wave; `stopWave`
- * cancels the entries before it marks the wave, so the two never wait for each other in a circle.
+ * between a stop's cancellation and its end. Lock order: a take (`claimEntry`) locks the entry
+ * first (`for update skip locked`), then reads its wave; `stopWave` cancels the planned entries
+ * before it marks the wave, the same order. `storeOutcome` reads the wave while PostgreSQL computes
+ * the new row, before the entry's row is locked, so it holds the wave first; but its entry is
+ * `sending`, which `stopWave` never locks (it cancels `planned` entries only), so neither waits for
+ * the other in a circle.
  */
 const waveStopped = sql`(select ${waves.stoppedAt} from ${waves} where ${waves.id} = ${outboxEntries.waveId} for share) is not null`;
 

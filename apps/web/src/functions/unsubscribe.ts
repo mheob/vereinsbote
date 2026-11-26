@@ -38,7 +38,11 @@ type UndoUnsubscribeResult = Readonly<{ ok: true }> | Readonly<{ ok: false; fail
 
 /** The longest token the server looks at; a token of a mail has at most 4096 characters. */
 const MAX_TOKEN_INPUT = 10_000;
-/** The longest undo value the server looks at; that of 180 contacts has about 11,000. */
+/**
+ * The longest undo value the server looks at. An unsubscribe opts out at most the contacts of one
+ * token: about 210 with the shortest `nr:` keys of both kinds, whose undo value has about 13,000
+ * characters (180 contacts: about 11,000).
+ */
 const MAX_UNDO_INPUT = 100_000;
 
 const pageRequest = z.object({ token: z.string().max(MAX_TOKEN_INPUT) });

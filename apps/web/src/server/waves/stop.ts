@@ -39,8 +39,9 @@ async function stopWave(db: Db, actor: Principal, waveId: string): Promise<{ can
 	if (wave === undefined) throw new WaveNotFoundError();
 	assertArea(actor, wave.areaId, 'send');
 	return db.transaction(async (tx) => {
-		// The entries first, then the wave: the outbox locks an entry before it reads its wave
-		// (`waveStopped` in `outbox.ts`), so the same order keeps the two from deadlocking.
+		// The entries first, then the wave: a take of the outbox locks an entry before it reads its wave
+		// (`waveStopped` in `outbox.ts`), so the same order keeps the two from deadlocking. A stored
+		// outcome reads the wave first, but of a `sending` entry, which this never locks.
 		const cancelled = await tx
 			.update(outboxEntries)
 			.set({ status: 'cancelled' })

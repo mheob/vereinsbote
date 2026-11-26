@@ -39,8 +39,9 @@ interface RecipientSelection {
 }
 
 /**
- * Why a selected contact gets no mail (Design 10.1): a suppression, a reached exit date, no
- * address, an address marked invalid, or an opt-out of the occasion or of its area.
+ * Why a selected contact gets no mail (Design 10.1), in the order `exclusionOf` checks them: a
+ * suppression, no address, a reached exit date, an address marked invalid, or an opt-out of the
+ * occasion or of its area.
  */
 type ExclusionReason =
 	| 'exited'
