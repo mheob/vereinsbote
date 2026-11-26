@@ -69,6 +69,13 @@ describe(editorPlaceholders, () => {
 		});
 	});
 
+	it('does not offer the unsubscribe link or the content of a layout', () => {
+		const offered = editorPlaceholders(new Set([...BASE_KEYS, 'unsubscribe.url', 'content']), []);
+		expect(offered.map(({ key }) => key)).toStrictEqual(
+			editorPlaceholders(new Set(BASE_KEYS), []).map(({ key }) => key),
+		);
+	});
+
 	it('offers a protected field only when the area may use it', () => {
 		const without = editorPlaceholders(new Set(BASE_KEYS), []);
 		expect(without.map(({ key }) => key)).not.toContain('contact.birthDate');

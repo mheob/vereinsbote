@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vite-plus/test';
 
 import { DEFAULT_BRAND } from '@/mail/brand/brand-schema';
 import { compileMail } from '@/mail/render/compile';
+import type { CompiledMail } from '@/mail/render/compile';
 import { fillMail } from '@/mail/render/fill';
 
 import { importHtml } from './import-html';
@@ -496,5 +497,146 @@ describe('the host of the app in other forms', () => {
 		expect(
 			run(`<img src="https://verein.example.org:8443/media/${FOREIGN}.png" alt="">`),
 		).toMatchObject({ ok: true });
+	});
+});
+
+/**
+ * Compiles an imported mail for an occasion with the unsubscribe link.
+ *
+ * @param html The cleaned HTML.
+ * @returns The compiled mail.
+ */
+async function compiledWithLink(html: string): Promise<CompiledMail> {
+	const compiled = await compileMail(
+		{ body: { html, kind: 'html' }, media: new Map(), preheader: '', subject: 'S' },
+		DEFAULT_BRAND,
+		ORIGIN,
+		'de',
+		{ unsubscribe: true },
+	);
+	if (!compiled.ok) throw new Error(JSON.stringify(compiled));
+	return compiled.mail;
+}
+
+/**
+ * Fills a compiled mail with an address for the unsubscribe link and expects success.
+ *
+ * @param compiled The compiled mail.
+ * @param address The address.
+ * @returns The HTML of the mail.
+ */
+function sentWithLink(compiled: Readonly<CompiledMail>, address: string): string {
+	const filled = fillMail(compiled, new Map([['unsubscribe.url', address]]));
+	if (!filled.ok) throw new Error(JSON.stringify(filled));
+	return filled.mail.html;
+}
+
+describe('allows {{unsubscribe.url}} only as a whole href without fallback', () => {
+	const LINK_KEYS = [...KEYS, 'unsubscribe.url'];
+	const WITH_LINK: ImportKind = {
+		...KIND,
+		allowed: { keys: new Set(LINK_KEYS), known: new Set([...LINK_KEYS, 'content']) },
+	};
+
+	/**
+	 * Imports a body inside a document of an area that allows the unsubscribe link.
+	 *
+	 * @param body The body.
+	 * @param head The head.
+	 * @returns The result.
+	 */
+	function runWithLink(body: string, head = ''): ReturnType<typeof importHtml> {
+		return importHtml(
+			`<html lang="de"><head>${head}</head><body>${body}</body></html>`,
+			WITH_LINK,
+			ORIGIN,
+		);
+	}
+
+	it.each([
+		['with a suffix (U1)', `<a href='{{unsubscribe.url}}/x'>x</a>`, 'placeholderInAttribute'],
+		[
+			'with a javascript suffix (U2)',
+			`<a href='{{unsubscribe.url}}javascript:alert(1)'>x</a>`,
+			'placeholderInAttribute',
+		],
+		[
+			'behind a prefix (U3)',
+			`<a href='https://evil.example/?u={{unsubscribe.url}}'>x</a>`,
+			'placeholderInAttribute',
+		],
+		[
+			'with a fallback (U4)',
+			`<a href='{{unsubscribe.url | "https://evil.example/"}}'>x</a>`,
+			'fallbackNotAllowed',
+		],
+		[
+			'with an empty fallback (U5)',
+			`<a href='{{unsubscribe.url | ""}}'>x</a>`,
+			'fallbackNotAllowed',
+		],
+		['in src (U6)', `<img src='{{unsubscribe.url}}' alt=''>`, 'placeholderInAttribute'],
+		[
+			'in a style attribute (U7)',
+			`<p style='background:url({{unsubscribe.url}})'>x</p>`,
+			'placeholderInAttribute',
+		],
+		[
+			'in a style sheet (U8)',
+			'<style>p{font-family:{{unsubscribe.url}}}</style>',
+			'placeholderInAttribute',
+		],
+		['in another attribute (U9)', `<p title='{{unsubscribe.url}}'>x</p>`, 'placeholderInAttribute'],
+	])('refuses it %s', (_name, body, kind) => {
+		expect(refusalsOf(runWithLink(body)).map((refusal) => refusal.kind)).toContain(kind);
+	});
+
+	it('refuses it in the title (U10)', () => {
+		expect(
+			refusalsOf(runWithLink('<p>x</p>', '<title>{{unsubscribe.url}}</title>')),
+		).toContainEqual({
+			attribute: 'title',
+			key: 'unsubscribe.url',
+			kind: 'placeholderInAttribute',
+		});
+	});
+
+	it('refuses it in a conditional comment (U11)', () => {
+		expect(
+			refusalsOf(runWithLink(`<!--[if mso]><a href='{{unsubscribe.url}}'>x</a><![endif]-->`)),
+		).toContainEqual({ key: 'unsubscribe.url', kind: 'placeholderInComment' });
+	});
+
+	it('refuses it where the area does not allow it (U12)', () => {
+		expect(refusalsOf(run(`<a href='{{unsubscribe.url}}'>x</a>`))).not.toStrictEqual([]);
+	});
+
+	it('takes it as the whole href of a link', () => {
+		expect(htmlOf(runWithLink(`<a href=' {{unsubscribe.url}} '>Abmelden</a>`))).toContain(
+			`<a href='{{unsubscribe.url}}'>Abmelden</a>`,
+		);
+	});
+
+	it('refuses a value that is no web address when the mail is filled (U13)', async () => {
+		const compiled = await compiledWithLink(
+			htmlOf(runWithLink(`<p><a href='{{unsubscribe.url}}'>Abmelden</a></p>`)),
+		);
+		// oxlint-disable-next-line no-script-url -- the scheme the link must refuse
+		expect(fillMail(compiled, new Map([['unsubscribe.url', 'javascript:alert(1)']]))).toStrictEqual(
+			{ missing: ['unsubscribe.url'], ok: false },
+		);
+	});
+
+	it.each([
+		`https://x.example/'><img src=x onerror=alert(1)>`,
+		`https://x.example/"><script>alert(1)</script>`,
+	])('keeps the value %j inside its attribute in the sent mail (U14)', async (value) => {
+		const compiled = await compiledWithLink(
+			htmlOf(runWithLink(`<p><a href='{{unsubscribe.url}}'>Abmelden</a></p>`)),
+		);
+		const html = sentWithLink(compiled, value);
+		expect(findUnsafe(html)).toStrictEqual([]);
+		expect(html).not.toMatch(/<script|<img/u);
+		expect(html.split('<a ')).toHaveLength(2);
 	});
 });

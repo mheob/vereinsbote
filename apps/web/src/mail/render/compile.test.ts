@@ -531,3 +531,125 @@ describe(compileMail, () => {
 		expect(mail.html).not.toContain('<img');
 	});
 });
+
+/**
+ * Compiles a source for an occasion with the unsubscribe link and expects success.
+ *
+ * @param mail The source.
+ * @param locale The language of the layout.
+ * @returns The compiled mail.
+ */
+async function compiledWithLink(
+	mail: Readonly<MailSource>,
+	locale: Locale = 'de',
+): Promise<CompiledMail> {
+	const result = await compileMail(mail, DEFAULT_BRAND, ORIGIN, locale, { unsubscribe: true });
+	if (!result.ok) throw new Error(`compile failed: ${JSON.stringify(result)}`);
+	return result.mail;
+}
+
+/**
+ * A source of blocks in an HTML layout.
+ *
+ * @param layout The HTML of the layout.
+ * @returns The source.
+ */
+const inLayout = (layout: string): MailSource =>
+	source([], {
+		body: { blocks: [GREETING], kind: 'blocks', layout: { html: layout, kind: 'html' } },
+	});
+
+describe('the unsubscribe link', () => {
+	const UNSUBSCRIBE_URL = 'https://verein.example/unsubscribe/abc';
+	const WITH_LINK = new Map([...ANNA, ['unsubscribe.url', UNSUBSCRIBE_URL]]);
+	const FOOTER_LINK =
+		/<a href="https:\/\/verein\.example\/unsubscribe\/abc" style="[^"]*">Abmelden<\/a>/u;
+	const APPENDED_LINE =
+		/<p style="[^"]*"><a href="https:\/\/verein\.example\/unsubscribe\/abc" style="[^"]*">Abmelden<\/a><\/p>/u;
+	const LINK_IN_HTML = `<p><a href='{{unsubscribe.url}}'>Hier abmelden</a></p>`;
+	const LINK_IN_BLOCK = paragraph(placeholder('unsubscribe.url'));
+
+	it('adds the unsubscribe link to the standard footer when asked', async () => {
+		const mail = fillOrThrow(await compiledWithLink(source([GREETING])), WITH_LINK);
+		expect(mail.html).toMatch(FOOTER_LINK);
+		expect(mail.text.endsWith(`Abmelden ${UNSUBSCRIBE_URL}`)).toBe(true);
+		const english = fillOrThrow(await compiledWithLink(source([GREETING]), 'en'), WITH_LINK);
+		expect(english.html).toContain('>Unsubscribe</a>');
+	});
+
+	it('leaves the standard footer without the link unless asked', async () => {
+		const mail = await filled(source([GREETING]), WITH_LINK);
+		expect(mail.html).not.toContain('Abmelden');
+		expect(mail.html).not.toContain(UNSUBSCRIBE_URL);
+	});
+
+	it('appends an unsubscribe line to imported html without the placeholder', async () => {
+		const html = '<html><head></head><body><p>Hallo {{contact.firstName}}</p></body></html>';
+		const mail = fillOrThrow(
+			await compiledWithLink(source([], { body: { html, kind: 'html' } })),
+			WITH_LINK,
+		);
+		expect(mail.html).toMatch(/^<html><head><\/head><body><p>Hallo Anna<\/p><p /u);
+		expect(mail.html).toMatch(new RegExp(`${APPENDED_LINE.source}</body></html>$`, 'u'));
+		expect(mail.text).toBe(`Hallo Anna\n\nAbmelden ${UNSUBSCRIBE_URL}`);
+	});
+
+	it('appends the line to an HTML layout without the placeholder, and to HTML without a body', async () => {
+		const layout = fillOrThrow(
+			await compiledWithLink(inLayout('<html><body><p>Kopf</p>{{content}}</body></html>')),
+			WITH_LINK,
+		);
+		expect(layout.html).toMatch(new RegExp(`${APPENDED_LINE.source}</body></html>$`, 'u'));
+		expect(layout.text.endsWith(`Abmelden ${UNSUBSCRIBE_URL}`)).toBe(true);
+		const bare = fillOrThrow(
+			await compiledWithLink(source([], { body: { html: '<p>Hallo</p>', kind: 'html' } })),
+			WITH_LINK,
+		);
+		expect(bare.html).toMatch(new RegExp(`^<p>Hallo</p>${APPENDED_LINE.source}$`, 'u'));
+	});
+
+	it('puts the link where imported html places {{unsubscribe.url}}', async () => {
+		const html = `<html><body>${LINK_IN_HTML}</body></html>`;
+		const mail = fillOrThrow(
+			await compiledWithLink(source([], { body: { html, kind: 'html' } })),
+			WITH_LINK,
+		);
+		expect(mail.html).toBe(
+			`<html><body><p><a href='${UNSUBSCRIBE_URL}'>Hier abmelden</a></p></body></html>`,
+		);
+		expect(mail.text).toBe(`Hier abmelden ${UNSUBSCRIBE_URL}`);
+		const layout = fillOrThrow(
+			await compiledWithLink(inLayout(`<html><body>{{content}}${LINK_IN_HTML}</body></html>`)),
+			WITH_LINK,
+		);
+		expect(layout.html).not.toContain('>Abmelden</a>');
+		expect(layout.html.split(UNSUBSCRIBE_URL)).toHaveLength(2);
+	});
+
+	it('needs a web address for the link and escapes it for its attribute', async () => {
+		const mail = await compiledWithLink(
+			source([], { body: { html: LINK_IN_HTML, kind: 'html' }, subject: 'Abmelden' }),
+		);
+		expect(fillMail(mail, ANNA)).toStrictEqual({ missing: ['unsubscribe.url'], ok: false });
+		// oxlint-disable-next-line no-script-url -- a scheme the link must refuse
+		for (const value of ['javascript:alert(1)', 'data:text/html,x', '/unsubscribe/abc', ' ']) {
+			expect(fillMail(mail, new Map([['unsubscribe.url', value]]))).toStrictEqual({
+				missing: ['unsubscribe.url'],
+				ok: false,
+			});
+		}
+		const hostile = `https://verein.example/u?a=1&b='"><script>alert(1)</script>`;
+		expect(fillOrThrow(mail, new Map([['unsubscribe.url', hostile]])).html).toBe(
+			`<p><a href='https://verein.example/u?a=1&amp;b=&#39;&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;'>Hier abmelden</a></p>`,
+		);
+	});
+
+	it.each([
+		['imported html', source([], { body: { html: LINK_IN_HTML, kind: 'html' } })],
+		['an HTML layout', inLayout(`{{content}}${LINK_IN_HTML}`)],
+		['a block', source([LINK_IN_BLOCK])],
+		['the subject', source([], { subject: 'Abmelden: {{unsubscribe.url}}' })],
+	])('refuses {{unsubscribe.url}} when the occasion allows no link (%s)', async (_name, mail) => {
+		await expect(compile(mail)).resolves.toStrictEqual({ invalid: 'unsubscribe', ok: false });
+	});
+});

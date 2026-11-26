@@ -6,3 +6,6 @@ export const LOGIN_CONFIRM_PATH = '/login/confirm';
 
 /** Where a successful sign-in leads. */
 export const AFTER_SIGN_IN_PATH = '/';
+
+/** Where the unsubscribe link of a test mail and of a preview leads: a page that changes nothing. */
+export const TEST_UNSUBSCRIBE_PATH = '/unsubscribe/test';

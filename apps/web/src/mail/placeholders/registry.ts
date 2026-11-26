@@ -1,6 +1,8 @@
 /*
  * The placeholders a template can use besides the custom fields of a contact. The editor offers
- * them, the server checks every saved text against them.
+ * them, the server checks every saved text against them. `unsubscribe.url` is the one value that
+ * is neither contact data nor a brand value: the outbox sets it per mail, and only for an occasion
+ * with the unsubscribe link (`compileMail` with `{ unsubscribe: true }`).
  */
 import type { MessageKey } from '@/i18n/translate';
 import type { FieldKey } from '@/server/contacts/fields';
@@ -15,7 +17,11 @@ interface PlaceholderDefinition {
 	field: FieldKey | null;
 	/** Whether the value is a base field (always delivered). */
 	base: boolean;
-	/** `attribute`: usable in attributes and `<style>` too; contact data is never. */
+	/**
+	 * `attribute`: usable outside text as well; contact data is never. The HTML import says where:
+	 * a brand value in the attributes and `<style>` that fit it, `unsubscribe.url` only as a whole
+	 * `href`.
+	 */
 	context: 'text' | 'attribute';
 }
 
@@ -24,6 +30,8 @@ type LabelSuffix<Key> = Key extends `mail.placeholder.${infer Suffix}` ? Suffix 
 
 const CONTENT_KEY = 'content';
 const SALUTATION_KEY = 'salutation';
+/** The address of the unsubscribe link; its value comes from the outbox, never from a contact. */
+const UNSUBSCRIBE_URL_KEY = 'unsubscribe.url';
 
 /**
  * Defines a placeholder whose label key is `mail.placeholder.<key>`.
@@ -81,6 +89,7 @@ const BUILTIN_PLACEHOLDERS: readonly PlaceholderDefinition[] = [
 	define('brand.logoUrl', 'brand', { context: 'attribute' }),
 	define('brand.footerLogoUrl', 'brand', { context: 'attribute' }),
 	define('content', 'layout'),
+	define('unsubscribe.url', 'layout', { context: 'attribute' }),
 ];
 
 /**
@@ -93,5 +102,11 @@ function customPlaceholderKey(placeholderKey: string): string {
 	return `contact.custom.${placeholderKey}`;
 }
 
-export { BUILTIN_PLACEHOLDERS, CONTENT_KEY, customPlaceholderKey, SALUTATION_KEY };
+export {
+	BUILTIN_PLACEHOLDERS,
+	CONTENT_KEY,
+	customPlaceholderKey,
+	SALUTATION_KEY,
+	UNSUBSCRIBE_URL_KEY,
+};
 export type { PlaceholderDefinition, PlaceholderGroup };

@@ -3,12 +3,19 @@
  * that sends the mails (`@/mail/render`). The renderer and the stream polyfill load only in the
  * browser, when a preview is first asked for: the server render of a page that shows the
  * preview never touches them.
+ *
+ * A template is not tied to an occasion, so the preview compiles without the unsubscribe link,
+ * unless the template places `{{unsubscribe.url}}` itself: then it shows that link, leading to the
+ * page of test mails, which changes nothing.
  */
 import { useEffect, useState } from 'react';
 
+import { DEFAULT_LOCALE } from '@/i18n/locale';
 import type { Brand } from '@/mail/brand/brand-schema';
-import type { MailSource } from '@/mail/render/compile';
+import { UNSUBSCRIBE_URL_KEY } from '@/mail/placeholders/registry';
+import type { CompileResult, MailSource } from '@/mail/render/compile';
 import type { FilledMail } from '@/mail/render/fill';
+import { TEST_UNSUBSCRIBE_PATH } from '@/paths';
 
 type PreviewState =
 	| { readonly kind: 'pending' }
@@ -42,13 +49,19 @@ async function computePreview(
 		import('@/mail/render/fill'),
 	]);
 	await ensureReadableByteStreams();
-	const compiled = await compileMail(source, brand, appOrigin);
+	const plain = await compileMail(source, brand, appOrigin);
+	// Refused only because the template places the unsubscribe link: show it with the link.
+	const compiled: CompileResult =
+		!plain.ok && 'invalid' in plain && plain.invalid === 'unsubscribe'
+			? await compileMail(source, brand, appOrigin, DEFAULT_LOCALE, { unsubscribe: true })
+			: plain;
 	if (!compiled.ok) {
 		return 'missingBrand' in compiled
 			? { brand: true, keys: compiled.missingBrand, kind: 'missing' }
 			: { kind: 'invalid' };
 	}
-	const filled = fillMail(compiled.mail, values);
+	const testLink = `${new URL(appOrigin).origin}${TEST_UNSUBSCRIBE_PATH}`;
+	const filled = fillMail(compiled.mail, new Map([...values, [UNSUBSCRIBE_URL_KEY, testLink]]));
 	return filled.ok
 		? { kind: 'ready', mail: filled.mail }
 		: { brand: false, keys: filled.missing, kind: 'missing' };

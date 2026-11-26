@@ -73,6 +73,7 @@ const FULL_BRAND: Brand = {
  * @param options.brand The brand; the default brand unless given.
  * @param options.contact The contact; the female sample unless given.
  * @param options.salutation The salutation texts; the Du form unless given.
+ * @param options.unsubscribe The address of the unsubscribe link; none unless given.
  * @returns The filled mail.
  */
 async function renderSample(
@@ -81,6 +82,7 @@ async function renderSample(
 		brand?: Brand;
 		contact?: ContactValueSource;
 		salutation?: SalutationTexts;
+		unsubscribe?: string;
 	}> = {},
 ): Promise<FilledMail> {
 	const source: MailSource = {
@@ -89,7 +91,9 @@ async function renderSample(
 		preheader: 'Alles zum Sommerfest, {{contact.firstName | ""}}',
 		subject: 'Sommerfest für {{contact.displayName}}',
 	};
-	const compiled = await compileMail(source, options.brand ?? DEFAULT_BRAND, ORIGIN);
+	const compiled = await compileMail(source, options.brand ?? DEFAULT_BRAND, ORIGIN, 'de', {
+		unsubscribe: options.unsubscribe !== undefined,
+	});
 	if (!compiled.ok) throw new Error(`compile failed: ${JSON.stringify(compiled)}`);
 	const values = contactPlaceholderValues(
 		options.contact ?? SAMPLE_CONTACTS.female,
@@ -97,6 +101,7 @@ async function renderSample(
 		[],
 		options.salutation ?? DEFAULT_SALUTATIONS.du,
 	);
+	if (options.unsubscribe !== undefined) values.set('unsubscribe.url', options.unsubscribe);
 	const result = fillMail(compiled.mail, values);
 	if (!result.ok) throw new Error(`fill failed: ${result.missing.join(', ')}`);
 	return result.mail;
@@ -196,6 +201,16 @@ describe('the rendered mails', () => {
 				`src="${ORIGIN}/media/${FOOTER_LOGO_ID}.png"`,
 			]),
 		).toStrictEqual([]);
+		expect(lines(mail.html)).toMatchSnapshot('html');
+		expect(mail.text).toMatchSnapshot('text');
+	});
+
+	it('render the unsubscribe link at the end of the footer of the full brand', async () => {
+		const unsubscribe = `${ORIGIN}/unsubscribe/token`;
+		const mail = await renderSample(SAMPLE_BLOCKS, { brand: FULL_BRAND, unsubscribe });
+		expect(problems(mail)).toStrictEqual([]);
+		expect(missingIn(mail.html, [`href="${unsubscribe}"`, '>Abmelden</a>'])).toStrictEqual([]);
+		expect(mail.text.endsWith(`Abmelden ${unsubscribe}`)).toBe(true);
 		expect(lines(mail.html)).toMatchSnapshot('html');
 		expect(mail.text).toMatchSnapshot('text');
 	});

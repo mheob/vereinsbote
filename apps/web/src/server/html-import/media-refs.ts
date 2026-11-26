@@ -4,11 +4,14 @@
  * `https:`, `http:` and the app's `/media/<file>` paths, which are written back as the relative
  * path whichever form they came in (a stored mail is the same on every origin; `compileMail`
  * gives it the origin when it renders). Nothing else survives: not `javascript:`, not `data:`,
- * not a protocol-relative URL, not a relative path that is no image of the app.
+ * not a protocol-relative URL, not a relative path that is no image of the app. A placeholder
+ * stands only as the whole value: an address brand value in either, `{{unsubscribe.url}}` in
+ * `href` only.
  */
 import type { Nodes } from 'hast';
 import { fromHtml } from 'hast-util-from-html';
 
+import { UNSUBSCRIBE_URL_KEY } from '@/mail/placeholders/registry';
 import type { PlaceholderRef } from '@/mail/placeholders/syntax';
 import { parseMediaFileName } from '@/server/media/ids';
 
@@ -37,6 +40,11 @@ const URL_BRAND_KEYS: ReadonlySet<string> = new Set([
 	'brand.logoUrl',
 	'brand.footerLogoUrl',
 ]);
+/**
+ * Addresses the app puts in per mail (Design 12): only as the whole value of an `href`. The fill
+ * step takes only an `http:` or `https:` address for them.
+ */
+const URL_SLOT_KEYS: ReadonlySet<string> = new Set([UNSUBSCRIBE_URL_KEY]);
 const MEDIA_PREFIX = '/media/';
 const CONDITIONAL_END = '<![endif]';
 const CONDITIONAL_TAIL = ']>';
@@ -192,15 +200,18 @@ function judgePlainUrl(url: string, context: UrlContext): UrlVerdict {
 
 /**
  * Whether a value that starts with a placeholder may stay: its value comes from the brand when
- * the mail is compiled (the brand schema allows `https:` and `mailto:` addresses only), so only an
- * address brand value may stand there. The placeholder is the whole value and has no fallback;
+ * the mail is compiled (the brand schema allows `https:` and `mailto:` addresses only), or for
+ * `{{unsubscribe.url}}` in an `href` from the outbox (an `http:` or `https:` address of the app),
+ * so only these may stand there. The placeholder is the whole value and has no fallback;
  * `placeholders.ts` makes sure of that.
  *
  * @param ref The placeholder the value starts with.
+ * @param attribute `href` or `src`.
  * @returns Whether the value may stay.
  */
-function leadingPlaceholderFits(ref: Readonly<PlaceholderRef>): boolean {
-	return URL_BRAND_KEYS.has(ref.key) && ref.fallback === null;
+function leadingPlaceholderFits(ref: Readonly<PlaceholderRef>, attribute: UrlAttribute): boolean {
+	if (ref.fallback !== null) return false;
+	return URL_BRAND_KEYS.has(ref.key) || (attribute === 'href' && URL_SLOT_KEYS.has(ref.key));
 }
 
 /**
@@ -219,7 +230,7 @@ function judgeUrl(
 	const url = readUrl(value);
 	if (url === '') return DROP;
 	if (leading === null) return judgePlainUrl(url, context);
-	return leadingPlaceholderFits(leading) ? { kind: 'keep', value: url } : DROP;
+	return leadingPlaceholderFits(leading, context.attribute) ? { kind: 'keep', value: url } : DROP;
 }
 
 /**
@@ -288,5 +299,13 @@ function swapHtmlMediaIds(html: string, copies: ReadonlyMap<string, string>): st
 	return result;
 }
 
-export { classifyAppUrl, htmlMediaIds, judgeUrl, readUrl, swapHtmlMediaIds, URL_BRAND_KEYS };
+export {
+	classifyAppUrl,
+	htmlMediaIds,
+	judgeUrl,
+	readUrl,
+	swapHtmlMediaIds,
+	URL_BRAND_KEYS,
+	URL_SLOT_KEYS,
+};
 export type { AppUrl, UrlAttribute, UrlContext, UrlVerdict };

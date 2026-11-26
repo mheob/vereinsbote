@@ -11,6 +11,7 @@ import { submitTemplate } from '@/functions/templates';
 import type { SaveTemplateResult, TemplateEditorPage } from '@/functions/templates';
 import { useT } from '@/i18n/use-t';
 import { blockWarnings } from '@/mail/checks/block-checks';
+import { mailSourceOf } from '@/mail/templates/mail-source';
 import type { SaveProblem } from '@/server/templates/save-checks';
 
 import { BlockPane } from './block-pane';
@@ -21,7 +22,6 @@ import type { EditorTab } from './editor-layout';
 import { useEditorModel } from './editor-model';
 import type { SavedHandler } from './editor-model';
 import { PreviewPanel } from './preview-panel';
-import { previewSource } from './preview-source';
 import { indexProblems, problemDescriber } from './problems';
 import type { ProblemPlace } from './problems';
 import { SettingsPanel } from './settings-panel';
@@ -220,7 +220,7 @@ export function TemplateEditor({
 
 	const warnings = useMemo(() => blockWarnings(blocks), [blocks]);
 	const source = useMemo(
-		() => previewSource(state.input, page.layouts, model.media),
+		() => mailSourceOf(state.input, page.layouts, model.media),
 		[model.media, page.layouts, state.input],
 	);
 	// Who saved last is known from the load; after a save here it would name the previous editor.
