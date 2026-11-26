@@ -86,6 +86,7 @@ export const Route = createFileRoute('/admin/sending/senders/$senderId')({
 						announce={announce}
 						id={sender.id}
 						isDisabled={false}
+						isSystem={sender.isSystem}
 						kind="sender"
 						name={sender.email}
 						onDeleted={onDeleted}

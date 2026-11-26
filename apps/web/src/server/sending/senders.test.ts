@@ -14,6 +14,7 @@ import {
 	SenderNotFoundError,
 } from './errors';
 import {
+	clearSystemSender,
 	createSender,
 	deleteSender,
 	listSenders,
@@ -50,6 +51,16 @@ describe('sender management', () => {
 		await expect(updateSender(db, editor, id, input, 1)).rejects.toThrow(ForbiddenError);
 		await expect(deleteSender(db, editor, id)).rejects.toThrow(ForbiddenError);
 		await expect(setSystemSender(db, editor, id)).rejects.toThrow(ForbiddenError);
+	});
+
+	it('lets only admins take the system mark', async () => {
+		const db = await createTestDb();
+		const { admin, membersAreaId } = await setUpClub(db);
+		const editor = await userWith(db, { [membersAreaId]: 'send' });
+		const connectionId = await graphConnection(db, admin);
+		const id = await senderOn(db, admin, connectionId, 'verein@example.org');
+		await setSystemSender(db, admin, id);
+		await expect(clearSystemSender(db, editor, id)).rejects.toThrow(ForbiddenError);
 	});
 
 	it('releases a sender to areas and lists it per area', async () => {
@@ -148,12 +159,29 @@ describe('sender management', () => {
 		const connectionId = await graphConnection(db, admin);
 		const first = await senderOn(db, admin, connectionId, 'first@example.org');
 		await setSystemSender(db, admin, first);
-		await setSystemSender(db, admin, null);
+		await clearSystemSender(db, admin, first);
 		const entries = await db.select().from(auditLog);
 		const logged = entries.filter((entry) => entry.action === 'sender.system_set');
 		const listed = await listSenders(db, admin);
 		expect(listed.some((sender) => sender.isSystem)).toBe(false);
 		expect(logged).toHaveLength(2);
+	});
+
+	it('clears the mark only while the sender still holds it, as on a stale page', async () => {
+		const db = await createTestDb();
+		const { admin } = await setUpClub(db);
+		const connectionId = await graphConnection(db, admin);
+		const first = await senderOn(db, admin, connectionId, 'first@example.org');
+		const second = await senderOn(db, admin, connectionId, 'second@example.org');
+		await setSystemSender(db, admin, first);
+		// Another tab made the second one the system sender in the meantime.
+		await setSystemSender(db, admin, second);
+		await expect(clearSystemSender(db, admin, first)).rejects.toThrow(SenderChangedError);
+		await expect(clearSystemSender(db, admin, UNKNOWN_ID)).rejects.toThrow(SenderNotFoundError);
+		const listed = await listSenders(db, admin);
+		expect(listed.filter((sender) => sender.isSystem).map((sender) => sender.id)).toStrictEqual([
+			second,
+		]);
 	});
 
 	it('refuses an unknown system sender and keeps the one that is set', async () => {

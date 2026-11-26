@@ -1,8 +1,11 @@
+import { eq } from 'drizzle-orm';
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { z } from 'zod';
 
 import { setUpClub } from '@/server/contacts/testing';
+import { encryptSecret, secretAad } from '@/server/crypto/secrets';
 import type { Db } from '@/server/db/client';
+import { mailConnections } from '@/server/db/schema';
 import { createTestDb } from '@/server/db/test-db';
 import { parseEnv } from '@/server/env';
 import type { Env } from '@/server/env';
@@ -10,8 +13,9 @@ import { errorLabel } from '@/server/error-label';
 import type { SmtpMail } from '@/server/mail/smtp-transport';
 
 import { quotaToday } from './quota';
-import { createSender, setSystemSender } from './senders';
+import { clearSystemSender, createSender, setSystemSender } from './senders';
 import {
+	checkSystemSender,
 	createSystemMailer,
 	hasSystemSender,
 	MailerNotConfiguredError,
@@ -34,7 +38,9 @@ vi.mock(import('@/server/mail/smtp-transport'), async (importOriginal) => ({
 }));
 
 const NOW = new Date('2026-11-25T10:00:00Z');
+const HTTP_UNAUTHORIZED = 401;
 const HTTP_FORBIDDEN = 403;
+const HTTP_UNAVAILABLE = 503;
 const LINK = 'https://bote.example.org/login';
 
 /** The part of Graph's JSON body a test reads. */
@@ -98,6 +104,32 @@ async function addGraphSystemSender(db: Db): Promise<string> {
 async function graphSystemSender(): Promise<{ db: Db; senderId: string }> {
 	const db = await createTestDb();
 	return { db, senderId: await addGraphSystemSender(db) };
+}
+
+/**
+ * The disturbance of the only connection.
+ *
+ * @param db The test database.
+ * @returns Since when and why it is disturbed.
+ */
+async function disturbanceOf(db: Db): Promise<{ code: string | null; since: Date | null }> {
+	const [row] = await db
+		.select({ code: mailConnections.disturbedCode, since: mailConnections.disturbedSince })
+		.from(mailConnections);
+	return row ?? { code: null, since: null };
+}
+
+/**
+ * The id of the only connection.
+ *
+ * @param db The test database.
+ * @returns The id.
+ * @throws {Error} Without a connection.
+ */
+async function onlyConnectionId(db: Db): Promise<string> {
+	const [row] = await db.select({ id: mailConnections.id }).from(mailConnections);
+	if (row === undefined) throw new Error('no connection');
+	return row.id;
 }
 
 /** The ways a system mail can go: the system sender, `DEV_SMTP_URL`, or none at all. */
@@ -280,6 +312,93 @@ describe(createSystemMailer, () => {
 		expect(errorLabel(failure)).toMatch(/^graph\./u);
 	});
 
+	it.each([
+		[{ token: HTTP_UNAUTHORIZED }, 'graph.unauthorized'],
+		[{ send: HTTP_FORBIDDEN }, 'graph.mailbox'],
+	])(
+		'marks the connection disturbed when the provider refuses the credentials (%o)',
+		async (behavior, code) => {
+			const { db } = await graphSystemSender();
+			const providers = fakeProviders(behavior);
+			const mailer = createSystemMailer({
+				db,
+				env: testEnv(),
+				fetch: providers.fetch,
+				now: () => NOW,
+			});
+
+			await expect(mailer.send(MAIL)).rejects.toBeInstanceOf(SystemMailNotSentError);
+
+			await expect(disturbanceOf(db)).resolves.toStrictEqual({ code, since: NOW });
+		},
+	);
+
+	it('leaves the connection alone when the provider fails for another reason', async () => {
+		const { db } = await graphSystemSender();
+		const providers = fakeProviders({ send: HTTP_UNAVAILABLE });
+		const mailer = createSystemMailer({
+			db,
+			env: testEnv(),
+			fetch: providers.fetch,
+			now: () => NOW,
+		});
+
+		await expect(mailer.send(MAIL)).rejects.toBeInstanceOf(SystemMailNotSentError);
+
+		await expect(disturbanceOf(db)).resolves.toStrictEqual({ code: null, since: null });
+	});
+
+	it('marks the connection disturbed when its secret does not decrypt', async () => {
+		const { db } = await graphSystemSender();
+		const id = await onlyConnectionId(db);
+		const otherKey = await crypto.subtle.importKey(
+			'raw',
+			new Uint8Array(32).fill(9),
+			'AES-GCM',
+			false,
+			['encrypt'],
+		);
+		const foreign = await encryptSecret(
+			'graph-client-secret-1',
+			otherKey,
+			secretAad('mail_connections', id, 'secret_ciphertext'),
+		);
+		await db
+			.update(mailConnections)
+			.set({ secretCiphertext: foreign })
+			.where(eq(mailConnections.id, id));
+		const mailer = createSystemMailer({
+			db,
+			env: testEnv(),
+			fetch: fakeProviders().fetch,
+			now: () => NOW,
+		});
+
+		await expect(mailer.send(MAIL)).rejects.toThrow();
+
+		await expect(disturbanceOf(db)).resolves.toStrictEqual({
+			code: 'outbox.credentials',
+			since: NOW,
+		});
+	});
+
+	it('touches no database when a delivery after the response is refused', async () => {
+		const { db } = await graphSystemSender();
+		const request = endable(db);
+		const providers = fakeProviders({ token: HTTP_UNAUTHORIZED });
+		const mailer = createSystemMailer({
+			db: request.db,
+			env: testEnv(),
+			fetch: providers.fetch,
+			now: () => NOW,
+		});
+
+		const delivery = await mailer.prepare(MAIL);
+		request.end();
+
+		await expect(delivery?.()).rejects.toBeInstanceOf(SystemMailNotSentError);
+	});
+
 	it('uses DEV_SMTP_URL when no system sender exists', async () => {
 		const db = await createTestDb();
 		smtp.sent.length = 0;
@@ -315,6 +434,44 @@ describe(createSystemMailer, () => {
 	});
 });
 
+describe(checkSystemSender, () => {
+	it('marks a graph system sender whose token is refused, and clears it once a token comes', async () => {
+		const { db } = await graphSystemSender();
+		const deps = { fetch: fakeProviders({ token: HTTP_UNAUTHORIZED }).fetch, now: () => NOW };
+
+		await checkSystemSender(db, testEnv(), deps);
+		const refused = await disturbanceOf(db);
+		await checkSystemSender(db, testEnv(), { ...deps, fetch: fakeProviders().fetch });
+
+		expect(refused).toStrictEqual({ code: 'graph.unauthorized', since: NOW });
+		await expect(disturbanceOf(db)).resolves.toStrictEqual({ code: null, since: null });
+	});
+
+	it('keeps a refused mailbox, which a token cannot disprove', async () => {
+		const { db } = await graphSystemSender();
+		await db.update(mailConnections).set({ disturbedCode: 'graph.mailbox', disturbedSince: NOW });
+		const providers = fakeProviders();
+
+		await checkSystemSender(db, testEnv(), { fetch: providers.fetch, now: () => NOW });
+
+		await expect(disturbanceOf(db)).resolves.toStrictEqual({ code: 'graph.mailbox', since: NOW });
+		expect(providers.calls).toStrictEqual([]);
+	});
+
+	it('fetches nothing without a system sender or for resend', async () => {
+		const db = await createTestDb();
+		const { admin } = await setUpClub(db);
+		const providers = fakeProviders();
+		await checkSystemSender(db, testEnv(), { fetch: providers.fetch, now: () => NOW });
+		const connectionId = await resendConnection(db, admin);
+		await setSystemSender(db, admin, await senderOn(db, admin, connectionId, 'verein@example.org'));
+		await checkSystemSender(db, testEnv(), { fetch: providers.fetch, now: () => NOW });
+
+		expect(providers.calls).toStrictEqual([]);
+		await expect(disturbanceOf(db)).resolves.toStrictEqual({ code: null, since: null });
+	});
+});
+
 describe(hasSystemSender, () => {
 	it('tells whether a sender sends the system mails', async () => {
 		const db = await createTestDb();
@@ -325,7 +482,7 @@ describe(hasSystemSender, () => {
 		await expect(hasSystemSender(db)).resolves.toBe(false);
 		await setSystemSender(db, admin, senderId);
 		await expect(hasSystemSender(db)).resolves.toBe(true);
-		await setSystemSender(db, admin, null);
+		await clearSystemSender(db, admin, senderId);
 		await expect(hasSystemSender(db)).resolves.toBe(false);
 	});
 });

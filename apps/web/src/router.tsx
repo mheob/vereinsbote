@@ -20,11 +20,11 @@ declare module '@tanstack/react-router' {
 		deletedContact?: string;
 		/** A partner was just created; its page announces „Gespeichert.“ once. */
 		partnerSaved?: boolean;
-		/** A connection or sender was just created or deleted; the overview of the sending announces it. */
 		/** What the check of a new connection's credentials found; its page shows it once. */
 		sendingCheck?: 'failed' | 'none' | 'ok' | 'unchecked';
 		/** The self test a new sender just ran; its page shows it once. */
 		sendingSelfTest?: SelfTestResult;
+		/** A connection or sender was just created or deleted; the overview of the sending announces it. */
 		sendingNotice?: {
 			kind: 'connectionCreated' | 'connectionDeleted' | 'senderCreated' | 'senderDeleted';
 			name: string;

@@ -72,7 +72,10 @@ export const Route = createFileRoute('/')({
 						aria-labelledby={sendingNoticeId}
 						className="flex flex-col gap-2 border-l-4 border-amber-600 bg-amber-50 px-4 py-3"
 					>
-						<ul id={sendingNoticeId}>
+						<h2 className="font-semibold" id={sendingNoticeId}>
+							{t('home.sendingHeading')}
+						</h2>
+						<ul className="flex list-disc flex-col gap-1 pl-6">
 							{sendingNotice.disturbed ? <li>{t('home.sendingDisturbed')}</li> : null}
 							{sendingNotice.secretExpiring ? <li>{t('home.sendingSecretExpiring')}</li> : null}
 						</ul>

@@ -119,7 +119,8 @@ const updateSenderRequest = z.object({
 	input: senderInput,
 	version: z.number().int().min(1),
 });
-const systemSenderRequest = z.object({ senderId: z.uuid().nullable() });
+/** `system`: make the sender the system sender (true) or take the mark from it (false). */
+const systemSenderRequest = z.object({ senderId: z.uuid(), system: z.boolean() });
 const selfTestRequest = z.object({ probeMailbox: optionalText, senderId: z.uuid() });
 
 /**
@@ -441,7 +442,10 @@ const submitDeleteSender = createServerFn({ method: 'POST' })
 		}
 	});
 
-/** Makes a sender the system sender, or clears the choice (no sender id). */
+/**
+ * Makes a sender the system sender, or takes the mark from it; the latter only while it still holds
+ * the mark, so a page that is out of date gets `changed` instead of clearing another choice.
+ */
 const submitSystemSender = createServerFn({ method: 'POST' })
 	.validator(systemSenderRequest)
 	.handler(async ({ data }): Promise<OkResult> => {
@@ -452,7 +456,11 @@ const submitSystemSender = createServerFn({ method: 'POST' })
 		]);
 		const { context, principal } = await requireRequestPrincipal();
 		try {
-			await senders.setSystemSender(context.db, principal, data.senderId);
+			await (data.system ? senders.setSystemSender : senders.clearSystemSender)(
+				context.db,
+				principal,
+				data.senderId,
+			);
 			return { ok: true };
 		} catch (error) {
 			const failure = sendingFailure(error);

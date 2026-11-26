@@ -23,7 +23,11 @@ type DeletedKind = 'connection' | 'sender';
  */
 function refusal(failure: SendingFailure): { key: MessageKey; params: Record<string, number> } {
 	if (failure.failure === 'connectionInUse') {
-		return { key: 'sending.connectionInUse', params: { count: failure.senders } };
+		const { senders } = failure;
+		return {
+			key: senders === 1 ? 'sending.connectionInUseOne' : 'sending.connectionInUse',
+			params: { count: senders },
+		};
 	}
 	if (failure.failure === 'senderInUse') {
 		return {
@@ -47,6 +51,7 @@ function refusal(failure: SendingFailure): { key: MessageKey; params: Record<str
  * @param props.id The connection or sender.
  * @param props.name Its name (a connection's name, a sender's address).
  * @param props.isDisabled Whether the button is disabled (a connection with senders).
+ * @param props.isSystem Whether the sender sends the system mails: the dialog says what stops.
  * @param props.describedBy The id of the text that says why it is disabled.
  * @param props.onDeleted Called after it was deleted or found gone.
  * @param props.onRefused Called after a refusal, so the page loads anew.
@@ -57,6 +62,7 @@ export function DeleteSendingDialog({
 	describedBy,
 	id,
 	isDisabled,
+	isSystem = false,
 	kind,
 	name,
 	onDeleted,
@@ -67,6 +73,7 @@ export function DeleteSendingDialog({
 	id: string;
 	name: string;
 	isDisabled: boolean;
+	isSystem?: boolean;
 	describedBy?: string;
 	onDeleted: () => void;
 	onRefused: () => void;
@@ -129,6 +136,7 @@ export function DeleteSendingDialog({
 								kind === 'connection' ? 'sending.deleteConnectionText' : 'sending.deleteSenderText',
 							)}
 						</p>
+						{isSystem ? <p>{t('sending.deleteSystemSenderText')}</p> : null}
 						<div className="flex justify-end gap-3">
 							<Button className={secondaryButtonClass} isDisabled={isPending} slot="close">
 								{t('sending.deleteCancel')}

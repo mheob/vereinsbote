@@ -493,32 +493,30 @@ async function deleteSender(db: Db, actor: Principal, id: string): Promise<void>
 }
 
 /**
- * Makes a sender the one that sends the system mails, or clears the choice. The previous one
- * stops being it.
+ * Makes a sender the one that sends the system mails. The previous one stops being it.
  *
  * @param db The database.
  * @param actor Who decides; an admin.
- * @param senderId The sender, or null for none.
+ * @param senderId The sender.
  * @throws {ForbiddenError} For anybody but an admin.
  * @throws {SenderNotFoundError} When no sender has the id.
+ * @throws {SenderChangedError} When another admin chose a system sender at the same moment.
  */
-async function setSystemSender(db: Db, actor: Principal, senderId: string | null): Promise<void> {
+async function setSystemSender(db: Db, actor: Principal, senderId: string): Promise<void> {
 	assertAdmin(actor);
 	try {
 		await db.transaction(async (tx) => {
 			await tx.update(senders).set({ isSystem: false }).where(eq(senders.isSystem, true));
-			if (senderId !== null) {
-				const chosen = await tx
-					.update(senders)
-					.set({ isSystem: true })
-					.where(eq(senders.id, senderId))
-					.returning({ id: senders.id });
-				if (chosen.length === 0) throw new SenderNotFoundError();
-			}
+			const chosen = await tx
+				.update(senders)
+				.set({ isSystem: true })
+				.where(eq(senders.id, senderId))
+				.returning({ id: senders.id });
+			if (chosen.length === 0) throw new SenderNotFoundError();
 			await writeAudit(tx, {
 				action: 'sender.system_set',
 				actorUserId: actor.userId,
-				target: senderId === null ? undefined : `sender:${senderId}`,
+				target: `sender:${senderId}`,
 			});
 		});
 	} catch (error) {
@@ -526,6 +524,37 @@ async function setSystemSender(db: Db, actor: Principal, senderId: string | null
 		if (isUniqueViolation(error)) throw new SenderChangedError();
 		throw error;
 	}
+}
+
+/**
+ * Removes the system mark from a sender, so that no sender sends the system mails. Only while
+ * that sender still holds it: a page that is out of date must not clear the choice another admin
+ * made since. The log entry has no target, like a choice of „none“.
+ *
+ * @param db The database.
+ * @param actor Who decides; an admin.
+ * @param senderId The sender the page shows as the system sender.
+ * @throws {ForbiddenError} For anybody but an admin.
+ * @throws {SenderChangedError} When the sender no longer holds the mark.
+ * @throws {SenderNotFoundError} When no sender has the id.
+ */
+async function clearSystemSender(db: Db, actor: Principal, senderId: string): Promise<void> {
+	assertAdmin(actor);
+	await db.transaction(async (tx) => {
+		const cleared = await tx
+			.update(senders)
+			.set({ isSystem: false })
+			.where(and(eq(senders.id, senderId), eq(senders.isSystem, true)))
+			.returning({ id: senders.id });
+		if (cleared.length === 0) {
+			const [exists] = await tx
+				.select({ id: senders.id })
+				.from(senders)
+				.where(eq(senders.id, senderId));
+			throw exists === undefined ? new SenderNotFoundError() : new SenderChangedError();
+		}
+		await writeAudit(tx, { action: 'sender.system_set', actorUserId: actor.userId });
+	});
 }
 
 /**
@@ -548,6 +577,7 @@ async function sendersForArea(
 }
 
 export {
+	clearSystemSender,
 	createSender,
 	deleteSender,
 	getSender,

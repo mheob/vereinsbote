@@ -33,7 +33,7 @@ export function SystemSenderControl({
 	const [isPending, startPending] = useTransition();
 	const toggle = useCallback(() => {
 		startPending(async () => {
-			const result = await settle(save({ data: { senderId: isSystem ? null : senderId } }));
+			const result = await settle(save({ data: { senderId, system: !isSystem } }));
 			if (result === undefined) return;
 			if (result === FAILED) {
 				announce(t('auth.requestFailed'), 'alert');
