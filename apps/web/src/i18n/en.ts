@@ -436,6 +436,10 @@ export const en: Record<keyof typeof de, string> = {
 	'home.noSystemSender':
 		'No sender for system mails yet: sign-in links and invitations go out only once one is set.',
 	'home.noSystemSenderLink': 'Set the sender for system mails',
+	'home.sendingDisturbed': 'At least one connection is disturbed: nothing is sent through it.',
+	'home.sendingLink': 'View the connections',
+	'home.sendingSecretExpiring':
+		'The secret of at least one connection expires in less than 30 days.',
 	'home.setupBrand': 'Set up the brand',
 	'home.setupBrandText': 'The brand (corporate design) of the club is not set up yet.',
 	'home.startFirstImport': 'Start the first import',
@@ -816,6 +820,27 @@ export const en: Record<keyof typeof de, string> = {
 	'mail.system.login.subject': 'Your sign-in link for Vereinsbote',
 	'mail.system.login.text': 'here is your sign-in link for Vereinsbote.',
 	'mail.system.login.validity': 'The link is valid for 15 minutes and works once.',
+	'mail.system.sendingDigest.button': 'View the senders',
+	'mail.system.sendingDigest.heading': 'New problems in the outbox',
+	'mail.system.sendingDigest.line': '{sender}: {failed} failed, {uncertain} uncertain',
+	'mail.system.sendingDigest.subject': 'Failed and uncertain mails in the outbox',
+	'mail.system.sendingDigest.text':
+		'since the last summary {failed} mails have failed and {uncertain} are uncertain. By sender:',
+	'mail.system.sendingDigest.unknownSender': 'Deleted sender',
+	'mail.system.sendingDisturbed.button': 'Open the connection',
+	'mail.system.sendingDisturbed.heading': 'The connection is disturbed',
+	'mail.system.sendingDisturbed.subject': 'The connection {name} is disturbed',
+	'mail.system.sendingDisturbed.text':
+		'since {date} the provider has refused the credentials of the connection {name} (code: {code}). As long as that lasts, nothing is sent through it. Please check the credentials.',
+	'mail.system.sendingSecret.button': 'Open the connection',
+	'mail.system.sendingSecret.heading': 'The secret expires soon',
+	'mail.system.sendingSecret.subject': 'The secret of the connection {name} expires soon',
+	'mail.system.sendingSecret.text':
+		'the secret of the connection {name} expires in {days} days (on {date}). Without a new secret nothing is sent through this connection any more.',
+	'mail.system.sendingSecret.textExpired':
+		'the secret of the connection {name} has expired or expires today (expiry: {date}). Without a new secret nothing is sent through this connection any more.',
+	'mail.system.sendingSecret.textTomorrow':
+		'the secret of the connection {name} expires tomorrow (on {date}). Without a new secret nothing is sent through this connection any more.',
 	'mail.system.staleImport.button': 'Import members',
 	'mail.system.staleImport.heading': 'The member data is out of date',
 	'mail.system.staleImport.subject': 'The member data in Vereinsbote is out of date',
@@ -914,6 +939,7 @@ export const en: Record<keyof typeof de, string> = {
 	'sending.displayNameLabel': 'Display name',
 	'sending.emailInvalid': 'Please enter a valid e-mail address.',
 	'sending.emailTaken': 'A sender with this address already exists.',
+	'sending.failedColumn': 'Failed',
 	'sending.graphHelp': 'You enter the expiry date of the secret by hand; Graph does not tell it.',
 	'sending.inheritedLimits': 'With Resend, the rate and the daily limit of the connection apply.',
 	'sending.intro': 'Connect the club to a mail provider and set up the senders here.',
@@ -929,11 +955,15 @@ export const en: Record<keyof typeof de, string> = {
 	'sending.noAreas': 'None (system mails only)',
 	'sending.noAreasExist': 'There are no areas yet.',
 	'sending.noSystemSender': 'No sender is set for system mails yet.',
+	'sending.openColumn': 'Open',
 	'sending.perMinuteLabel': 'Mails per minute',
 	'sending.probeHelp':
 		'A mailbox of your tenant that is no sender. The app tries to read it; “forbidden” is the result you want.',
 	'sending.probeInvalid': 'Please enter a valid e-mail address.',
 	'sending.probeLabel': 'Mailbox for the restriction test',
+	'sending.quotaColumn': 'Sent today',
+	'sending.quotaLimited': '{used} of {limit}',
+	'sending.quotaUnlimited': '{used}, no limit',
 	'sending.replyToHelp': 'Optional. Without it, replies go to the sender address.',
 	'sending.replyToLabel': 'Reply-to address',
 	'sending.resendLimitsHelp':
@@ -994,6 +1024,7 @@ export const en: Record<keyof typeof de, string> = {
 	'sending.testUnknown':
 		'Restriction could not be checked: the mailbox is missing or answered unexpectedly.',
 	'sending.title': 'Sending',
+	'sending.uncertainColumn': 'Uncertain',
 	'sending.valueRequired': 'Please fill in this field.',
 	'sending.webhookSecretHelp': 'Optional. For bounces and complaints by webhook.',
 	'sending.webhookSecretLabel': 'Webhook signing secret',

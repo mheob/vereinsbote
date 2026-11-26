@@ -5,6 +5,8 @@ import type { Db } from '@/server/db/client';
 import { hasSystemSender } from '@/server/mail/system-mailer';
 import { canAccessArea } from '@/server/permissions/principal';
 import type { Principal } from '@/server/permissions/principal';
+import { sendingNotice } from '@/server/sending/warnings';
+import type { SendingNotice } from '@/server/sending/warnings';
 
 type FrameNotice =
 	| Readonly<{ kind: 'stale'; lastImportAt: string; weeks: number; canImport: boolean }>
@@ -24,6 +26,8 @@ interface FrameInfo {
 	readonly notice: FrameNotice | null;
 	/** Admins only: no sender sends the system mails, so no login link or invitation goes out. */
 	readonly noSystemSender: boolean;
+	/** Admins only: a secret is about to expire or a connection is disturbed; null when all is well. */
+	readonly sendingNotice: SendingNotice | null;
 }
 
 /**
@@ -78,9 +82,10 @@ async function frameNotice(
  */
 async function loadFrameInfo(db: Db, principal: Principal, now: Date): Promise<FrameInfo> {
 	// Not inside a transaction: the access loads its parts in parallel.
-	const [access, noSystemSender] = await Promise.all([
+	const [access, noSystemSender, sending] = await Promise.all([
 		loadContactAccess(db, principal),
 		lacksSystemSender(db, principal),
+		principal.isAdmin ? sendingNotice(db, now) : null,
 	]);
 	const nav = {
 		admin: principal.isAdmin,
@@ -90,7 +95,7 @@ async function loadFrameInfo(db: Db, principal: Principal, now: Date): Promise<F
 		templates: principal.areas.size > 0,
 	};
 	const notice = await frameNotice(db, principal, { canImport: access.canManage.member, now });
-	return { nav, noSystemSender, notice };
+	return { nav, noSystemSender, notice, sendingNotice: sending };
 }
 
 export { loadFrameInfo };

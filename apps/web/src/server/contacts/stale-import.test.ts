@@ -1,8 +1,8 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { describe, expect, it } from 'vite-plus/test';
 
 import type { Db } from '@/server/db/client';
-import { auditLog } from '@/server/db/schema';
+import { auditLog, systemState } from '@/server/db/schema';
 import { createTestDb } from '@/server/db/test-db';
 import { parseEnv } from '@/server/env';
 import { CapturingMailer } from '@/server/mail/testing';
@@ -156,6 +156,62 @@ describe(createStaleImportWarningStep, () => {
 		});
 		await runTick({ db, env, now: () => daysAfter(NOW, 0.1), steps: [step], storage: null });
 		await expect(warningEntries(db)).resolves.toHaveLength(1);
+	});
+
+	it('takes the claimed week back when the audit entry fails', async () => {
+		const db = await createTestDb();
+		await setUpClub(db);
+		await lastImportedWeeksAgo(db, 9);
+		const breaking = new CapturingMailer();
+		const originalSend = breaking.send.bind(breaking);
+		breaking.send = async (mail) => {
+			await originalSend(mail);
+			// The log is gone by the time the warning is written.
+			await db.execute(sql`alter table audit_log rename to audit_log_gone`);
+		};
+		const report = await runTick({
+			db,
+			env,
+			now: () => NOW,
+			steps: [createStaleImportWarningStep(() => breaking)],
+			storage: null,
+		});
+		expect(report).toMatchObject({ steps: [{ name: 'stale-import-warning', outcome: 'error' }] });
+		await expect(
+			db.select().from(systemState).where(eq(systemState.key, 'stale_import_warned_at')),
+		).resolves.toStrictEqual([]);
+
+		await db.execute(sql`alter table audit_log_gone rename to audit_log`);
+		const mailer = new CapturingMailer();
+		await tickAt(db, daysAfter(NOW, 0.1), mailer);
+		expect(mailer.sent).toHaveLength(1);
+	});
+
+	it('restores the earlier week when the audit entry fails', async () => {
+		const db = await createTestDb();
+		await setUpClub(db);
+		await lastImportedWeeksAgo(db, 12);
+		await tickAt(db, daysAfter(NOW, -8), new CapturingMailer());
+		const [before] = await db
+			.select()
+			.from(systemState)
+			.where(eq(systemState.key, 'stale_import_warned_at'));
+		const breaking = new CapturingMailer();
+		breaking.send = async () => {
+			await db.execute(sql`alter table audit_log rename to audit_log_gone`);
+		};
+		await runTick({
+			db,
+			env,
+			now: () => NOW,
+			steps: [createStaleImportWarningStep(() => breaking)],
+			storage: null,
+		});
+		const [after] = await db
+			.select()
+			.from(systemState)
+			.where(eq(systemState.key, 'stale_import_warned_at'));
+		expect(after?.value).toStrictEqual(before?.value);
 	});
 
 	it('stops warning after a new import', async () => {

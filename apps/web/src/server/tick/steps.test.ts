@@ -8,6 +8,7 @@ describe('the steps of a tick', () => {
 			'prune-auth-records',
 			'outbox',
 			'stale-import-warning',
+			'sending-warnings',
 		]);
 	});
 });

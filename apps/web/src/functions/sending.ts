@@ -4,9 +4,10 @@ import { z } from 'zod';
 
 import type { AppContext } from '@/platform/context';
 import type { Principal } from '@/server/permissions/principal';
-import type { ConnectionDetail, ConnectionSummary } from '@/server/sending/connections';
+import type { ConnectionDetail, QueueCounts } from '@/server/sending/connections';
 import type { SendingFailure } from '@/server/sending/failures';
 import type { SelfTestResult } from '@/server/sending/open-transport';
+import type { QuotaState } from '@/server/sending/quota';
 import type { SenderFormOptions, SenderSummary } from '@/server/sending/senders';
 
 /*
@@ -34,6 +35,10 @@ interface OverviewSender {
 	readonly connectionName: string;
 	readonly areaNames: readonly string[];
 	readonly isSystem: boolean;
+	/** The waiting, uncertain and failed entries of the sender; no recipient. */
+	readonly queue: Readonly<QueueCounts>;
+	/** Today's count against the limit of its scope. */
+	readonly quota: Readonly<QuotaState>;
 }
 
 interface SendingOverview {
@@ -67,7 +72,6 @@ type SelfTestOutcome = Readonly<{ ok: true; result: SelfTestResult }> | SendingF
 
 /** The longest id the server looks at; ids are 36 characters. */
 const MAX_ID_LENGTH = 100;
-const MS_PER_DAY = 86_400_000;
 const MAX_TEXT = 10_000;
 const text = z.string().max(MAX_TEXT);
 const optionalText = text.nullable();
@@ -201,71 +205,36 @@ function credentialsChanged(
 	);
 }
 
-/**
- * A connection of the overview.
- *
- * @param connection The connection from the list.
- * @param today The start of today (UTC) in milliseconds.
- * @returns The connection with the days its secret has left.
- */
-function overviewConnection(
-	connection: Readonly<ConnectionSummary>,
-	today: number,
-): OverviewConnection {
-	const { secretExpiresOn } = connection;
-	return {
-		dailyLimit: connection.dailyLimit,
-		disturbedSince: connection.disturbedSince,
-		id: connection.id,
-		kind: connection.kind,
-		name: connection.name,
-		perMinute: connection.perMinute,
-		restriction: connection.restriction,
-		secretDaysLeft:
-			secretExpiresOn === null
-				? null
-				: Math.round((Date.parse(secretExpiresOn) - today) / MS_PER_DAY),
-		secretExpiresOn,
-		senders: connection.senders,
-		version: connection.version,
-	};
-}
-
 /** The connections and senders for the overview; for admins only. */
 const loadSendingOverview = createServerFn({ method: 'GET' }).handler(
 	async (): Promise<SendingOverview> => {
-		const [
-			{ requireRequestPrincipal },
-			{ listConnections },
-			{ listSenders },
-			{ listAreas },
-			{ todayInClubZone },
-		] = await Promise.all([
+		const [{ requireRequestPrincipal }, { sendingOverview }, { listAreas }] = await Promise.all([
 			import('@/platform/request-principal'),
 			import('@/server/sending/connections'),
-			import('@/server/sending/senders'),
 			import('@/server/areas/areas'),
-			import('@/server/contacts/calendar'),
 		]);
 		const { context, principal } = await requireRequestPrincipal();
-		const [connections, senders, areas] = await Promise.all([
-			listConnections(context.db, principal),
-			listSenders(context.db, principal),
+		const [overview, areas] = await Promise.all([
+			sendingOverview(context.db, principal, new Date()),
 			listAreas(context.db, principal),
 		]);
-		const today = Date.parse(todayInClubZone(new Date()));
 		const areaName = new Map(areas.map(({ id, name }) => [id, name]));
-		const connectionName = new Map(connections.map(({ id, name }) => [id, name]));
+		const connectionName = new Map(overview.connections.map(({ id, name }) => [id, name]));
 		return {
-			connections: connections.map((connection) => overviewConnection(connection, today)),
-			hasSystemSender: senders.some(({ isSystem }) => isSystem),
-			senders: senders.map((sender) => ({
+			connections: overview.connections.map(({ daysToExpiry, ...connection }) => ({
+				...connection,
+				secretDaysLeft: daysToExpiry,
+			})),
+			hasSystemSender: overview.senders.some(({ isSystem }) => isSystem),
+			senders: overview.senders.map((sender) => ({
 				areaNames: sender.areaIds.flatMap((id) => areaName.get(id) ?? []),
 				connectionName: connectionName.get(sender.connectionId) ?? '',
 				displayName: sender.displayName,
 				email: sender.email,
 				id: sender.id,
 				isSystem: sender.isSystem,
+				queue: { failed: sender.failed, open: sender.open, uncertain: sender.uncertain },
+				quota: sender.quota,
 			})),
 		};
 	},

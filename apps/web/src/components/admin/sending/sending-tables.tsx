@@ -96,6 +96,19 @@ function SenderLink({ email, id }: Readonly<{ id: string; email: string }>): Rea
 }
 
 /**
+ * Today's count of a sender against its limit.
+ *
+ * @param quota The quota of its scope.
+ * @param t The translation function.
+ * @returns The text.
+ */
+function quotaText(quota: Readonly<OverviewSender['quota']>, t: ReturnType<typeof useT>): string {
+	return quota.limit === null
+		? t('sending.quotaUnlimited', { used: quota.used })
+		: t('sending.quotaLimited', { limit: quota.limit, used: quota.used });
+}
+
+/**
  * The connections as a table: name (the link to its page), type, state and the number of senders.
  *
  * @param props The props.
@@ -157,8 +170,8 @@ export function ConnectionsTable({
 }
 
 /**
- * The senders as a table: address (the link to its page), connection, released areas and the
- * mark of the system sender.
+ * The senders as a table: address (the link to its page), connection, released areas, the mark of
+ * the system sender, the queue (open, uncertain, failed) and today's count against the limit.
  *
  * @param props The props.
  * @param props.senders The senders.
@@ -181,6 +194,10 @@ export function SendersTable({
 					</Column>
 					<Column className={headerCellClass}>{t('sending.connectionColumn')}</Column>
 					<Column className={headerCellClass}>{t('sending.areasColumn')}</Column>
+					<Column className={headerCellClass}>{t('sending.openColumn')}</Column>
+					<Column className={headerCellClass}>{t('sending.uncertainColumn')}</Column>
+					<Column className={headerCellClass}>{t('sending.failedColumn')}</Column>
+					<Column className={headerCellClass}>{t('sending.quotaColumn')}</Column>
 				</TableHeader>
 				<TableBody
 					className="data-empty:text-center"
@@ -201,6 +218,10 @@ export function SendersTable({
 							<Cell className={cellClass}>
 								{item.areaNames.length === 0 ? t('sending.noAreas') : item.areaNames.join(', ')}
 							</Cell>
+							<Cell className={cellClass}>{item.queue.open}</Cell>
+							<Cell className={cellClass}>{item.queue.uncertain}</Cell>
+							<Cell className={cellClass}>{item.queue.failed}</Cell>
+							<Cell className={cellClass}>{quotaText(item.quota, t)}</Cell>
 						</Row>
 					)}
 				</TableBody>

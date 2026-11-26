@@ -147,7 +147,8 @@ Run them from the repository root.
   - The activity log names a contact by number or id (`member:<nr>`, `partner:<nr>`, `contact:<uuid>`, `auditTarget`), never by name or address.
 - `DEV_SMTP_URL` (`apps/web/src/server/mail/smtp-transport.ts`) sends unencrypted only to the local machine; any other host must offer STARTTLS. No credentials in workflows either: the CI PostgreSQL services use trust authentication.
 - Credentials are encrypted with AES-GCM through WebCrypto only, so the code runs on Node and on Workers.
-- **Tick steps** go into `apps/web/src/server/tick/steps.ts` and respect the tick's time budget. A step resumes at the next tick.
+- **Tick steps** go into `apps/web/src/server/tick/steps.ts` and respect the tick's time budget. A step resumes at the next tick. The order is `pruneAuthRecords`, `outbox`, `staleImportWarning`, `sendingWarnings`.
+- **Warning mails** (`staleImportWarning`, `sendingWarnings` in `apps/web/src/server/sending/warnings.ts`) claim their marker in `system_state` first, then send to every active admin in their language, then write the activity log. When the log entry fails the marker is given back and the error goes on, so the next tick warns again. The sending warnings are the Graph secret (stages 30, 14, 7 and 1 day, each once), a disturbed connection (once per disturbance) and one digest per club day of new failed or uncertain outbox entries. They name connections, senders and numbers, never a recipient or a secret. The admin overview (`sendingOverview`) and the page frame (`sendingNotice`) show the same state.
 - Migrations run automatically on deploy and must stay compatible with older data. On Vercel they run in production builds only, in preview builds only with `MIGRATE_ON_PREVIEW=1` (`db:migrate:vercel`); a Vercel build (`VERCEL=1` or the marker `VB_VERCEL_BUILD=1` that `apps/web/vercel.json` sets) without a known `VERCEL_ENV` fails instead of skipping them.
 
 ## Testing

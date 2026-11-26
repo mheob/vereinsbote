@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vite-plus/test';
 
 import { setUpClub, userWith } from '@/server/contacts/testing';
-import { auditLog, mailConnections } from '@/server/db/schema';
+import { auditLog, mailConnections, outboxEntries } from '@/server/db/schema';
 import { createTestDb } from '@/server/db/test-db';
 import { ForbiddenError } from '@/server/permissions/principal';
 
@@ -11,6 +11,7 @@ import {
 	deleteConnection,
 	getConnection,
 	listConnections,
+	sendingOverview,
 	updateConnection,
 } from './connections';
 import type { ConnectionInput } from './connections';
@@ -206,5 +207,87 @@ describe('connection management', () => {
 		await expect(createConnection(db, admin, input, await testKey())).rejects.toMatchObject({
 			field: 'dailyLimit',
 		});
+	});
+});
+
+const OVERVIEW_NOW = new Date('2026-11-25T10:00:00Z');
+const WAVE_ID = '00000000-0000-4000-8000-0000000000aa';
+
+function queued(
+	senderId: string,
+	status: 'failed' | 'planned' | 'sent' | 'uncertain',
+): typeof outboxEntries.$inferInsert {
+	return {
+		priority: 'group',
+		recipient: 'member@example.org',
+		senderId,
+		source: 'wave',
+		sourceId: WAVE_ID,
+		status,
+	};
+}
+
+// A club with a Graph connection (secret ends in 10 days) and a Resend one, a queue on both.
+async function setUpOverview(): Promise<{
+	db: Awaited<ReturnType<typeof createTestDb>>;
+	admin: Awaited<ReturnType<typeof setUpClub>>['admin'];
+	graphId: string;
+	resendId: string;
+}> {
+	const db = await createTestDb();
+	const { admin } = await setUpClub(db);
+	const graphId = await graphConnection(db, admin);
+	await db
+		.update(mailConnections)
+		.set({ secretExpiresOn: '2026-12-05' })
+		.where(eq(mailConnections.id, graphId));
+	const senderId = await senderOn(db, admin, graphId, 'verein@example.org');
+	await senderOn(db, admin, graphId, 'ruhig@example.org');
+	const resendId = await resendConnection(db, admin);
+	const resendSender = await senderOn(db, admin, resendId, 'news@example.org');
+	await db
+		.insert(outboxEntries)
+		.values([
+			queued(senderId, 'planned'),
+			queued(senderId, 'planned'),
+			queued(senderId, 'failed'),
+			queued(senderId, 'sent'),
+			queued(resendSender, 'uncertain'),
+		]);
+	return { admin, db, graphId, resendId };
+}
+
+describe(sendingOverview, () => {
+	it('counts the days a secret has left, none for a key', async () => {
+		const { admin, db, graphId, resendId } = await setUpOverview();
+		const { connections } = await sendingOverview(db, admin, OVERVIEW_NOW);
+		const days = new Map(connections.map(({ daysToExpiry, id }) => [id, daysToExpiry]));
+		expect([days.get(graphId), days.get(resendId)]).toStrictEqual([10, null]);
+	});
+
+	it('counts the queue per sender and today against the limit', async () => {
+		const { admin, db } = await setUpOverview();
+		const { senders } = await sendingOverview(db, admin, OVERVIEW_NOW);
+		expect(
+			senders.map(({ email, failed, open, quota, uncertain }) => [
+				email,
+				open,
+				uncertain,
+				failed,
+				quota.limit,
+			]),
+		).toStrictEqual([
+			['news@example.org', 0, 1, 0, 100],
+			['ruhig@example.org', 0, 0, 0, null],
+			['verein@example.org', 2, 0, 1, null],
+		]);
+	});
+
+	it('carries no recipient and is for admins only', async () => {
+		const { admin, db } = await setUpOverview();
+		const overview = await sendingOverview(db, admin, OVERVIEW_NOW);
+		expect(JSON.stringify(overview)).not.toContain('member@example.org');
+		const outsider = await userWith(db, {});
+		await expect(sendingOverview(db, outsider, OVERVIEW_NOW)).rejects.toThrow(ForbiddenError);
 	});
 });

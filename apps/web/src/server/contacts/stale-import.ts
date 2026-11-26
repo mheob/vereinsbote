@@ -8,6 +8,7 @@ import { systemState, user } from '@/server/db/schema';
 import { errorLabel } from '@/server/error-label';
 import { createSystemMailer } from '@/server/mail/system-mailer';
 import type { SystemMailer } from '@/server/mail/system-mailer';
+import { clearState, getState, setState } from '@/server/system-state';
 import type { TickContext, TickStep } from '@/server/tick/tick';
 
 import { formatClubDate } from './calendar';
@@ -71,6 +72,19 @@ async function claimWeek(db: Db, now: Date): Promise<boolean> {
 	return claimed.length > 0;
 }
 
+/**
+ * Gives the week back after the audit entry failed, so the next tick warns again: the earlier
+ * claim returns, or the row goes when there was none.
+ *
+ * @param db The database.
+ * @param previous The value the claim replaced, or null.
+ */
+async function releaseWeek(db: Db, previous: unknown): Promise<void> {
+	await (previous === null
+		? clearState(db, 'stale_import_warned_at')
+		: setState(db, 'stale_import_warned_at', previous));
+}
+
 /** An active admin who gets the warning. */
 interface Recipient {
 	email: string;
@@ -78,6 +92,12 @@ interface Recipient {
 	name: string;
 }
 
+/**
+ * The active admins, who get the warnings of the system.
+ *
+ * @param db The database.
+ * @returns Their addresses, languages and names, by address.
+ */
 async function activeAdmins(db: Db): Promise<Recipient[]> {
 	return db
 		.select({ email: user.email, locale: user.locale, name: user.name })
@@ -152,6 +172,31 @@ async function sendWarnings(
 }
 
 /**
+ * Writes the activity log entry of the warning. When that fails, the week is given back and the
+ * error goes on: without its log entry the warning does not count, the next tick tries again.
+ *
+ * @param db The database.
+ * @param outcome What the mails came to.
+ * @param previous The value the claim of the week replaced, or null.
+ */
+async function logWarning(
+	db: Db,
+	outcome: Readonly<SendOutcome>,
+	previous: unknown,
+): Promise<void> {
+	try {
+		await writeAudit(db, {
+			action: 'import.stale_warning',
+			actorUserId: null,
+			details: { ...outcome },
+		});
+	} catch (error) {
+		await releaseWeek(db, previous);
+		throw error;
+	}
+}
+
+/**
  * The system mailer of a tick: the tick's database, environment and clock.
  *
  * @param ctx The context of the tick.
@@ -177,6 +222,7 @@ function createStaleImportWarningStep(
 			const now = ctx.now();
 			const freshness = await getImportFreshness(ctx.db, now);
 			if (!freshness.stale || freshness.lastImportAt === null) return { moreWork: false };
+			const previous = await getState<unknown>(ctx.db, 'stale_import_warned_at');
 			if (!(await claimWeek(ctx.db, now))) return { moreWork: false };
 			const recipients = await activeAdmins(ctx.db);
 			const outcome = await sendWarnings(
@@ -187,11 +233,7 @@ function createStaleImportWarningStep(
 				},
 				recipients,
 			);
-			await writeAudit(ctx.db, {
-				action: 'import.stale_warning',
-				actorUserId: null,
-				details: { ...outcome },
-			});
+			await logWarning(ctx.db, outcome, previous);
 			return { moreWork: false };
 		},
 	};
@@ -201,8 +243,10 @@ const staleImportWarning = createStaleImportWarningStep();
 
 export {
 	STALE_WARNING_INTERVAL_MS,
+	activeAdmins,
 	createStaleImportWarningStep,
 	getImportFreshness,
 	staleImportWarning,
+	tickMailer,
 };
-export type { ImportFreshness };
+export type { ImportFreshness, Recipient };

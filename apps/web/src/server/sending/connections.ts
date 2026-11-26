@@ -5,14 +5,15 @@
  * only whether a secret is stored. A save with an empty secret keeps the stored one. A change runs
  * under a row lock and a version. The activity log names ids only.
  */
-import { and, count, eq, sql } from 'drizzle-orm';
+import { and, count, eq, inArray, sql } from 'drizzle-orm';
 
 import { writeAudit } from '@/server/audit/audit';
 import type { AuditAction } from '@/server/audit/audit';
+import { todayInClubZone } from '@/server/contacts/calendar';
 import { encryptSecret, secretAad } from '@/server/crypto/secrets';
 import type { Db } from '@/server/db/client';
 import { isForeignKeyViolationOf, isUniqueViolation } from '@/server/db/errors';
-import { mailConnections, senders } from '@/server/db/schema';
+import { mailConnections, outboxEntries, senders } from '@/server/db/schema';
 import { assertAdmin } from '@/server/permissions/principal';
 import type { Principal } from '@/server/permissions/principal';
 
@@ -26,6 +27,11 @@ import {
 import type { ConnectionField } from './errors';
 import type { RestrictionResult } from './graph';
 import { MAX_CREDENTIAL_LENGTH, MAX_DAILY_LIMIT, MAX_NAME_LENGTH, MAX_PER_MINUTE } from './limits';
+import type { QuotaScope } from './open-transport';
+import { quotaToday } from './quota';
+import type { QuotaState } from './quota';
+import { listSenders } from './senders';
+import type { SenderSummary } from './senders';
 
 /** The name of the foreign key that keeps a connection with senders from being deleted. */
 const SENDER_CONNECTION_FK = 'senders_connection_id_mail_connections_id_fk';
@@ -33,6 +39,7 @@ const SECRET_COLUMN = 'secret_ciphertext';
 const WEBHOOK_SECRET_COLUMN = 'webhook_secret_ciphertext';
 const CALENDAR_DATE = /^(?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2})$/u;
 const DAYS_IN_LONGEST_MONTH = 31;
+const MS_PER_DAY = 86_400_000;
 
 type ConnectionKind = 'graph' | 'resend';
 
@@ -494,5 +501,126 @@ async function deleteConnection(db: Db, actor: Principal, id: string): Promise<v
 	}
 }
 
-export { createConnection, deleteConnection, getConnection, listConnections, updateConnection };
-export type { ConnectionDetail, ConnectionInput, ConnectionKind, ConnectionSummary };
+/** The queue of one sender: what waits, what is uncertain and what failed. */
+interface QueueCounts {
+	readonly open: number;
+	readonly uncertain: number;
+	readonly failed: number;
+}
+
+/** What the overview page shows: the connections and the senders with their numbers. */
+interface SendingOverview {
+	readonly connections: readonly (ConnectionSummary & { daysToExpiry: number | null })[];
+	readonly senders: readonly (SenderSummary & QueueCounts & { quota: QuotaState })[];
+}
+
+/**
+ * The entries of each sender that wait (planned or sending), are uncertain or failed.
+ *
+ * @param db The database.
+ * @returns The numbers by sender id; a sender without such entries is missing.
+ */
+async function queueCounts(db: Db): Promise<Map<string, QueueCounts>> {
+	const rows = await db
+		.select({
+			failed: sql<number>`count(*) filter (where ${outboxEntries.status} = 'failed')`.mapWith(
+				Number,
+			),
+			open: sql<number>`count(*) filter (where ${outboxEntries.status} in ('planned', 'sending'))`.mapWith(
+				Number,
+			),
+			senderId: outboxEntries.senderId,
+			uncertain: sql<number>`count(*) filter (where ${outboxEntries.status} = 'uncertain')`.mapWith(
+				Number,
+			),
+		})
+		.from(outboxEntries)
+		.where(inArray(outboxEntries.status, ['planned', 'sending', 'failed', 'uncertain']))
+		.groupBy(outboxEntries.senderId);
+	const byId = new Map<string, QueueCounts>();
+	for (const { senderId, ...counts } of rows) {
+		if (senderId !== null) byId.set(senderId, counts);
+	}
+	return byId;
+}
+
+/**
+ * The quota scope of a sender: a Graph sender counts alone, a Resend connection for all its senders.
+ *
+ * @param sender The sender.
+ * @returns The scope.
+ */
+function scopeOf(
+	sender: Readonly<Pick<SenderSummary, 'connectionId' | 'connectionKind' | 'id'>>,
+): QuotaScope {
+	return sender.connectionKind === 'resend'
+		? `connection:${sender.connectionId}`
+		: `sender:${sender.id}`;
+}
+
+/**
+ * Adds the whole days each secret has left, counted in club days.
+ *
+ * @param connections The connections.
+ * @param now The instant.
+ * @returns The connections with `daysToExpiry` (negative once expired; null without a date).
+ */
+function withDaysToExpiry(
+	connections: readonly Readonly<ConnectionSummary>[],
+	now: Date,
+): SendingOverview['connections'][number][] {
+	const today = Date.parse(todayInClubZone(now));
+	const days = (expiresOn: string | null): number | null =>
+		expiresOn === null ? null : Math.round((Date.parse(expiresOn) - today) / MS_PER_DAY);
+	const result: SendingOverview['connections'][number][] = [];
+	for (const connection of connections) {
+		result.push({ ...connection, daysToExpiry: days(connection.secretExpiresOn) });
+	}
+	return result;
+}
+
+/**
+ * The overview of the sending for admins: the connections with the days their secret has left,
+ * the senders with their queue and today's count against the limit. It carries no recipient: the
+ * admin role alone gives no access to contact data.
+ *
+ * @param db The database.
+ * @param actor Who asks; an admin.
+ * @param now The instant; its club day counts for the days and the quota.
+ * @returns The connections and the senders.
+ * @throws {ForbiddenError} For anybody but an admin.
+ */
+async function sendingOverview(db: Db, actor: Principal, now: Date): Promise<SendingOverview> {
+	assertAdmin(actor);
+	const [connections, senderList, counts] = await Promise.all([
+		listConnections(db, actor),
+		listSenders(db, actor),
+		queueCounts(db),
+	]);
+	const noCounts: QueueCounts = { failed: 0, open: 0, uncertain: 0 };
+	// One after the other: the quota queries may share a connection.
+	const rows: SendingOverview['senders'][number][] = [];
+	for (const sender of senderList) {
+		// oxlint-disable-next-line no-await-in-loop -- see above
+		const quota = await quotaToday(db, scopeOf(sender), now);
+		rows.push({ ...sender, ...(counts.get(sender.id) ?? noCounts), quota });
+	}
+	return { connections: withDaysToExpiry(connections, now), senders: rows };
+}
+
+export {
+	createConnection,
+	deleteConnection,
+	getConnection,
+	listConnections,
+	sendingOverview,
+	updateConnection,
+};
+export type {
+	ConnectionDetail,
+	ConnectionInput,
+	ConnectionKind,
+	ConnectionSummary,
+	QueueCounts,
+	SendingOverview,
+};

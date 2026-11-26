@@ -1,7 +1,9 @@
+import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vite-plus/test';
 
 import { recordConfirmedImport } from '@/server/contacts/import-state';
 import { setUpClub, userWith } from '@/server/contacts/testing';
+import { mailConnections } from '@/server/db/schema';
 import { createTestDb } from '@/server/db/test-db';
 import { setSystemSender } from '@/server/sending/senders';
 import { graphConnection, senderOn } from '@/server/sending/testing';
@@ -36,6 +38,7 @@ describe(loadFrameInfo, () => {
 			},
 			noSystemSender: false,
 			notice: null,
+			sendingNotice: null,
 		});
 		// The setup gave the admin `edit` in the members area.
 		await expect(loadFrameInfo(db, admin, NOW)).resolves.toMatchObject({
@@ -85,6 +88,7 @@ describe(loadFrameInfo, () => {
 			},
 			noSystemSender: false,
 			notice: { canImport: false, kind: 'stale', lastImportAt: at.toISOString(), weeks: 8 },
+			sendingNotice: null,
 		});
 		const fresh = await loadFrameInfo(db, reader, new Date(at.getTime() + DAY_MS));
 		expect(fresh.notice).toBeNull();
@@ -100,5 +104,28 @@ describe(loadFrameInfo, () => {
 		const senderId = await senderOn(db, admin, connectionId, 'verein@example.org');
 		await setSystemSender(db, admin, senderId);
 		await expect(loadFrameInfo(db, admin, NOW)).resolves.toMatchObject({ noSystemSender: false });
+	});
+
+	it('tells admins about an expiring secret and a disturbed connection', async () => {
+		const db = await createTestDb();
+		const { admin, membersAreaId } = await setUpClub(db);
+		const reader = await userWith(db, { [membersAreaId]: 'read' });
+		const connectionId = await graphConnection(db, admin);
+		// The secret of the test connection lasts until 2027-06-30.
+		await expect(loadFrameInfo(db, admin, NOW)).resolves.toMatchObject({ sendingNotice: null });
+		const change = async (values: Partial<typeof mailConnections.$inferInsert>): Promise<void> => {
+			await db.update(mailConnections).set(values).where(eq(mailConnections.id, connectionId));
+		};
+
+		await change({ secretExpiresOn: '2026-12-20' });
+		await expect(loadFrameInfo(db, admin, NOW)).resolves.toMatchObject({
+			sendingNotice: { disturbed: false, secretExpiring: true },
+		});
+		await change({ disturbedCode: 'graph.unauthorized', disturbedSince: NOW });
+		await expect(loadFrameInfo(db, admin, NOW)).resolves.toMatchObject({
+			sendingNotice: { disturbed: true, secretExpiring: true },
+		});
+		// Only admins learn it.
+		await expect(loadFrameInfo(db, reader, NOW)).resolves.toMatchObject({ sendingNotice: null });
 	});
 });

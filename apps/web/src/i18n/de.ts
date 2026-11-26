@@ -448,6 +448,10 @@ export const de = {
 	'home.noSystemSender':
 		'Noch kein Absender für Systemmails: Anmeldelinks und Einladungen gehen erst danach raus.',
 	'home.noSystemSenderLink': 'Absender für Systemmails festlegen',
+	'home.sendingDisturbed': 'Mindestens eine Anbindung ist gestört: Darüber wird nichts versendet.',
+	'home.sendingLink': 'Anbindungen ansehen',
+	'home.sendingSecretExpiring':
+		'Das Secret mindestens einer Anbindung läuft in weniger als 30 Tagen ab.',
 	'home.setupBrand': 'CD einrichten',
 	'home.setupBrandText': 'Das CD (Corporate Design) des Vereins ist noch nicht eingerichtet.',
 	'home.startFirstImport': 'Ersten Import starten',
@@ -835,6 +839,27 @@ export const de = {
 	'mail.system.login.subject': 'Dein Anmeldelink für den Vereinsbote',
 	'mail.system.login.text': 'hier ist dein Anmeldelink für den Vereinsbote.',
 	'mail.system.login.validity': 'Der Link ist 15 Minuten gültig und funktioniert einmal.',
+	'mail.system.sendingDigest.button': 'Absender ansehen',
+	'mail.system.sendingDigest.heading': 'Neue Probleme im Postausgang',
+	'mail.system.sendingDigest.line': '{sender}: {failed} fehlgeschlagen, {uncertain} unsicher',
+	'mail.system.sendingDigest.subject': 'Fehlgeschlagene und unsichere Mails im Postausgang',
+	'mail.system.sendingDigest.text':
+		'seit der letzten Zusammenfassung sind {failed} Mails fehlgeschlagen und {uncertain} unsicher. Je Absender:',
+	'mail.system.sendingDigest.unknownSender': 'Gelöschter Absender',
+	'mail.system.sendingDisturbed.button': 'Anbindung öffnen',
+	'mail.system.sendingDisturbed.heading': 'Die Anbindung ist gestört',
+	'mail.system.sendingDisturbed.subject': 'Die Anbindung {name} ist gestört',
+	'mail.system.sendingDisturbed.text':
+		'seit {date} lehnt der Anbieter die Zugangsdaten der Anbindung {name} ab (Code: {code}). Solange das so bleibt, wird über diese Anbindung nichts versendet. Bitte prüfe die Zugangsdaten.',
+	'mail.system.sendingSecret.button': 'Anbindung öffnen',
+	'mail.system.sendingSecret.heading': 'Das Secret läuft bald ab',
+	'mail.system.sendingSecret.subject': 'Das Secret der Anbindung {name} läuft bald ab',
+	'mail.system.sendingSecret.text':
+		'das Secret der Anbindung {name} läuft in {days} Tagen ab (am {date}). Ohne ein neues Secret wird über diese Anbindung nichts mehr versendet.',
+	'mail.system.sendingSecret.textExpired':
+		'das Secret der Anbindung {name} ist abgelaufen oder läuft heute ab (Ablauf: {date}). Ohne ein neues Secret wird über diese Anbindung nichts mehr versendet.',
+	'mail.system.sendingSecret.textTomorrow':
+		'das Secret der Anbindung {name} läuft morgen ab (am {date}). Ohne ein neues Secret wird über diese Anbindung nichts mehr versendet.',
 	'mail.system.staleImport.button': 'Mitglieder importieren',
 	'mail.system.staleImport.heading': 'Die Mitgliederdaten sind veraltet',
 	'mail.system.staleImport.subject': 'Die Mitgliederdaten im Vereinsbote sind veraltet',
@@ -939,6 +964,7 @@ export const de = {
 	'sending.displayNameLabel': 'Anzeigename',
 	'sending.emailInvalid': 'Bitte gib eine gültige E-Mail-Adresse ein.',
 	'sending.emailTaken': 'Einen Absender mit dieser Adresse gibt es schon.',
+	'sending.failedColumn': 'Fehlgeschlagen',
 	'sending.graphHelp': 'Das Ablaufdatum des Secrets trägst du von Hand ein, Graph verrät es nicht.',
 	'sending.inheritedLimits': 'Bei Resend gelten Drosselung und Tageslimit der Anbindung.',
 	'sending.intro':
@@ -955,11 +981,15 @@ export const de = {
 	'sending.noAreas': 'Keine (nur für Systemmails)',
 	'sending.noAreasExist': 'Es gibt noch keine Bereiche.',
 	'sending.noSystemSender': 'Es ist noch kein Absender für Systemmails festgelegt.',
+	'sending.openColumn': 'Offen',
 	'sending.perMinuteLabel': 'Mails pro Minute',
 	'sending.probeHelp':
 		'Ein Postfach deines Tenants, das kein Absender ist. Die App versucht, darin zu lesen; „verboten“ ist das gewünschte Ergebnis.',
 	'sending.probeInvalid': 'Bitte gib eine gültige E-Mail-Adresse ein.',
 	'sending.probeLabel': 'Postfach für den Beschränkungstest',
+	'sending.quotaColumn': 'Heute versendet',
+	'sending.quotaLimited': '{used} von {limit}',
+	'sending.quotaUnlimited': '{used}, ohne Limit',
 	'sending.replyToHelp': 'Optional. Ohne Angabe gehen Antworten an die Absenderadresse.',
 	'sending.replyToLabel': 'Antwortadresse',
 	'sending.resendLimitsHelp':
@@ -1021,6 +1051,7 @@ export const de = {
 	'sending.testUnknown':
 		'Beschränkung nicht prüfbar: Das Postfach fehlt oder antwortete anders als erwartet.',
 	'sending.title': 'Versand',
+	'sending.uncertainColumn': 'Unsicher',
 	'sending.valueRequired': 'Bitte fülle dieses Feld aus.',
 	'sending.webhookSecretHelp': 'Optional. Für Rückläufer und Beschwerden per Webhook.',
 	'sending.webhookSecretLabel': 'Webhook-Signing-Secret',

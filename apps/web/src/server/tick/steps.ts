@@ -1,6 +1,7 @@
 import { pruneAuthRecords } from '@/server/auth/prune';
 import { staleImportWarning } from '@/server/contacts/stale-import';
 import { createOutboxStep } from '@/server/sending/outbox-step';
+import { sendingWarnings } from '@/server/sending/warnings';
 
 import type { TickStep } from './tick';
 
@@ -16,9 +17,14 @@ const outbox = createOutboxStep({
 });
 
 /**
- * The steps of every tick, in order (plan decision 20: sending, bounces, deletions, warnings).
- * Later tasks add theirs at their place.
+ * The steps of every tick, in order (plan decision 20: sending, bounces, deletions, warnings;
+ * the sending warnings come last). Later tasks add theirs at their place.
  */
-const tickSteps: readonly TickStep[] = [pruneAuthRecords, outbox, staleImportWarning];
+const tickSteps: readonly TickStep[] = [
+	pruneAuthRecords,
+	outbox,
+	staleImportWarning,
+	sendingWarnings,
+];
 
 export { tickSteps };
