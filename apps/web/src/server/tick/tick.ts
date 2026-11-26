@@ -1,5 +1,8 @@
 import { and, eq, sql } from 'drizzle-orm';
 
+import { platformName } from '@/platform/platform';
+import { invocationBudget } from '@/platform/subrequests';
+import type { SubrequestBudget } from '@/platform/subrequests';
 import type { Db } from '@/server/db/client';
 import { systemState } from '@/server/db/schema';
 import type { Env } from '@/server/env';
@@ -8,8 +11,8 @@ import type { ObjectStorage } from '@/server/storage/storage';
 import { getState, setState } from '@/server/system-state';
 
 /**
- * What a step gets: the database, the environment, the clock, the end of its time budget and the
- * object storage (attachments of the outbox).
+ * What a step gets: the database, the environment, the clock, the end of its time budget, the
+ * object storage (attachments of the outbox) and the subrequests the invocation has left.
  */
 interface TickContext {
 	readonly db: Db;
@@ -19,6 +22,11 @@ interface TickContext {
 	readonly deadline: number;
 	/** The storage the caller opened as for a request; null when none is set up. */
 	readonly storage: ObjectStorage | null;
+	/**
+	 * The provider requests the Worker invocation may still make (Design 8.2), shared by every tick
+	 * of the invocation; null without such a limit (Node, Vercel).
+	 */
+	readonly subrequests: SubrequestBudget | null;
 }
 
 /** One unit of scheduled work. Later plans add steps to `tickSteps`. */
@@ -59,6 +67,12 @@ interface RunTickDeps {
 	/** Identifies this run in the lock. Default: a random UUID. */
 	holderId?: string;
 	fetchFn?: typeof fetch;
+	/**
+	 * The subrequest budget of the invocation. Default: a fresh one (`invocationBudget` of the
+	 * build's platform), right for an invocation that runs one tick; the cron handler of Cloudflare
+	 * hands the same budget to every tick it chains.
+	 */
+	subrequests?: SubrequestBudget | null;
 }
 
 /** 4 minutes, so a tick ends well within a 5-minute function limit (Vercel's default duration). */
@@ -210,9 +224,11 @@ async function pingHeartbeat(url: string | null, fetchFn: typeof fetch): Promise
  */
 async function completeTick(deps: Readonly<RunTickDeps>, budgetMs: number): Promise<CompletedTick> {
 	const { db, env, now = () => new Date(), steps, storage } = deps;
+	const subrequests =
+		deps.subrequests === undefined ? invocationBudget(platformName()) : deps.subrequests;
 	const startedAt = now();
 	const deadline = startedAt.getTime() + budgetMs;
-	const outcome = await runSteps(steps, { db, deadline, env, now, storage });
+	const outcome = await runSteps(steps, { db, deadline, env, now, storage, subrequests });
 	const report: CompletedTick = {
 		finishedAt: now().toISOString(),
 		moreWork: outcome.moreWork,

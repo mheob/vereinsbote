@@ -109,7 +109,6 @@ function recordingStep(): { step: TickStep; sent: readonly string[] } {
 		async openTransport(...args) {
 			return { ...(await openSenderTransport(...args)), transport };
 		},
-		platform: 'node',
 		preparers: { wave: preparer },
 		async sleep() {
 			await nextTurn();
@@ -126,7 +125,14 @@ function recordingStep(): { step: TickStep; sent: readonly string[] } {
  * @returns What the step reports.
  */
 async function runOn(step: TickStep, db: Db): Promise<{ moreWork: boolean }> {
-	return step.run({ db, deadline: Date.now() + BUDGET_MS, env: testEnv(), now, storage: null });
+	return step.run({
+		db,
+		deadline: Date.now() + BUDGET_MS,
+		env: testEnv(),
+		now,
+		storage: null,
+		subrequests: null,
+	});
 }
 
 /**

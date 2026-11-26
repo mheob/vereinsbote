@@ -1,6 +1,8 @@
 import { sql } from 'drizzle-orm';
 import { describe, expect, it, vi } from 'vite-plus/test';
 
+import { createSubrequestBudget } from '@/platform/subrequests';
+import type { SubrequestBudget } from '@/platform/subrequests';
 import { createTestDb } from '@/server/db/test-db';
 import { parseEnv } from '@/server/env';
 import { createMemoryStorage } from '@/server/storage/memory';
@@ -131,7 +133,22 @@ describe(runTick, () => {
 			return noWork(ctx);
 		};
 		await runTick({ budgetMs: 1000, db, env, now, steps: [step('a', capture)], storage });
-		expect(seen).toStrictEqual([{ db, deadline: START + 1000, env, now, storage }]);
+		expect(seen).toStrictEqual([
+			{ db, deadline: START + 1000, env, now, storage, subrequests: null },
+		]);
+	});
+
+	it('hands every step the subrequest budget of the invocation', async () => {
+		const db = await createTestDb();
+		const subrequests = createSubrequestBudget(5);
+		const seen: (SubrequestBudget | null)[] = [];
+		const capture = async (ctx: TickContext): Promise<StepResult> => {
+			seen.push(ctx.subrequests);
+			return noWork(ctx);
+		};
+		await tick({ db, env, steps: [step('a', capture), step('b', capture)], subrequests });
+		expect(seen).toStrictEqual([subrequests, subrequests]);
+		expect(seen[0]).toBe(subrequests);
 	});
 
 	it('records start and finish time from the clock', async () => {

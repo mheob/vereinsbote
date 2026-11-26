@@ -37,7 +37,9 @@ async function handleCronEvent(bindings: Bindings): Promise<void> {
 			devNeonWsProxy: env.devNeonWsProxy,
 		});
 		try {
-			await runScheduledTicks(async () => runTick({ db, env, steps: tickSteps, storage }));
+			await runScheduledTicks(async (subrequests) =>
+				runTick({ db, env, steps: tickSteps, storage, subrequests }),
+			);
 		} finally {
 			await end();
 		}
