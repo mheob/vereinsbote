@@ -50,7 +50,8 @@ type AuditAction =
 	| 'user.invited'
 	| 'wave.created'
 	| 'wave.entry_resent'
-	| 'wave.stopped';
+	| 'wave.stopped'
+	| 'wave.test_sent';
 
 interface AuditEntry {
 	/** The acting user, or null for the system. */

@@ -12,7 +12,8 @@ type HistoryNoticeKey =
 	| 'sendingCheck'
 	| 'sendingNotice'
 	| 'sendingSelfTest'
-	| 'templateNotice';
+	| 'templateNotice'
+	| 'waveNotice';
 
 /** The part of `window.history` a notice needs. */
 interface NoticeHistory {

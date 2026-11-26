@@ -40,4 +40,24 @@ class WaveEntryStateError extends Error {
 	}
 }
 
-export { WaveAttachmentsGoneError, WaveEntryNotFoundError, WaveEntryStateError, WaveNotFoundError };
+/**
+ * The provider did not take a test mail. `uncertain`: the request went out and its outcome is
+ * unknown, so the mail may still arrive; it counts as sent.
+ */
+class TestMailNotSentError extends Error {
+	public readonly uncertain: boolean;
+
+	public constructor(uncertain: boolean) {
+		super('The test mail was not sent.');
+		this.name = 'TestMailNotSentError';
+		this.uncertain = uncertain;
+	}
+}
+
+export {
+	TestMailNotSentError,
+	WaveAttachmentsGoneError,
+	WaveEntryNotFoundError,
+	WaveEntryStateError,
+	WaveNotFoundError,
+};

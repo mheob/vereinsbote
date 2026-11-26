@@ -10,19 +10,28 @@ import { outboxEntries } from '@/server/db/schema';
 import { OccasionChangedError, OccasionInvalidError } from '@/server/occasions/errors';
 import { removeOccasion } from '@/server/occasions/occasions';
 import { ForbiddenError } from '@/server/permissions/principal';
+import { fakeProviders, testEnv } from '@/server/sending/testing';
 import { createMemoryStorage } from '@/server/storage/memory';
+import type { ObjectStorage } from '@/server/storage/storage';
 import { APP_ORIGIN } from '@/server/templates/testing';
 
 import {
 	confirmWaveResult,
+	recipientPreviewResult,
 	resendUncertainResult,
+	searchRecipientsResult,
+	sendTestMailResult,
 	stopWaveResult,
 	summarizeWaveResult,
 	waveFailure,
 } from './failures';
+import type { TestMailDeps } from './test-mail';
 import { confirmTestWave, insertWave, setUpWaveClub, waveEntryIds } from './testing';
+import type { WaveClub } from './testing';
 
 const NOW = new Date('2026-11-26T09:00:00.000Z');
+const HTTP_UNPROCESSABLE = 422;
+const HTTP_BAD_GATEWAY = 502;
 const EVERY_MEMBER = { contactIds: null, filters: {}, kind: 'member', query: '' } as const;
 
 describe(waveFailure, () => {
@@ -145,5 +154,109 @@ describe(resendUncertainResult, () => {
 			ok: false,
 		});
 		await expect(resendUncertainResult(c.db, c.editor, id)).rejects.toBeInstanceOf(ForbiddenError);
+	});
+});
+
+describe(searchRecipientsResult, () => {
+	it('gives the contacts, or that the occasion is gone', async () => {
+		const c = await setUpWaveClub();
+		const anna = await insertContact(c.db, { email: 'anna@example.org', kind: 'member' });
+		const input = { occasionId: c.occasionId, selection: EVERY_MEMBER, term: '' };
+		await expect(searchRecipientsResult(c.db, c.sender, input, NOW)).resolves.toMatchObject({
+			contacts: [{ id: anna }],
+			ok: true,
+		});
+		await expect(
+			searchRecipientsResult(c.db, c.sender, { ...input, occasionId: randomUUID() }, NOW),
+		).resolves.toStrictEqual({ failure: 'gone', ok: false });
+		await expect(searchRecipientsResult(c.db, c.editor, input, NOW)).rejects.toBeInstanceOf(
+			ForbiddenError,
+		);
+	});
+});
+
+describe(recipientPreviewResult, () => {
+	it('gives the preview, or that the contact or the occasion is gone', async () => {
+		const c = await setUpWaveClub();
+		const anna = await insertContact(c.db, { email: 'anna@example.org', kind: 'member' });
+		const input = { contactId: anna, occasionId: c.occasionId, selection: EVERY_MEMBER };
+		await expect(recipientPreviewResult(c.db, c.sender, input, NOW)).resolves.toMatchObject({
+			ok: true,
+			preview: { contactId: anna, excluded: null },
+		});
+		await expect(
+			recipientPreviewResult(c.db, c.sender, { ...input, contactId: randomUUID() }, NOW),
+		).resolves.toStrictEqual({ failure: 'contactGone', ok: false });
+		await expect(
+			recipientPreviewResult(c.db, c.sender, { ...input, occasionId: randomUUID() }, NOW),
+		).resolves.toStrictEqual({ failure: 'gone', ok: false });
+	});
+});
+
+/**
+ * The dependencies of a test mail of a club at `NOW`.
+ *
+ * @param c The club.
+ * @param fetch The fake providers' `fetch`.
+ * @param storage The storage of the files.
+ * @returns The dependencies.
+ */
+function testMailDeps(
+	c: WaveClub,
+	fetch: typeof globalThis.fetch,
+	storage: ObjectStorage | null = null,
+): TestMailDeps {
+	return { db: c.db, env: testEnv(), fetch, now: () => NOW, storage };
+}
+
+describe(sendTestMailResult, () => {
+	it('gives done, or that the contact or a file is gone', async () => {
+		const c = await setUpWaveClub({ provider: 'resend' });
+		const anna = await insertContact(c.db, { email: 'anna@example.org', kind: 'member' });
+		const input = { attachmentIds: [], contactId: anna, occasionId: c.occasionId };
+		const { fetch } = fakeProviders();
+		await expect(
+			sendTestMailResult(testMailDeps(c, fetch), c.sender, input),
+		).resolves.toStrictEqual({ ok: true });
+		const gone = { ...input, contactId: randomUUID() };
+		await expect(sendTestMailResult(testMailDeps(c, fetch), c.sender, gone)).resolves.toStrictEqual(
+			{ failure: 'contactGone', ok: false },
+		);
+		const noFile = { ...input, attachmentIds: ['x'.repeat(22)] };
+		await expect(
+			sendTestMailResult(testMailDeps(c, fetch), c.sender, noFile),
+		).resolves.toStrictEqual({ failure: 'attachmentsGone', ok: false });
+		await expect(
+			sendTestMailResult(testMailDeps(c, fetch), c.editor, input),
+		).rejects.toBeInstanceOf(ForbiddenError);
+	});
+
+	it('names a mail the provider refused or answered unclearly', async () => {
+		const c = await setUpWaveClub();
+		const anna = await insertContact(c.db, { email: 'anna@example.org', kind: 'member' });
+		const input = { attachmentIds: [], contactId: anna, occasionId: c.occasionId };
+		const refusing = fakeProviders({ send: HTTP_UNPROCESSABLE }).fetch;
+		await expect(
+			sendTestMailResult(testMailDeps(c, refusing), c.sender, input),
+		).resolves.toStrictEqual({ failure: 'notSent', ok: false });
+		const unclear = fakeProviders({ send: HTTP_BAD_GATEWAY }).fetch;
+		await expect(
+			sendTestMailResult(testMailDeps(c, unclear), c.sender, input),
+		).resolves.toStrictEqual({ failure: 'uncertain', ok: false });
+	});
+
+	it('names a refusal with its keys', async () => {
+		const c = await setUpWaveClub();
+		const anna = await insertContact(c.db, { email: 'anna@example.org', kind: 'member' });
+		const storage = createMemoryStorage();
+		const flyer = await storeAttachment(c.db, storage, c.sender, c.occasionId, {
+			bytes: pdfBytes(3_000_000),
+			name: 'flyer.pdf',
+		});
+		const input = { attachmentIds: [flyer.id], contactId: anna, occasionId: c.occasionId };
+		const { fetch } = fakeProviders();
+		await expect(
+			sendTestMailResult(testMailDeps(c, fetch, storage), c.sender, input),
+		).resolves.toStrictEqual({ failure: 'refused', keys: [], ok: false, reason: 'graphTooLarge' });
 	});
 });

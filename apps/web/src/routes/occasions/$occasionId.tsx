@@ -1,22 +1,31 @@
-import { createFileRoute, Link, useLoaderData, useRouter } from '@tanstack/react-router';
-import { startTransition, useCallback, useMemo, useRef } from 'react';
+import {
+	createFileRoute,
+	Link,
+	useLoaderData,
+	useLocation,
+	useRouter,
+} from '@tanstack/react-router';
+import { startTransition, useCallback, useEffect, useMemo, useRef } from 'react';
 import type { ReactNode } from 'react';
 
 import { Announcements, useAnnouncer } from '@/components/announcements';
+import { clearHistoryNotice } from '@/components/contacts/history-notice';
 import { DeleteOccasionDialog } from '@/components/occasions/delete-occasion-dialog';
 import type { RemovedOccasion } from '@/components/occasions/delete-occasion-dialog';
 import { OccasionDetails } from '@/components/occasions/occasion-details';
 import { OccasionForm } from '@/components/occasions/occasion-form';
+import { formatClubDateTime } from '@/components/sending/schedule';
 import { linkClass } from '@/components/styles';
 import { loadOccasionPage } from '@/functions/occasions';
 import { pageHead } from '@/i18n/page-title';
-import { useT } from '@/i18n/use-t';
+import { useLocale, useT } from '@/i18n/use-t';
 
 /**
  * One occasion. Whoever edits its area changes it in a form and may delete it (archive it when it
- * has waves); everybody else, and everybody for an archived occasion, reads it. An occasion that
- * does not exist, or that the user may not read, is "not found". After a removal the list
- * announces it once, from the history state.
+ * has waves); everybody else, and everybody for an archived occasion, reads it. Whoever may send
+ * in its area finds the send flow here. An occasion that does not exist, or that the user may not
+ * read, is "not found". After a removal the list announces it once, from the history state; a wave
+ * just confirmed in the send flow is announced here once, the same way.
  */
 export const Route = createFileRoute('/occasions/$occasionId')({
 	// The name gives React a component (hooks rules, DevTools); TanStack Router names the property.
@@ -27,8 +36,24 @@ export const Route = createFileRoute('/occasions/$occasionId')({
 		const page = useLoaderData({ from: '/occasions/$occasionId' });
 		const headingRef = useRef<HTMLHeadingElement>(null);
 		const [announcement, announce] = useAnnouncer();
+		const locale = useLocale();
+		const waveNotice = useLocation({ select: (location) => location.state.waveNotice });
 		const { occasion } = page;
 		const { name } = occasion;
+		useEffect(() => {
+			if (waveNotice === undefined) return;
+			headingRef.current?.focus();
+			const { mails, notBefore } = waveNotice;
+			const text =
+				notBefore === null
+					? t('occasions.waveCreated', { mails })
+					: t('occasions.waveScheduled', {
+							at: formatClubDateTime(new Date(notBefore), locale),
+							mails,
+						});
+			announce(text, 'status');
+			clearHistoryNotice(globalThis.history, 'waveNotice');
+		}, [announce, locale, t, waveNotice]);
 		const onRemoved = useCallback(
 			(result: RemovedOccasion) => {
 				startTransition(async () => {
@@ -40,6 +65,7 @@ export const Route = createFileRoute('/occasions/$occasionId')({
 			},
 			[name, router],
 		);
+		const sendParams = useMemo(() => ({ occasionId: occasion.id }), [occasion.id]);
 		const ownArea = useMemo(
 			() => page.areas.filter(({ id }) => id === occasion.areaId),
 			[occasion.areaId, page.areas],
@@ -57,6 +83,16 @@ export const Route = createFileRoute('/occasions/$occasionId')({
 				</h1>
 				<Announcements announcement={announcement} />
 				{occasion.archivedAt === null ? null : <p>{t('occasions.archivedNote')}</p>}
+				{page.canSend ? (
+					<Link
+						aria-label={t('occasions.sendAria', { name })}
+						className={`self-start ${linkClass}`}
+						params={sendParams}
+						to="/occasions/$occasionId/send"
+					>
+						{t('occasions.send')}
+					</Link>
+				) : null}
 				{page.canEdit ? (
 					<>
 						<OccasionForm

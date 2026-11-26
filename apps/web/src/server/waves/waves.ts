@@ -56,16 +56,16 @@ type WaveProblem = 'compile' | 'missingBrand' | 'noRecipients' | 'unsubscribe';
 
 /** The dialog before the confirmation (Design 10.5). */
 interface WaveSummary {
-	mails: number;
+	readonly mails: number;
 	/** Addresses of a circular that get one mail for several contacts. */
-	merged: number;
-	excluded: Record<ExclusionReason, number>;
-	attachmentsBytes: number;
+	readonly merged: number;
+	readonly excluded: Readonly<Record<ExclusionReason, number>>;
+	readonly attachmentsBytes: number;
 	/** Club days until the last mail goes, today the first; infinite when the reserve leaves none. */
-	estimatedDays: number;
+	readonly estimatedDays: number;
 	/** The sender is a Graph sender and a mail with all attachments exceeds its request (Design 6.4). */
-	graphTooLarge: boolean;
-	problem: WaveProblem | null;
+	readonly graphTooLarge: boolean;
+	readonly problem: WaveProblem | null;
 }
 
 /** Why a confirmation made no wave. */
@@ -749,8 +749,9 @@ async function confirmWave(
 	return db.transaction(async (tx) => createWave(tx, actor, plan, input, now));
 }
 
-export { confirmWave, summarizeWave };
+export { compileFor, confirmWave, freeAttachments, sendableOccasion, summarizeWave };
 export type {
+	CompiledTemplate,
 	ConfirmedWave,
 	WaveConfirmation,
 	WaveProblem,

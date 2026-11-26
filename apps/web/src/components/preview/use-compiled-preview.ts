@@ -4,9 +4,10 @@
  * browser, when a preview is first asked for: the server render of a page that shows the
  * preview never touches them.
  *
- * A template is not tied to an occasion, so the preview compiles without the unsubscribe link,
- * unless the template places `{{unsubscribe.url}}` itself: then it shows that link, leading to the
- * page of test mails, which changes nothing.
+ * A template is not tied to an occasion, so the editor's preview compiles without the unsubscribe
+ * link, unless the template places `{{unsubscribe.url}}` itself: then it shows that link (`auto`).
+ * The send flow knows its occasion and compiles as a wave does: with the link or without it. The
+ * link leads to the page of test mails, which changes nothing.
  */
 import { useEffect, useState } from 'react';
 
@@ -24,8 +25,42 @@ type PreviewState =
 	| { readonly kind: 'missing'; readonly keys: readonly string[]; readonly brand: boolean }
 	| { readonly kind: 'invalid' };
 
+/**
+ * Whether the mail carries the unsubscribe link: `with` and `without` as the occasion says, `auto`
+ * only where the template places it (the editor, which knows no occasion).
+ */
+type PreviewUnsubscribe = 'auto' | 'with' | 'without';
+
 /** How long the preview waits after the last change before it compiles again. */
 const PREVIEW_DELAY_MS = 300;
+
+/**
+ * Compiles a source with or without the unsubscribe link.
+ *
+ * @param source The source.
+ * @param brand The brand.
+ * @param appOrigin The origin of the app.
+ * @param unsubscribe Whether the link goes in.
+ * @returns What `compileMail` gives.
+ */
+// oxlint-disable-next-line max-params -- the parameters of `computePreview` that compiling needs
+async function compileFor(
+	source: Readonly<MailSource>,
+	brand: Brand,
+	appOrigin: string,
+	unsubscribe: PreviewUnsubscribe,
+): Promise<CompileResult> {
+	const { compileMail } = await import('@/mail/render/compile');
+	if (unsubscribe === 'with') {
+		return compileMail(source, brand, appOrigin, DEFAULT_LOCALE, { unsubscribe: true });
+	}
+	const plain = await compileMail(source, brand, appOrigin);
+	// Refused only because the template places the unsubscribe link: show it with the link.
+	const placesLink = !plain.ok && 'invalid' in plain && plain.invalid === 'unsubscribe';
+	return placesLink && unsubscribe === 'auto'
+		? compileMail(source, brand, appOrigin, DEFAULT_LOCALE, { unsubscribe: true })
+		: plain;
+}
 
 /**
  * Compiles a source and fills it for a contact.
@@ -34,6 +69,7 @@ const PREVIEW_DELAY_MS = 300;
  * @param brand The brand.
  * @param appOrigin The origin of the app, for the images' addresses.
  * @param values The placeholder values of the preview contact.
+ * @param unsubscribe Whether the mail carries the unsubscribe link.
  * @returns The mail, or what the preview lacks, or that the source is invalid.
  */
 // oxlint-disable-next-line max-params -- the plan's interface fixes these parameters
@@ -42,19 +78,14 @@ async function computePreview(
 	brand: Brand,
 	appOrigin: string,
 	values: ReadonlyMap<string, string>,
+	unsubscribe: PreviewUnsubscribe = 'auto',
 ): Promise<PreviewState> {
-	const [{ ensureReadableByteStreams }, { compileMail }, { fillMail }] = await Promise.all([
+	const [{ ensureReadableByteStreams }, { fillMail }] = await Promise.all([
 		import('./readable-stream-polyfill'),
-		import('@/mail/render/compile'),
 		import('@/mail/render/fill'),
 	]);
 	await ensureReadableByteStreams();
-	const plain = await compileMail(source, brand, appOrigin);
-	// Refused only because the template places the unsubscribe link: show it with the link.
-	const compiled: CompileResult =
-		!plain.ok && 'invalid' in plain && plain.invalid === 'unsubscribe'
-			? await compileMail(source, brand, appOrigin, DEFAULT_LOCALE, { unsubscribe: true })
-			: plain;
+	const compiled = await compileFor(source, brand, appOrigin, unsubscribe);
 	if (!compiled.ok) {
 		return 'missingBrand' in compiled
 			? { brand: true, keys: compiled.missingBrand, kind: 'missing' }
@@ -119,7 +150,10 @@ function schedulePreview(
  * @param brand The brand.
  * @param appOrigin The origin of the app.
  * @param values The placeholder values of the preview contact.
- * @param delayMs The delay after the last change.
+ * @param options The delay after the last change, and whether the mail carries the unsubscribe
+ *   link (`auto` by default: only where the template places it).
+ * @param options.delayMs The delay after the last change.
+ * @param options.unsubscribe Whether the mail carries the unsubscribe link.
  * @returns The state of the preview.
  */
 // oxlint-disable-next-line max-params -- the plan's interface fixes these parameters
@@ -128,20 +162,21 @@ function useCompiledPreview(
 	brand: Brand,
 	appOrigin: string,
 	values: ReadonlyMap<string, string>,
-	delayMs: number = PREVIEW_DELAY_MS,
+	options: Readonly<{ delayMs?: number; unsubscribe?: PreviewUnsubscribe }> = {},
 ): PreviewState {
+	const { delayMs = PREVIEW_DELAY_MS, unsubscribe = 'auto' } = options;
 	const [state, setState] = useState<PreviewState>({ kind: 'pending' });
 	useEffect(
 		() =>
 			schedulePreview(
-				async () => computePreview(source, brand, appOrigin, values),
+				async () => computePreview(source, brand, appOrigin, values, unsubscribe),
 				setState,
 				delayMs,
 			),
-		[source, brand, appOrigin, values, delayMs],
+		[source, brand, appOrigin, values, delayMs, unsubscribe],
 	);
 	return state;
 }
 
 export { computePreview, PREVIEW_DELAY_MS, schedulePreview, useCompiledPreview };
-export type { PreviewState };
+export type { PreviewState, PreviewUnsubscribe };

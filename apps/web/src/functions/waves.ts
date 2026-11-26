@@ -1,30 +1,37 @@
+import { notFound } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
 import { z } from 'zod';
 
 import type { AppContext } from '@/platform/context';
 import type { RemoveAttachmentResult, UploadAttachmentResult } from '@/server/attachments/failures';
 import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from '@/server/attachments/limits';
-import { contactListQuerySchema } from '@/server/contacts/list-query';
+import { contactListQuerySchema, MAX_SEARCH_LENGTH } from '@/server/contacts/list-query';
 import type {
 	ConfirmWaveResult,
+	RecipientPreviewResult,
 	ResendUncertainResult,
+	SearchRecipientsResult,
+	SendTestMailResult,
 	StopWaveResult,
 	SummarizeWaveResult,
 } from '@/server/waves/failures';
+import type { SendFlowPage } from '@/server/waves/send-flow-page';
 
 /*
- * The server functions of the send flow: the attachments, the summary of a wave and its
- * confirmation, stopping a wave and sending an uncertain entry again. Server modules are imported
- * inside the handlers, so they stay out of the client bundle. Each handler authorizes itself from
- * the session principal. The file goes as form data, so the request body limit answers an
- * oversized upload before the function runs. The selection of the recipients goes by POST, never
- * into a URL.
+ * The server functions of the send flow: its page, the search and the preview of recipients, the
+ * attachments, the test mail, the summary of a wave and its confirmation, stopping a wave and
+ * sending an uncertain entry again. Server modules are imported inside the handlers, so they stay
+ * out of the client bundle. Each handler authorizes itself from the session principal. The file
+ * goes as form data, so the request body limit answers an oversized upload before the function
+ * runs. The selection of the recipients and the search terms go by POST, never into a URL.
  */
 
 /** The longest id of an attachment (22 characters) with room to spare. */
 const MAX_ID_LENGTH = 64;
 /** The most contacts a selection one by one names: both kinds of a club at the import's limit. */
 const MAX_SELECTED_CONTACTS = 20_000;
+/** The longest id the page looks at; ids are 36 characters. */
+const MAX_PAGE_ID_LENGTH = 100;
 
 const removeRequest = z.object({ id: z.string().min(1).max(MAX_ID_LENGTH) });
 
@@ -40,6 +47,22 @@ const summaryRequest = z.object({
 	occasionId: z.uuid(),
 	selection: selectionRequest,
 });
+const pageRequest = z.object({ id: z.string().max(MAX_PAGE_ID_LENGTH) });
+const searchRequest = z.object({
+	occasionId: z.uuid(),
+	selection: selectionRequest,
+	term: z.string().max(MAX_SEARCH_LENGTH),
+});
+const previewRequest = z.object({
+	contactId: z.uuid(),
+	occasionId: z.uuid(),
+	selection: selectionRequest,
+});
+const testMailRequest = z.object({
+	attachmentIds: summaryRequest.shape.attachmentIds,
+	contactId: z.uuid(),
+	occasionId: z.uuid(),
+});
 const stopRequest = z.object({ waveId: z.uuid() });
 const resendRequest = z.object({ entryId: z.uuid() });
 const confirmRequest = summaryRequest.extend({
@@ -48,6 +71,89 @@ const confirmRequest = summaryRequest.extend({
 	/** The key of the flow, made by the browser when it opened (plan decision 18). */
 	requestId: z.uuid(),
 });
+
+/**
+ * The page of the send flow. An occasion that does not exist, one the user may not send for and
+ * an archived one are "not found", like the occasion page does for one it may not read.
+ */
+const loadSendFlow = createServerFn({ method: 'GET' })
+	.validator(pageRequest)
+	.handler(async ({ data }): Promise<SendFlowPage> => {
+		const [
+			{ requireRequestPrincipal },
+			{ loadSendFlowPage },
+			{ ForbiddenError },
+			{ OccasionInvalidError, OccasionNotFoundError },
+		] = await Promise.all([
+			import('@/platform/request-principal'),
+			import('@/server/waves/send-flow-page'),
+			import('@/server/permissions/principal'),
+			import('@/server/occasions/errors'),
+		]);
+		const { context, principal } = await requireRequestPrincipal();
+		// oxlint-disable-next-line typescript/only-throw-error -- the router shows its not-found page
+		if (!z.uuid().safeParse(data.id).success) throw notFound();
+		try {
+			return await loadSendFlowPage(context.db, principal, data.id, context.env.appUrl.origin);
+		} catch (error) {
+			const hidden =
+				error instanceof OccasionNotFoundError ||
+				error instanceof ForbiddenError ||
+				error instanceof OccasionInvalidError;
+			// oxlint-disable-next-line typescript/only-throw-error -- see above
+			if (hidden) throw notFound();
+			throw error;
+		}
+	});
+
+/** Searches the contacts of a selection, for single picks and for the preview. */
+const searchRecipients = createServerFn({ method: 'POST' })
+	.validator(searchRequest)
+	.handler(async ({ data }): Promise<SearchRecipientsResult> => {
+		const [{ requireRequestPrincipal }, { searchRecipientsResult }] = await Promise.all([
+			import('@/platform/request-principal'),
+			import('@/server/waves/failures'),
+		]);
+		const { context, principal } = await requireRequestPrincipal();
+		return searchRecipientsResult(context.db, principal, data, new Date());
+	});
+
+/**
+ * The values the preview shows for a contact of the selection, in the user's view; for a circular
+ * those of the contact that fills the mail of its address, with who shares it.
+ */
+const loadRecipientValues = createServerFn({ method: 'POST' })
+	.validator(previewRequest)
+	.handler(async ({ data }): Promise<RecipientPreviewResult> => {
+		const [{ requireRequestPrincipal }, { recipientPreviewResult }] = await Promise.all([
+			import('@/platform/request-principal'),
+			import('@/server/waves/failures'),
+		]);
+		const { context, principal } = await requireRequestPrincipal();
+		return recipientPreviewResult(context.db, principal, data, new Date());
+	});
+
+/**
+ * Sends the test mail to the signed-in user, at once through the occasion's sender; the request
+ * waits for the provider's answer.
+ */
+const sendTestMail = createServerFn({ method: 'POST' })
+	.validator(testMailRequest)
+	.handler(async ({ data }): Promise<SendTestMailResult> => {
+		const [{ requireRequestPrincipal }, { sendTestMailResult }] = await Promise.all([
+			import('@/platform/request-principal'),
+			import('@/server/waves/failures'),
+		]);
+		const { context, principal } = await requireRequestPrincipal();
+		const deps = {
+			db: context.db,
+			env: context.env,
+			fetch: globalThis.fetch,
+			now: () => new Date(),
+			storage: context.storage,
+		};
+		return sendTestMailResult(deps, principal, data);
+	});
 
 interface UploadAttachmentRequest {
 	readonly file: File;
@@ -193,9 +299,14 @@ const resendUncertain = createServerFn({ method: 'POST' })
 
 export {
 	confirmWave,
+	loadRecipientValues,
+	loadSendFlow,
 	removeAttachment,
 	resendUncertain,
+	searchRecipients,
+	sendTestMail,
 	stopWave,
 	summarizeWave,
 	uploadAttachment,
 };
+export type { SendFlowPage } from '@/server/waves/send-flow-page';

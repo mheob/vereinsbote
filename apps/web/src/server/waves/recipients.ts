@@ -263,5 +263,5 @@ async function resolveRecipients(
 	return split(await rowsWithMarks(db, occasion, { selection, today }), today);
 }
 
-export { contactsWithMarks, exclusionOf, resolveRecipients };
+export { contactsWithMarks, exclusionOf, resolveRecipients, selectionCondition };
 export type { ContactRow, ExclusionReason, RecipientSelection, ResolvedRecipients, SelectedRow };

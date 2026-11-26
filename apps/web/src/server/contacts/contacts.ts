@@ -332,7 +332,7 @@ async function getContact(
 	};
 }
 
-export { getContact, listContacts };
+export { getContact, listContacts, listGroups };
 export type { ContactFilters } from './filters';
 export type {
 	ContactDetail,

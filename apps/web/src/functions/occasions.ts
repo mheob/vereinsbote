@@ -50,6 +50,8 @@ interface OccasionPage extends OccasionChoices {
 	readonly occasion: Readonly<OccasionRecord>;
 	/** Whether the user may change the occasion: `edit` in its area, and it is not archived. */
 	readonly canEdit: boolean;
+	/** Whether the user may send waves of it: `send` in its area, and it is not archived. */
+	readonly canSend: boolean;
 }
 
 type CreateOccasionResult = Readonly<{ ok: true; id: string }> | OccasionFailure;
@@ -154,13 +156,18 @@ async function readOccasionPage(
 	principal: Principal,
 	id: string,
 ): Promise<OccasionPage> {
-	const { getOccasion } = await import('@/server/occasions/occasions');
+	const [{ getOccasion }, { canAccessArea }] = await Promise.all([
+		import('@/server/occasions/occasions'),
+		import('@/server/permissions/principal'),
+	]);
 	const occasion = await getOccasion(context.db, principal, id);
 	const choices = await loadChoices(context, principal);
+	const live = occasion.archivedAt === null;
 	const canEdit =
-		occasion.archivedAt === null &&
+		live &&
 		choices.areas.some(({ canEdit: mayEdit, id: areaId }) => areaId === occasion.areaId && mayEdit);
-	return { ...choices, canEdit, occasion };
+	const canSend = live && canAccessArea(principal, occasion.areaId, 'send');
+	return { ...choices, canEdit, canSend, occasion };
 }
 
 /**

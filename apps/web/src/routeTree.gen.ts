@@ -42,6 +42,7 @@ import { Route as AdminSendingIndexRouteImport } from './routes/admin/sending/in
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ContactsImportMembersRouteImport } from './routes/contacts/import/members'
 import { Route as ContactsImportPartnersRouteImport } from './routes/contacts/import/partners'
+import { Route as OccasionsOccasionIdSendRouteImport } from './routes/occasions/$occasionId_.send'
 import { Route as AdminSendingConnectionsConnectionIdRouteImport } from './routes/admin/sending/connections.$connectionId'
 import { Route as AdminSendingConnectionsNewRouteImport } from './routes/admin/sending/connections.new'
 import { Route as AdminSendingSendersSenderIdRouteImport } from './routes/admin/sending/senders.$senderId'
@@ -212,6 +213,11 @@ const ContactsImportPartnersRoute = ContactsImportPartnersRouteImport.update({
   path: '/import/partners',
   getParentRoute: () => ContactsRouteRoute,
 } as any)
+const OccasionsOccasionIdSendRoute = OccasionsOccasionIdSendRouteImport.update({
+  id: '/$occasionId_/send',
+  path: '/$occasionId/send',
+  getParentRoute: () => OccasionsRouteRoute,
+} as any)
 const AdminSendingConnectionsConnectionIdRoute =
   AdminSendingConnectionsConnectionIdRouteImport.update({
     id: '/sending/connections/$connectionId',
@@ -268,6 +274,7 @@ export interface FileRoutesByFullPath {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/contacts/import/members': typeof ContactsImportMembersRoute
   '/contacts/import/partners': typeof ContactsImportPartnersRoute
+  '/occasions/$occasionId/send': typeof OccasionsOccasionIdSendRoute
   '/admin/layouts/': typeof AdminLayoutsIndexRoute
   '/admin/sending/': typeof AdminSendingIndexRoute
   '/admin/sending/connections/$connectionId': typeof AdminSendingConnectionsConnectionIdRoute
@@ -303,6 +310,7 @@ export interface FileRoutesByTo {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/contacts/import/members': typeof ContactsImportMembersRoute
   '/contacts/import/partners': typeof ContactsImportPartnersRoute
+  '/occasions/$occasionId/send': typeof OccasionsOccasionIdSendRoute
   '/admin/layouts': typeof AdminLayoutsIndexRoute
   '/admin/sending': typeof AdminSendingIndexRoute
   '/admin/sending/connections/$connectionId': typeof AdminSendingConnectionsConnectionIdRoute
@@ -343,6 +351,7 @@ export interface FileRoutesById {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/contacts/import/members': typeof ContactsImportMembersRoute
   '/contacts/import/partners': typeof ContactsImportPartnersRoute
+  '/occasions/$occasionId_/send': typeof OccasionsOccasionIdSendRoute
   '/admin/layouts/': typeof AdminLayoutsIndexRoute
   '/admin/sending/': typeof AdminSendingIndexRoute
   '/admin/sending/connections/$connectionId': typeof AdminSendingConnectionsConnectionIdRoute
@@ -384,6 +393,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/contacts/import/members'
     | '/contacts/import/partners'
+    | '/occasions/$occasionId/send'
     | '/admin/layouts/'
     | '/admin/sending/'
     | '/admin/sending/connections/$connectionId'
@@ -419,6 +429,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/contacts/import/members'
     | '/contacts/import/partners'
+    | '/occasions/$occasionId/send'
     | '/admin/layouts'
     | '/admin/sending'
     | '/admin/sending/connections/$connectionId'
@@ -458,6 +469,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/contacts/import/members'
     | '/contacts/import/partners'
+    | '/occasions/$occasionId_/send'
     | '/admin/layouts/'
     | '/admin/sending/'
     | '/admin/sending/connections/$connectionId'
@@ -716,6 +728,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ContactsImportPartnersRouteImport
       parentRoute: typeof ContactsRouteRoute
     }
+    '/occasions/$occasionId_/send': {
+      id: '/occasions/$occasionId_/send'
+      path: '/$occasionId/send'
+      fullPath: '/occasions/$occasionId/send'
+      preLoaderRoute: typeof OccasionsOccasionIdSendRouteImport
+      parentRoute: typeof OccasionsRouteRoute
+    }
     '/admin/sending/connections/$connectionId': {
       id: '/admin/sending/connections/$connectionId'
       path: '/sending/connections/$connectionId'
@@ -806,12 +825,14 @@ interface OccasionsRouteRouteChildren {
   OccasionsOccasionIdRoute: typeof OccasionsOccasionIdRoute
   OccasionsNewRoute: typeof OccasionsNewRoute
   OccasionsIndexRoute: typeof OccasionsIndexRoute
+  OccasionsOccasionIdSendRoute: typeof OccasionsOccasionIdSendRoute
 }
 
 const OccasionsRouteRouteChildren: OccasionsRouteRouteChildren = {
   OccasionsOccasionIdRoute: OccasionsOccasionIdRoute,
   OccasionsNewRoute: OccasionsNewRoute,
   OccasionsIndexRoute: OccasionsIndexRoute,
+  OccasionsOccasionIdSendRoute: OccasionsOccasionIdSendRoute,
 }
 
 const OccasionsRouteRouteWithChildren = OccasionsRouteRoute._addFileChildren(

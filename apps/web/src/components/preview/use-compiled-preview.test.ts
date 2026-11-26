@@ -82,6 +82,24 @@ describe(computePreview, () => {
 		expect(state).toHaveProperty('kind', 'ready');
 		expect(JSON.stringify(state)).not.toContain('unsubscribe');
 	});
+
+	it('shows the link of an occasion that sends it, also where the template does not place it', async () => {
+		const state = await computePreview(source(), BRAND, ORIGIN, anna, 'with');
+		expect(state).toHaveProperty('kind', 'ready');
+		expect(JSON.stringify(state)).toContain(`${ORIGIN}/unsubscribe/test`);
+	});
+
+	it('refuses a template that places the link for an occasion that sends none', async () => {
+		const html = `<p><a href='{{unsubscribe.url}}'>Abmelden</a></p>`;
+		const withLink = source({ body: { html, kind: 'html' } });
+		await expect(computePreview(withLink, BRAND, ORIGIN, anna, 'without')).resolves.toStrictEqual({
+			kind: 'invalid',
+		});
+		await expect(computePreview(source(), BRAND, ORIGIN, anna, 'without')).resolves.toHaveProperty(
+			'kind',
+			'ready',
+		);
+	});
 });
 
 describe(schedulePreview, () => {

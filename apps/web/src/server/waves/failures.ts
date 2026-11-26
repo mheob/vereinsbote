@@ -1,9 +1,10 @@
 /*
  * The expected refusals of the wave functions (summary, confirmation, stop, sending an uncertain
- * entry again) as the results the server functions return. A missing right still throws
- * `ForbiddenError`, as in every server function; anything else that is no expected refusal stays
- * an error.
+ * entry again) and of the send flow (search, preview, test mail) as the results the server
+ * functions return. A missing right still throws `ForbiddenError`, as in every server function;
+ * anything else that is no expected refusal stays an error.
  */
+import { ContactNotFoundError } from '@/server/contacts/errors';
 import type { Db } from '@/server/db/client';
 import {
 	OccasionChangedError,
@@ -13,12 +14,21 @@ import {
 import type { Principal } from '@/server/permissions/principal';
 
 import {
+	TestMailNotSentError,
 	WaveAttachmentsGoneError,
 	WaveEntryNotFoundError,
 	WaveEntryStateError,
 	WaveNotFoundError,
 } from './errors';
+import { recipientPreview } from './recipient-preview';
+import type { RecipientPreview } from './recipient-preview';
+import { searchRecipients } from './recipient-search';
+import type { RecipientChoice } from './recipient-search';
+import type { RecipientSelection } from './recipients';
 import { resendUncertain, stopWave } from './stop';
+import { sendTestMail } from './test-mail';
+import type { TestMailDeps, TestMailInput } from './test-mail';
+import type { TestMailRefusal } from './test-mail-content';
 import { confirmWave, summarizeWave } from './waves';
 import type { WaveConfirmation, WaveRefusal, WaveSummary, WaveSummaryInput } from './waves';
 
@@ -50,6 +60,28 @@ type StopWaveResult =
 type ResendUncertainResult =
 	| Readonly<{ ok: true }>
 	| Readonly<{ ok: false; failure: 'gone' | 'notUncertain' }>;
+
+/** The contacts a search of the send flow found. */
+type SearchRecipientsResult =
+	| Readonly<{ ok: true; contacts: readonly RecipientChoice[] }>
+	| WaveFailure;
+
+/** The preview of a contact of the send flow, or the contact is gone. */
+type RecipientPreviewResult =
+	| Readonly<{ ok: true; preview: RecipientPreview }>
+	| Readonly<{ ok: false; failure: 'contactGone' }>
+	| WaveFailure;
+
+/**
+ * A test mail: done, refused before anything went out (`keys`: the missing required values), the
+ * contact is gone, or the provider did not take it (`notSent`) or its answer is unclear
+ * (`uncertain`: it may still arrive).
+ */
+type SendTestMailResult =
+	| Readonly<{ ok: true }>
+	| Readonly<{ ok: false; failure: 'refused'; reason: TestMailRefusal; keys: readonly string[] }>
+	| Readonly<{ ok: false; failure: 'contactGone' | 'notSent' | 'uncertain' }>
+	| WaveFailure;
 
 /**
  * The result for an error of a summary or a confirmation.
@@ -163,16 +195,111 @@ async function resendUncertainResult(
 	}
 }
 
+/**
+ * Searches the contacts of the send flow and turns the expected refusals into results.
+ *
+ * @param db The database.
+ * @param actor Who sends.
+ * @param input The occasion, the selection to search in and the term.
+ * @param now The instant.
+ * @returns The contacts, or why there are none.
+ */
+// oxlint-disable-next-line max-params -- the same parameters as `searchRecipients`
+async function searchRecipientsResult(
+	db: Db,
+	actor: Principal,
+	input: Readonly<{ occasionId: string; selection: RecipientSelection; term: string }>,
+	now: Date,
+): Promise<SearchRecipientsResult> {
+	try {
+		return { contacts: await searchRecipients(db, actor, input, now), ok: true };
+	} catch (error) {
+		const failure = waveFailure(error);
+		if (failure === null) throw error;
+		return failure;
+	}
+}
+
+/**
+ * The preview of a contact of the send flow, with the expected refusals as results.
+ *
+ * @param db The database.
+ * @param actor Who sends.
+ * @param input The occasion, the contact and the selection.
+ * @param now The instant.
+ * @returns The preview, or why there is none.
+ */
+// oxlint-disable-next-line max-params -- the same parameters as `recipientPreview`
+async function recipientPreviewResult(
+	db: Db,
+	actor: Principal,
+	input: Readonly<{ occasionId: string; contactId: string; selection: RecipientSelection }>,
+	now: Date,
+): Promise<RecipientPreviewResult> {
+	try {
+		return { ok: true, preview: await recipientPreview(db, actor, input, now) };
+	} catch (error) {
+		if (error instanceof ContactNotFoundError) return { failure: 'contactGone', ok: false };
+		const failure = waveFailure(error);
+		if (failure === null) throw error;
+		return failure;
+	}
+}
+
+/**
+ * The result for an error of a test mail.
+ *
+ * @param error What was thrown.
+ * @returns The failure, or null when the error is not an expected refusal.
+ */
+function testMailFailure(error: unknown): SendTestMailResult | null {
+	if (error instanceof ContactNotFoundError) return { failure: 'contactGone', ok: false };
+	if (error instanceof TestMailNotSentError) {
+		return { failure: error.uncertain ? 'uncertain' : 'notSent', ok: false };
+	}
+	return waveFailure(error);
+}
+
+/**
+ * Sends a test mail and turns its refusals and the expected errors into results.
+ *
+ * @param deps The database, the environment, the storage, `fetch` and the clock.
+ * @param actor Who tests.
+ * @param input The occasion, the contact and the files.
+ * @returns Done, or why not.
+ */
+async function sendTestMailResult(
+	deps: TestMailDeps,
+	actor: Principal,
+	input: TestMailInput,
+): Promise<SendTestMailResult> {
+	try {
+		const result = await sendTestMail(deps, actor, input);
+		if ('ok' in result) return { ok: true };
+		return { failure: 'refused', keys: result.keys ?? [], ok: false, reason: result.refused };
+	} catch (error) {
+		const failure = testMailFailure(error);
+		if (failure === null) throw error;
+		return failure;
+	}
+}
+
 export {
 	confirmWaveResult,
+	recipientPreviewResult,
 	resendUncertainResult,
+	searchRecipientsResult,
+	sendTestMailResult,
 	stopWaveResult,
 	summarizeWaveResult,
 	waveFailure,
 };
 export type {
 	ConfirmWaveResult,
+	RecipientPreviewResult,
 	ResendUncertainResult,
+	SearchRecipientsResult,
+	SendTestMailResult,
 	StopWaveResult,
 	SummarizeWaveResult,
 	WaveFailure,
