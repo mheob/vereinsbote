@@ -2,7 +2,13 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 
 import { writeAudit } from '@/server/audit/audit';
 import type { Db } from '@/server/db/client';
-import { areas, contactOptOuts, contacts, contactSuppressions } from '@/server/db/schema';
+import {
+	areas,
+	contactBounces,
+	contactOptOuts,
+	contacts,
+	contactSuppressions,
+} from '@/server/db/schema';
 import type { Principal } from '@/server/permissions/principal';
 
 import { assertCanList, assertCanManage, loadContactAccess } from './access';
@@ -283,9 +289,10 @@ async function optOutByKey(
 }
 
 /**
- * Copies the suppression and the opt-outs of a key to another key, e.g. when one of two partners
- * with the same address gets a new one: the other partner keeps them under the old key. Entries
- * the target key already has stay; nothing is duplicated.
+ * Copies the suppression, the opt-outs and the bounce marks of a key to another key, e.g. when one
+ * of two partners with the same address gets a new one: the other partner keeps them under the old
+ * key. Entries the target key already has stay; nothing is duplicated. A mark holds for its
+ * address only (`isEmailInvalid`), so a copied mark applies once the target has that address.
  *
  * @param tx The transaction.
  * @param kind The kind.
@@ -314,12 +321,18 @@ async function copyContactKey(tx: Db, kind: ContactKind, from: string, to: strin
 			and kept.area_id is not distinct from old.area_id
 			and kept.occasion_id is not distinct from old.occasion_id)
 		on conflict do nothing`);
+	// A mark is keyed by kind, key and address: the target's own mark of an address stays.
+	await tx.execute(sql`
+		insert into contact_bounces (kind, contact_key, email, entry_id, source, created_at)
+		select kind, ${to}, email, entry_id, source, created_at from contact_bounces
+		where kind = ${kind} and contact_key = ${from}
+		on conflict do nothing`);
 }
 
 /**
- * Moves the suppression and the opt-outs of a contact to a new key, e.g. when a partner gets a
- * customer number. Entries the target key already has stay; nothing is duplicated. The caller
- * bumps the stock version and writes the audit entry.
+ * Moves the suppression, the opt-outs and the bounce marks of a contact to a new key, e.g. when a
+ * partner gets a customer number. Entries the target key already has stay; nothing is duplicated.
+ * The caller bumps the stock version and writes the audit entry.
  *
  * @param tx The transaction.
  * @param kind The kind.
@@ -336,6 +349,9 @@ async function rekeyContactKey(tx: Db, kind: ContactKind, from: string, to: stri
 	await tx
 		.delete(contactOptOuts)
 		.where(and(eq(contactOptOuts.kind, kind), eq(contactOptOuts.contactKey, from)));
+	await tx
+		.delete(contactBounces)
+		.where(and(eq(contactBounces.kind, kind), eq(contactBounces.contactKey, from)));
 }
 
 export {

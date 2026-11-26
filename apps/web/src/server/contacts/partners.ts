@@ -332,8 +332,9 @@ async function loadPartner(tx: Db, contactId: string): Promise<StoredPartner> {
 }
 
 /**
- * Lets the suppression and the opt-outs follow a partner whose key changed. When another partner
- * still has the old key (the same address), it keeps them and the partner gets copies.
+ * Lets the suppression, the opt-outs and the bounce marks follow a partner whose key changed. When
+ * another partner still has the old key (the same address), it keeps them and the partner gets
+ * copies.
  *
  * @param tx The transaction; the partner already has its new key.
  * @param from The old key.

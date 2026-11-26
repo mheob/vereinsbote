@@ -3,7 +3,13 @@ import { describe, expect, it } from 'vite-plus/test';
 
 import { createArea } from '@/server/areas/areas';
 import type { Db } from '@/server/db/client';
-import { auditLog, contactOptOuts, contacts, contactSuppressions } from '@/server/db/schema';
+import {
+	auditLog,
+	contactBounces,
+	contactOptOuts,
+	contacts,
+	contactSuppressions,
+} from '@/server/db/schema';
 import { createTestDb } from '@/server/db/test-db';
 import { insertOccasion } from '@/server/occasions/testing';
 import { ForbiddenError } from '@/server/permissions/principal';
@@ -307,6 +313,17 @@ describe(optOutByKey, () => {
 	});
 });
 
+/**
+ * The bounce marks as `kind key address source`, sorted.
+ *
+ * @param db The test database.
+ * @returns The marks.
+ */
+async function bounceMarks(db: Db): Promise<string[]> {
+	const rows = await db.select().from(contactBounces);
+	return rows.map((row) => `${row.kind} ${row.contactKey} ${row.email} ${row.source}`).toSorted();
+}
+
 describe(rekeyContactKey, () => {
 	it('rekeys suppression and opt-outs without duplicating', async () => {
 		const db = await createTestDb();
@@ -348,6 +365,41 @@ describe(rekeyContactKey, () => {
 			].toSorted(),
 		);
 	});
+
+	it('moves the bounce marks to the new key without duplicating', async () => {
+		const db = await createTestDb();
+		await db.insert(contactBounces).values([
+			{
+				contactKey: 'email:x@example.org',
+				email: 'x@example.org',
+				kind: 'partner',
+				source: 'graph',
+			},
+			{
+				contactKey: 'email:x@example.org',
+				email: 'alt@example.org',
+				kind: 'partner',
+				source: 'resend',
+			},
+			{ contactKey: 'nr:100009', email: 'alt@example.org', kind: 'partner', source: 'graph' },
+			{
+				contactKey: 'email:x@example.org',
+				email: 'x@example.org',
+				kind: 'member',
+				source: 'graph',
+			},
+		]);
+
+		await db.transaction(async (tx) =>
+			rekeyContactKey(tx, 'partner', 'email:x@example.org', 'nr:100009'),
+		);
+
+		await expect(bounceMarks(db)).resolves.toStrictEqual([
+			'member email:x@example.org x@example.org graph',
+			'partner nr:100009 alt@example.org graph',
+			'partner nr:100009 x@example.org graph',
+		]);
+	});
 });
 
 describe(copyContactKey, () => {
@@ -384,5 +436,52 @@ describe(copyContactKey, () => {
 				`email:y@example.org ${youthId}`,
 			].toSorted(),
 		);
+	});
+
+	it('copies the bounce marks and keeps them under the old key', async () => {
+		const db = await createTestDb();
+		await db.insert(contactBounces).values([
+			{
+				contactKey: 'email:x@example.org',
+				email: 'x@example.org',
+				kind: 'partner',
+				source: 'graph',
+			},
+			{
+				contactKey: 'email:y@example.org',
+				email: 'x@example.org',
+				kind: 'partner',
+				source: 'resend',
+			},
+		]);
+
+		await db.transaction(async (tx) =>
+			copyContactKey(tx, 'partner', 'email:x@example.org', 'email:y@example.org'),
+		);
+
+		// The target's own mark of the same address stays as it was.
+		await expect(bounceMarks(db)).resolves.toStrictEqual([
+			'partner email:x@example.org x@example.org graph',
+			'partner email:y@example.org x@example.org resend',
+		]);
+	});
+
+	it('copies a mark the target lacks', async () => {
+		const db = await createTestDb();
+		await db.insert(contactBounces).values({
+			contactKey: 'email:x@example.org',
+			email: 'x@example.org',
+			kind: 'partner',
+			source: 'graph',
+		});
+
+		await db.transaction(async (tx) =>
+			copyContactKey(tx, 'partner', 'email:x@example.org', 'email:y@example.org'),
+		);
+
+		await expect(bounceMarks(db)).resolves.toStrictEqual([
+			'partner email:x@example.org x@example.org graph',
+			'partner email:y@example.org x@example.org graph',
+		]);
 	});
 });
