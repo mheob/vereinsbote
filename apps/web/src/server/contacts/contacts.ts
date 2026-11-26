@@ -1,7 +1,14 @@
 import { and, count, eq, sql } from 'drizzle-orm';
 
+import { bounceMarkOf, bounceOfContact, canClearBounce } from '@/server/bounces/bounces';
 import type { Db } from '@/server/db/client';
-import { areas, contactOptOuts, contacts, contactSuppressions } from '@/server/db/schema';
+import {
+	areas,
+	contactBounces,
+	contactOptOuts,
+	contacts,
+	contactSuppressions,
+} from '@/server/db/schema';
 import type { ContactRecord } from '@/server/db/schema';
 import { ForbiddenError } from '@/server/permissions/principal';
 import type { Principal } from '@/server/permissions/principal';
@@ -38,6 +45,8 @@ interface ContactListItem {
 	readonly groups: readonly string[];
 	readonly tags: readonly string[];
 	readonly suppressed: boolean;
+	/** The address bounced hard („E-Mail ungültig“): no mail goes to it. */
+	readonly invalidEmail: boolean;
 }
 
 interface ContactListPage {
@@ -94,6 +103,11 @@ interface ContactDetail {
 		value: string;
 	}>[];
 	readonly suppression: Readonly<{ at: string }> | null;
+	/**
+	 * The mark „E-Mail ungültig“ of the current address (a hard bounce), and whether the user may
+	 * clear it (`edit` in the area of the wave it came from); null without one.
+	 */
+	readonly bounce: Readonly<{ at: string; canClear: boolean }> | null;
 	/** The opt-outs per area, by area name. */
 	readonly optOuts: readonly Readonly<{ areaId: string; areaName: string; at: string }>[];
 	readonly canManage: boolean;
@@ -160,6 +174,7 @@ async function listContacts(
 			firstName: contacts.firstName,
 			groups: contacts.groups,
 			id: contacts.id,
+			invalidEmail: sql<boolean>`${contactBounces.email} is not null`,
 			lastName: contacts.lastName,
 			memberNumber: contacts.memberNumber,
 			organization: contacts.organization,
@@ -169,6 +184,8 @@ async function listContacts(
 		.from(contacts)
 		// At most one row: kind and `contact_key` are the key of the suppressions.
 		.leftJoin(contactSuppressions, suppressionOfContact)
+		// At most one row: kind, `contact_key` and address are the key of the marks.
+		.leftJoin(contactBounces, bounceOfContact)
 		.where(where)
 		.orderBy(
 			sql`lower(coalesce(${contacts.organization}, ${contacts.lastName}, ${contacts.firstName}, ${contacts.email}, ${contacts.memberNumber}, ${contacts.customerNumber}))`,
@@ -184,6 +201,7 @@ async function listContacts(
 			email: row.email,
 			groups: row.groups,
 			id: row.id,
+			invalidEmail: row.invalidEmail,
 			name: displayName(row),
 			number: query.kind === 'member' ? row.memberNumber : row.customerNumber,
 			suppressed: row.suppressed,
@@ -282,6 +300,24 @@ async function suppressionAndOptOuts(
 }
 
 /**
+ * The mark „E-Mail ungültig“ of a contact's current address, as one user sees it.
+ *
+ * @param db The database.
+ * @param principal Who asks.
+ * @param row The contact.
+ * @returns Since when it holds and whether the user may clear it; null without a mark.
+ */
+async function bounceOf(
+	db: Db,
+	principal: Principal,
+	row: Readonly<Pick<ContactRecord, 'contactKey' | 'email' | 'kind'>>,
+): Promise<ContactDetail['bounce']> {
+	const mark = await bounceMarkOf(db, row);
+	if (mark === null) return null;
+	return { at: mark.at.toISOString(), canClear: canClearBounce(principal, mark) };
+}
+
+/**
  * Shows one contact. Protected values the user may not see are never put into the result.
  *
  * @param db The database.
@@ -312,6 +348,7 @@ async function getContact(
 					.from(areas)
 					.orderBy(sql`lower(${areas.name})`, areas.name)
 			: [],
+		bounce: await bounceOf(db, principal, row),
 		canManage,
 		customValues,
 		customerNumber: row.customerNumber,

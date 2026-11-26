@@ -15,9 +15,9 @@ import type { AuditAction } from '@/server/audit/audit';
 import { getBrand } from '@/server/brand/brand';
 import type { ContactKind } from '@/server/contacts/fields';
 import { bumpStockVersion, lockImportState } from '@/server/contacts/import-state';
-import { auditTarget, optOutByKey } from '@/server/contacts/suppressions';
+import { auditTargetsOfKeys, optOutByKey } from '@/server/contacts/suppressions';
 import type { Db } from '@/server/db/client';
-import { areas, contactOptOuts, contacts, occasions } from '@/server/db/schema';
+import { areas, contactOptOuts, occasions } from '@/server/db/schema';
 
 import type { UnsubscribePayload } from './token';
 import { openUndo, sealUndo } from './undo';
@@ -63,9 +63,6 @@ const INVALID_PAGE: UnsubscribePage = {
 
 /** The order the import-state locks are taken in, so two writers never wait for each other. */
 const KIND_ORDER: readonly ContactKind[] = ['member', 'partner'];
-
-/** The start of the key of a contact with a member or customer number. */
-const NUMBER_KEY_PREFIX = 'nr:';
 
 /**
  * Describes the page of a token. A token that did not open asks the database nothing.
@@ -145,36 +142,6 @@ function targetCondition(scope: UnsubscribeScope, targetId: string): ReturnType<
 }
 
 /**
- * How the audit log names the contacts of some keys: each contact with the key by its audit target;
- * a key without a contact by its number, or not at all when it is an address.
- *
- * @param tx The transaction.
- * @param keyed The contacts by kind and key.
- * @returns The targets, in the order of the keys.
- */
-async function auditTargetsOf(tx: Db, keyed: readonly KeyedContact[]): Promise<(string | null)[]> {
-	const keys = [...new Set(keyed.map(({ key }) => key))];
-	const rows = await tx
-		.select({
-			contactKey: contacts.contactKey,
-			customerNumber: contacts.customerNumber,
-			id: contacts.id,
-			kind: contacts.kind,
-			memberNumber: contacts.memberNumber,
-		})
-		.from(contacts)
-		.where(inArray(contacts.contactKey, keys))
-		.orderBy(contacts.id);
-	return keyed.flatMap(({ key, kind }) => {
-		const found = rows.filter((row) => row.kind === kind && row.contactKey === key);
-		if (found.length > 0) return found.map((row) => auditTarget(row));
-		return [
-			key.startsWith(NUMBER_KEY_PREFIX) ? `${kind}:${key.slice(NUMBER_KEY_PREFIX.length)}` : null,
-		];
-	});
-}
-
-/**
  * Locks the import state of each kind among some contacts, in a fixed order.
  *
  * @param tx The transaction.
@@ -210,7 +177,7 @@ async function recordChange(
 	}
 	const details =
 		scope === 'occasion' ? { occasionId: targetId, scope } : { areaId: targetId, scope };
-	for (const target of await auditTargetsOf(tx, keyed)) {
+	for (const target of await auditTargetsOfKeys(tx, keyed)) {
 		const entry = { action, actorUserId: null, at, details };
 		// oxlint-disable-next-line no-await-in-loop -- a transaction runs one statement at a time
 		await writeAudit(tx, target === null ? entry : { ...entry, target });

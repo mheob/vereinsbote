@@ -48,6 +48,7 @@ import { Route as AdminSendingConnectionsConnectionIdRouteImport } from './route
 import { Route as AdminSendingConnectionsNewRouteImport } from './routes/admin/sending/connections.new'
 import { Route as AdminSendingSendersSenderIdRouteImport } from './routes/admin/sending/senders.$senderId'
 import { Route as AdminSendingSendersNewRouteImport } from './routes/admin/sending/senders.new'
+import { Route as ApiWebhooksResendConnectionIdRouteImport } from './routes/api/webhooks/resend.$connectionId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -247,6 +248,12 @@ const AdminSendingSendersNewRoute = AdminSendingSendersNewRouteImport.update({
   path: '/sending/senders/new',
   getParentRoute: () => AdminRouteRoute,
 } as any)
+const ApiWebhooksResendConnectionIdRoute =
+  ApiWebhooksResendConnectionIdRouteImport.update({
+    id: '/api/webhooks/resend/$connectionId',
+    path: '/api/webhooks/resend/$connectionId',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -288,6 +295,7 @@ export interface FileRoutesByFullPath {
   '/admin/sending/connections/new': typeof AdminSendingConnectionsNewRoute
   '/admin/sending/senders/$senderId': typeof AdminSendingSendersSenderIdRoute
   '/admin/sending/senders/new': typeof AdminSendingSendersNewRoute
+  '/api/webhooks/resend/$connectionId': typeof ApiWebhooksResendConnectionIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -325,6 +333,7 @@ export interface FileRoutesByTo {
   '/admin/sending/connections/new': typeof AdminSendingConnectionsNewRoute
   '/admin/sending/senders/$senderId': typeof AdminSendingSendersSenderIdRoute
   '/admin/sending/senders/new': typeof AdminSendingSendersNewRoute
+  '/api/webhooks/resend/$connectionId': typeof ApiWebhooksResendConnectionIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -367,6 +376,7 @@ export interface FileRoutesById {
   '/admin/sending/connections/new': typeof AdminSendingConnectionsNewRoute
   '/admin/sending/senders/$senderId': typeof AdminSendingSendersSenderIdRoute
   '/admin/sending/senders/new': typeof AdminSendingSendersNewRoute
+  '/api/webhooks/resend/$connectionId': typeof ApiWebhooksResendConnectionIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -410,6 +420,7 @@ export interface FileRouteTypes {
     | '/admin/sending/connections/new'
     | '/admin/sending/senders/$senderId'
     | '/admin/sending/senders/new'
+    | '/api/webhooks/resend/$connectionId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -447,6 +458,7 @@ export interface FileRouteTypes {
     | '/admin/sending/connections/new'
     | '/admin/sending/senders/$senderId'
     | '/admin/sending/senders/new'
+    | '/api/webhooks/resend/$connectionId'
   id:
     | '__root__'
     | '/'
@@ -488,6 +500,7 @@ export interface FileRouteTypes {
     | '/admin/sending/connections/new'
     | '/admin/sending/senders/$senderId'
     | '/admin/sending/senders/new'
+    | '/api/webhooks/resend/$connectionId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -506,6 +519,7 @@ export interface RootRouteChildren {
   MediaFileRoute: typeof MediaFileRoute
   UnsubscribeTokenRoute: typeof UnsubscribeTokenRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiWebhooksResendConnectionIdRoute: typeof ApiWebhooksResendConnectionIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -783,6 +797,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminSendingSendersNewRouteImport
       parentRoute: typeof AdminRouteRoute
     }
+    '/api/webhooks/resend/$connectionId': {
+      id: '/api/webhooks/resend/$connectionId'
+      path: '/api/webhooks/resend/$connectionId'
+      fullPath: '/api/webhooks/resend/$connectionId'
+      preLoaderRoute: typeof ApiWebhooksResendConnectionIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -891,6 +912,7 @@ const rootRouteChildren: RootRouteChildren = {
   MediaFileRoute: MediaFileRoute,
   UnsubscribeTokenRoute: UnsubscribeTokenRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiWebhooksResendConnectionIdRoute: ApiWebhooksResendConnectionIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

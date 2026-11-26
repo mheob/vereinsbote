@@ -26,3 +26,9 @@ export const TEST_UNSUBSCRIBE_PATH = `${UNSUBSCRIBE_PATH}/${TEST_UNSUBSCRIBE_TOK
 export function isUnsubscribePath(pathname: string): boolean {
 	return pathname.startsWith(`${UNSUBSCRIBE_PATH}/`);
 }
+
+/**
+ * The webhook of a Resend connection (Design 17): Resend posts bounces and complaints to
+ * `/api/webhooks/resend/<connectionId>`, signed with the connection's webhook secret.
+ */
+export const RESEND_WEBHOOK_PATH = '/api/webhooks/resend';

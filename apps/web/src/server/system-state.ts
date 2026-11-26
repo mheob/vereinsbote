@@ -4,6 +4,8 @@ import type { Db } from './db/client';
 import { systemState } from './db/schema';
 
 type StateKey =
+	/** Where the next bounce check of a Graph sender starts (`graph-step.ts`). */
+	| `graph_bounces_since:${string}`
 	| 'last_tick'
 	| 'sending_digest_day'
 	| 'sending_disturbance_warned'

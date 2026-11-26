@@ -9,12 +9,13 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 
+import { bounceOfContact } from '@/server/bounces/bounces';
 import { assertCanList, loadContactAccess } from '@/server/contacts/access';
 import { todayInClubZone } from '@/server/contacts/calendar';
 import type { ContactKind } from '@/server/contacts/fields';
 import { filterConditions, searchCondition, suppressionOfContact } from '@/server/contacts/filters';
 import type { ContactFilters } from '@/server/contacts/filters';
-import { isMailable } from '@/server/contacts/mailable';
+import { hasExited, isMailable } from '@/server/contacts/mailable';
 import type { Db } from '@/server/db/client';
 import { contactBounces, contactOptOuts, contacts, contactSuppressions } from '@/server/db/schema';
 import type { ContactRecord } from '@/server/db/schema';
@@ -118,11 +119,11 @@ function exclusionOf(
 	marks: ExclusionMarks,
 	today: string,
 ): ExclusionReason | null {
-	if (!isMailable(contact, marks.suppressed, today)) {
+	if (!isMailable(contact, marks, today)) {
 		if (marks.suppressed) return 'suppressed';
-		return contact.email === null || contact.email === '' ? 'noEmail' : 'exited';
+		if (contact.email === null || contact.email === '') return 'noEmail';
+		return hasExited(contact.exitDate, today) ? 'exited' : 'invalidEmail';
 	}
-	if (marks.invalidEmail) return 'invalidEmail';
 	if (marks.optedOutOccasion) return 'optedOutOccasion';
 	return marks.optedOutArea ? 'optedOutArea' : null;
 }
@@ -207,14 +208,7 @@ async function rowsWithMarks(
 			.from(contacts)
 			.leftJoin(contactSuppressions, suppressionOfContact)
 			// The rule of `isEmailInvalid`: the mark of the contact's current address.
-			.leftJoin(
-				contactBounces,
-				and(
-					eq(contactBounces.kind, contacts.kind),
-					eq(contactBounces.contactKey, contacts.contactKey),
-					eq(contactBounces.email, contacts.email),
-				),
-			)
+			.leftJoin(contactBounces, bounceOfContact)
 			.leftJoin(
 				areaOptOuts,
 				and(

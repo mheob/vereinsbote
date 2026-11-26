@@ -11,6 +11,7 @@ import type { PartnerFormPage } from '@/functions/contacts';
 import { useLocale, useT } from '@/i18n/use-t';
 import type { ContactDetail } from '@/server/contacts/contacts';
 
+import { BounceSection } from './bounce-section';
 import { contactFieldRows } from './contact-fields';
 import { DeletePartnerDialog } from './delete-partner-dialog';
 import { clearHistoryNotice } from './history-notice';
@@ -60,10 +61,10 @@ function ContactFields({ contact }: Readonly<{ contact: ContactDetail }>): React
 }
 
 /**
- * A contact: name, the page's live region, the fields the user sees, the suppression and the
- * opt-outs. Members are read-only, with a hint to the member administration. A partner can be
- * edited in place and deleted by who manages partners; after saving, the focus returns to
- * „Bearbeiten“ and „Gespeichert.“ is announced. A partner just created on „Partner anlegen“
+ * A contact: name, the page's live region, the fields the user sees, the mark of an invalid
+ * address, the suppression and the opt-outs. Members are read-only, with a hint to the member
+ * administration. A partner can be edited in place and deleted by who manages partners; after
+ * saving, the focus returns to „Bearbeiten“ and „Gespeichert.“ is announced. A partner just created on „Partner anlegen“
  * announces „Gespeichert.“ once and focuses its heading (history state `partnerSaved`).
  *
  * @param props The props.
@@ -119,6 +120,9 @@ export function ContactDetails({
 		setIsEditing(false);
 		announce(t('partner.saved'), 'status');
 	}, [announce, router, t]);
+	const focusHeading = useCallback(() => {
+		headingRef.current?.focus();
+	}, []);
 	const editable = form?.canManage === true ? form : null;
 	return (
 		<>
@@ -170,6 +174,7 @@ export function ContactDetails({
 					)}
 				</>
 			)}
+			<BounceSection announce={announce} contact={contact} onCleared={focusHeading} />
 			<SuppressionPanel announce={announce} contact={contact} />
 		</>
 	);

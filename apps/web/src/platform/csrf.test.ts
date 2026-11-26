@@ -1,6 +1,7 @@
 import { setResponseHeaders } from '@tanstack/react-start/server';
 import { describe, expect, it, vi } from 'vite-plus/test';
 
+import { RESEND_WEBHOOK_PATH } from '@/paths';
 import { parseEnv } from '@/server/env';
 import { startInstance } from '@/start';
 
@@ -29,6 +30,7 @@ vi.mock(import('./context'), async (importOriginal) => ({
 }));
 
 const APP_ORIGIN = 'https://bote.example.org';
+const CONNECTION_ID = '00000000-0000-4000-8000-000000000001';
 const SERVER_FN_URL = `${APP_ORIGIN}/_serverFn/save-locale`;
 const FORBIDDEN = 403;
 const OK = 200;
@@ -186,6 +188,19 @@ describe('csrf protection of server functions', () => {
 				https: true,
 				nonce: cspNonceFor(request),
 			});
+			expect(vi.mocked(setResponseHeaders).mock.calls).toStrictEqual([[new Headers(expected)]]);
+		});
+
+		it('lets a Resend webhook through without cookies and Origin', async () => {
+			vi.mocked(setResponseHeaders).mockClear();
+			// Resend posts server to server: no Origin, no Sec-Fetch-Site; the signature protects it.
+			const request = new Request(`${APP_ORIGIN}${RESEND_WEBHOOK_PATH}/${CONNECTION_ID}`, {
+				body: '{"type":"email.bounced"}',
+				headers: { 'content-type': 'application/json', 'svix-id': 'msg_1' },
+				method: 'POST',
+			});
+			await expect(runApp(request, 'router')).resolves.toStrictEqual({ handled: true, status: OK });
+			const expected = securityHeadersFor('page', { https: true, nonce: cspNonceFor(request) });
 			expect(vi.mocked(setResponseHeaders).mock.calls).toStrictEqual([[new Headers(expected)]]);
 		});
 

@@ -122,6 +122,29 @@ const submitSuppression = createServerFn({ method: 'POST' })
 		}
 	});
 
+/**
+ * Clears the mark „E-Mail ungültig“ of a contact's current address; needs `edit` in the area of the
+ * wave the mark came from (`clearBounce`). An address without a mark changes nothing.
+ */
+const submitClearBounce = createServerFn({ method: 'POST' })
+	.validator(contactRequest)
+	.handler(async ({ data }): Promise<ContactChangeResult> => {
+		const [{ requireRequestPrincipal }, { clearBounce }, { CONTACT_GONE, ContactNotFoundError }] =
+			await Promise.all([
+				import('@/platform/request-principal'),
+				import('@/server/bounces/bounces'),
+				import('@/server/contacts/errors'),
+			]);
+		const { context, principal } = await requireRequestPrincipal();
+		try {
+			await clearBounce(context.db, principal, data.contactId);
+			return { ok: true };
+		} catch (error) {
+			if (error instanceof ContactNotFoundError) return CONTACT_GONE;
+			throw error;
+		}
+	});
+
 /** Records or removes a contact's objection to the mail of one area. */
 const submitOptOut = createServerFn({ method: 'POST' })
 	.validator(optOutRequest)
@@ -223,6 +246,7 @@ export {
 	loadContactsAccess,
 	loadPartnerForm,
 	searchContacts,
+	submitClearBounce,
 	submitDeletePartner,
 	submitOptOut,
 	submitPartner,

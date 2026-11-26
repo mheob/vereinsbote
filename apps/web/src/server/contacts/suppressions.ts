@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 
 import { writeAudit } from '@/server/audit/audit';
 import type { Db } from '@/server/db/client';
@@ -50,6 +50,44 @@ function auditTarget(
 ): string {
 	const number = contact.kind === 'member' ? contact.memberNumber : contact.customerNumber;
 	return number === null ? `contact:${contact.id}` : `${contact.kind}:${number}`;
+}
+
+/** The start of the key of a contact with a member or customer number. */
+const NUMBER_KEY_PREFIX = 'nr:';
+
+/**
+ * How the audit log names the contacts of some keys (an opt-out without a user: an unsubscribe, a
+ * complaint): each contact with the key by its audit target; a key without a contact by its number,
+ * or not at all when it is an address.
+ *
+ * @param tx The transaction.
+ * @param keyed The contacts by kind and key.
+ * @returns The targets, in the order of the keys.
+ */
+async function auditTargetsOfKeys(
+	tx: Db,
+	keyed: readonly Readonly<{ kind: ContactKind; key: string }>[],
+): Promise<(string | null)[]> {
+	if (keyed.length === 0) return [];
+	const keys = [...new Set(keyed.map(({ key }) => key))];
+	const rows = await tx
+		.select({
+			contactKey: contacts.contactKey,
+			customerNumber: contacts.customerNumber,
+			id: contacts.id,
+			kind: contacts.kind,
+			memberNumber: contacts.memberNumber,
+		})
+		.from(contacts)
+		.where(inArray(contacts.contactKey, keys))
+		.orderBy(contacts.id);
+	return keyed.flatMap(({ key, kind }) => {
+		const found = rows.filter((row) => row.kind === kind && row.contactKey === key);
+		if (found.length > 0) return found.map((row) => auditTarget(row));
+		return [
+			key.startsWith(NUMBER_KEY_PREFIX) ? `${kind}:${key.slice(NUMBER_KEY_PREFIX.length)}` : null,
+		];
+	});
 }
 
 /**
@@ -302,6 +340,7 @@ async function rekeyContactKey(tx: Db, kind: ContactKind, from: string, to: stri
 
 export {
 	auditTarget,
+	auditTargetsOfKeys,
 	contactKey,
 	copyContactKey,
 	optOutByKey,

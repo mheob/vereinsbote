@@ -8,6 +8,7 @@ type AuditAction =
 	| 'connection.created'
 	| 'connection.deleted'
 	| 'connection.updated'
+	| 'contact.bounce_cleared'
 	| 'contact.opt_out_removed'
 	| 'contact.opted_out'
 	| 'contact.suppressed'

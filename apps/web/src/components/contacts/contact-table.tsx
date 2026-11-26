@@ -35,10 +35,28 @@ function ContactLink({ id, name }: Readonly<{ id: string; name: string }>): Reac
 }
 
 /**
+ * The status of a contact in the list: suppressed, its address marked invalid, both or none.
+ *
+ * @param item The contact.
+ * @param t Translates.
+ * @returns The text, or null.
+ */
+function statusOf(
+	item: Readonly<Pick<ContactListItem, 'invalidEmail' | 'suppressed'>>,
+	t: ReturnType<typeof useT>,
+): string | null {
+	const parts = [
+		item.suppressed ? t('contacts.suppressed') : null,
+		item.invalidEmail ? t('contacts.invalidEmail') : null,
+	].filter((part) => part !== null);
+	return parts.length === 0 ? null : parts.join(', ');
+}
+
+/**
  * One page of contacts: number, name as the link to the contact (with the contact person of an
  * organization below it), address, groups (members) or tags (partners) and whether the contact
- * is suppressed. Without contacts the table says so; that text is the only place of it on the
- * page.
+ * is suppressed or its address marked invalid. Without contacts the table says so; that text is
+ * the only place of it on the page.
  *
  * @param props The props.
  * @param props.items The contacts of the page.
@@ -89,7 +107,7 @@ export function ContactTable({
 							<Cell className={cellClass}>
 								{(kind === 'member' ? item.groups : item.tags).join(', ')}
 							</Cell>
-							<Cell className={cellClass}>{item.suppressed ? t('contacts.suppressed') : null}</Cell>
+							<Cell className={cellClass}>{statusOf(item, t)}</Cell>
 						</Row>
 					)}
 				</TableBody>
