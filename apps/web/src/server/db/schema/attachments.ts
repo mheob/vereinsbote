@@ -28,9 +28,8 @@ export const attachments = pgTable(
 		id: text('id').primaryKey(),
 		/** The safe file name the recipients see, at most 200 characters. */
 		name: text('name').notNull(),
-		occasionId: uuid('occasion_id')
-			.notNull()
-			.references(() => occasions.id, { onDelete: 'cascade' }),
+		/** Null once the occasion was removed: `attachmentCleanup` then removes the file at its next run. */
+		occasionId: uuid('occasion_id').references(() => occasions.id, { onDelete: 'set null' }),
 		size: integer('size').notNull(),
 		type: text('type', { enum: ATTACHMENT_TYPE_VALUES }).notNull(),
 		waveId: uuid('wave_id'),

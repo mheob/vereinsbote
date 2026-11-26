@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, lt } from 'drizzle-orm';
+import { and, asc, eq, isNull, lt, or } from 'drizzle-orm';
 
 import type { Db } from '@/server/db/client';
 import { attachments } from '@/server/db/schema';
@@ -13,10 +13,13 @@ const BATCH_SIZE = 100;
 
 async function staleIds(db: Db, now: Date): Promise<string[]> {
 	const cutoff = new Date(now.getTime() - DAY_MS);
+	const orphaned = isNull(attachments.occasionId);
+	const old = lt(attachments.createdAt, cutoff);
+	const expired = or(orphaned, old);
 	const rows = await db
 		.select({ id: attachments.id })
 		.from(attachments)
-		.where(and(isNull(attachments.waveId), lt(attachments.createdAt, cutoff)))
+		.where(and(isNull(attachments.waveId), expired))
 		.orderBy(asc(attachments.createdAt))
 		.limit(BATCH_SIZE);
 	return rows.map(({ id }) => id);
@@ -29,7 +32,8 @@ async function removeStale(db: Db, storage: ObjectStorage, id: string): Promise<
 }
 
 /**
- * Removes the attachments of an aborted flow: files without a wave that are older than one day.
+ * Removes the attachments of an aborted flow: files without a wave that are older than one day, and at once those whose occasion was removed
+ * (`occasion_id` is null).
  * A run handles one batch, goes on after a failing file and throws the first failure at the end,
  * and stops at the tick's deadline. Without a storage nothing can be deleted.
  */

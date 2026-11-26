@@ -3,9 +3,11 @@ import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vite-plus/test';
 
+import { userWith } from '@/server/contacts/testing';
 import type { Db } from '@/server/db/client';
 import { attachments } from '@/server/db/schema';
 import { parseEnv } from '@/server/env';
+import { removeOccasion } from '@/server/occasions/occasions';
 import type { ObjectStorage } from '@/server/storage/storage';
 import type { TickContext } from '@/server/tick/tick';
 
@@ -101,5 +103,23 @@ describe('attachment-cleanup', () => {
 			moreWork: true,
 		});
 		await expect(db.select().from(attachments)).resolves.toHaveLength(1);
+	});
+
+	it('removes the file of a removed occasion at once', async () => {
+		const { db, membersAreaId, occasionId, record, storage } = await stored();
+		await db
+			.update(attachments)
+			.set({ createdAt: new Date() })
+			.where(eq(attachments.id, record.id));
+		const editor = await userWith(db, { [membersAreaId]: 'edit' });
+		await removeOccasion(db, editor, occasionId, 1);
+		const [row] = await db.select().from(attachments).where(eq(attachments.id, record.id));
+		expect(row?.occasionId).toBeNull();
+		await expect(storage.get(`attachments/${record.id}`)).resolves.not.toBeNull();
+		await expect(attachmentCleanup.run(context(db, storage))).resolves.toStrictEqual({
+			moreWork: false,
+		});
+		await expect(db.select().from(attachments)).resolves.toHaveLength(0);
+		await expect(storage.get(`attachments/${record.id}`)).resolves.toBeNull();
 	});
 });
