@@ -4,7 +4,9 @@ import { describe, expect, it } from 'vite-plus/test';
 
 import { userWith } from '@/server/contacts/testing';
 import { attachments } from '@/server/db/schema';
+import { removeOccasion } from '@/server/occasions/occasions';
 import { ForbiddenError } from '@/server/permissions/principal';
+import { insertWave } from '@/server/waves/testing';
 
 import { removeAttachmentResult, uploadAttachmentResult } from './failures';
 import { bytesOf, pdfBytes, setUpAttachments } from './testing';
@@ -34,6 +36,16 @@ describe(uploadAttachmentResult, () => {
 				ok: false,
 			},
 		);
+	});
+
+	it('reports an archived occasion', async () => {
+		const { db, membersAreaId, occasionId, sender, storage } = await setUpAttachments();
+		const editor = await userWith(db, { [membersAreaId]: 'edit' });
+		await insertWave(db, occasionId);
+		await removeOccasion(db, editor, occasionId, 1);
+		await expect(
+			uploadAttachmentResult(db, storage, sender, occasionId, { bytes: pdfBytes(), name: 'a.pdf' }),
+		).resolves.toStrictEqual({ failure: 'archived', ok: false });
 	});
 
 	it('still throws for a missing right', async () => {

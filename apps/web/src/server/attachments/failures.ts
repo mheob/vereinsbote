@@ -4,7 +4,7 @@
  */
 import { UnknownAreaError } from '@/server/contacts/errors';
 import type { Db } from '@/server/db/client';
-import { OccasionNotFoundError } from '@/server/occasions/errors';
+import { OccasionInvalidError, OccasionNotFoundError } from '@/server/occasions/errors';
 import type { Principal } from '@/server/permissions/principal';
 import { StorageNotConfiguredError } from '@/server/storage/storage';
 import type { ObjectStorage } from '@/server/storage/storage';
@@ -14,9 +14,9 @@ import type { AttachmentRecord } from './attachments';
 import { AttachmentInvalidError, AttachmentLockedError, AttachmentNotFoundError } from './errors';
 import type { AttachmentProblem } from './errors';
 
-/** Why an upload or a removal was refused. */
+/** Why an upload or a removal was refused; `archived`: the occasion sends no more waves. */
 type AttachmentFailure = Readonly<
-	| { ok: false; failure: 'gone' | 'locked' | 'storageMissing' }
+	| { ok: false; failure: 'archived' | 'gone' | 'locked' | 'storageMissing' }
 	| { ok: false; failure: 'invalid'; problem: AttachmentProblem }
 >;
 
@@ -37,6 +37,9 @@ function attachmentFailure(error: unknown): AttachmentFailure | null {
 		return { failure: 'gone', ok: false };
 	}
 	if (error instanceof AttachmentLockedError) return { failure: 'locked', ok: false };
+	if (error instanceof OccasionInvalidError && error.problem === 'archived') {
+		return { failure: 'archived', ok: false };
+	}
 	if (error instanceof StorageNotConfiguredError) return { failure: 'storageMissing', ok: false };
 	return null;
 }

@@ -16,6 +16,7 @@ import { graphConnection, senderOn } from '@/server/sending/testing';
 import { TemplateInUseError } from '@/server/templates/errors';
 import { deleteTemplate } from '@/server/templates/templates';
 import { createTemplate } from '@/server/templates/testing';
+import { insertWave } from '@/server/waves/testing';
 
 import {
 	OccasionChangedError,
@@ -135,10 +136,18 @@ async function refusal(promise: Promise<unknown>): Promise<unknown> {
 	}
 }
 
-// oxlint-disable-next-line typescript/require-await -- a stand-in for the wave count
-const NO_WAVES = async (): Promise<number> => 0;
-// oxlint-disable-next-line typescript/require-await -- a stand-in for the wave count
-const THREE_WAVES = async (): Promise<number> => 3;
+/**
+ * Archives an occasion: gives it a wave, then removes it.
+ *
+ * @param c The club.
+ * @param id The occasion.
+ * @param version The version the removal is based on.
+ * @returns What the removal gave.
+ */
+async function archive(c: Club, id: string, version = 1): Promise<'archived' | 'deleted'> {
+	await insertWave(c.db, id);
+	return removeOccasion(c.db, c.editor, id, version);
+}
 
 /**
  * A template of "Veranstaltungen" and a sender released only to that area.
@@ -335,7 +344,7 @@ describe('template and sender of an occasion', () => {
 	it('blocks deleting a template that an archived occasion uses', async () => {
 		const c = await club();
 		const { id } = await createOccasion(c.db, c.editor, c.membersAreaId, inputFor(c));
-		await removeOccasion(c.db, c.editor, id, 1, THREE_WAVES);
+		await archive(c, id);
 		await expect(deleteTemplate(c.db, c.editor, c.templateId, 1)).rejects.toThrow(
 			TemplateInUseError,
 		);
@@ -424,34 +433,55 @@ describe('removing an occasion', () => {
 		const c = await club();
 		const { id } = await createOccasion(c.db, c.editor, c.membersAreaId, inputFor(c));
 		await expect(removeOccasion(c.db, c.editor, id, 2)).rejects.toThrow(OccasionChangedError);
-		await expect(removeOccasion(c.db, c.editor, id, 1, NO_WAVES)).resolves.toBe('deleted');
+		await expect(removeOccasion(c.db, c.editor, id, 1)).resolves.toBe('deleted');
 		await expect(getOccasion(c.db, c.editor, id)).rejects.toThrow(OccasionNotFoundError);
 		await expect(removeOccasion(c.db, c.editor, id, 1)).rejects.toThrow(OccasionNotFoundError);
 	});
 
 	it('archives an occasion with waves', async () => {
 		const c = await club();
-		// The waves of sub-plan 4b are a later task: the count is injected until their table exists.
 		const { id } = await createOccasion(c.db, c.editor, c.membersAreaId, inputFor(c));
-		await expect(removeOccasion(c.db, c.editor, id, 1, THREE_WAVES)).resolves.toBe('archived');
+		await expect(archive(c, id)).resolves.toBe('archived');
 		const archived = await getOccasion(c.db, c.editor, id);
 		expect(archived.archivedAt).toBeInstanceOf(Date);
-		expect(archived.version).toBe(2);
+		expect(archived).toMatchObject({ version: 2, waves: 1 });
 		await expect(auditOf(c.db, 'occasion.archived')).resolves.toStrictEqual([
 			{ details: { areaId: c.membersAreaId }, target: `occasion:${id}` },
 		]);
 		await expect(listOccasions(c.db, c.editor)).resolves.toHaveLength(1);
 	});
 
+	it('counts the waves of an occasion and tells the latest', async () => {
+		const c = await club();
+		const { id } = await createOccasion(c.db, c.editor, c.membersAreaId, inputFor(c));
+		const other = await createOccasion(
+			c.db,
+			c.editor,
+			c.membersAreaId,
+			inputFor(c, { name: 'Rundbrief' }),
+		);
+		const latest = new Date('2026-11-20T10:00:00.000Z');
+		await insertWave(c.db, id, { createdAt: new Date('2026-10-01T10:00:00.000Z') });
+		await insertWave(c.db, id, { createdAt: latest });
+		await expect(getOccasion(c.db, c.editor, id)).resolves.toMatchObject({
+			lastWaveAt: latest,
+			waves: 2,
+		});
+		const listed = await listOccasions(c.db, c.editor);
+		expect(listed.map(({ lastWaveAt, waves }) => ({ lastWaveAt, waves }))).toStrictEqual([
+			{ lastWaveAt: latest, waves: 2 },
+			{ lastWaveAt: null, waves: 0 },
+		]);
+		expect(listed.map((occasion) => occasion.id)).toStrictEqual([id, other.id]);
+	});
+
 	it('cannot change or remove an archived occasion', async () => {
 		const c = await club();
 		const { id } = await createOccasion(c.db, c.editor, c.membersAreaId, inputFor(c));
-		await removeOccasion(c.db, c.editor, id, 1, THREE_WAVES);
+		await archive(c, id);
 		const refused = refusal(updateOccasion(c.db, c.editor, id, inputFor(c), 2));
 		await expect(refused).resolves.toMatchObject({ problem: 'archived' });
-		await expect(removeOccasion(c.db, c.editor, id, 2, THREE_WAVES)).rejects.toThrow(
-			OccasionInvalidError,
-		);
+		await expect(removeOccasion(c.db, c.editor, id, 2)).rejects.toThrow(OccasionInvalidError);
 	});
 });
 
@@ -481,7 +511,7 @@ describe('senders and occasions', () => {
 	it('holds the release for an archived occasion too', async () => {
 		const c = await club();
 		const { id } = await createOccasion(c.db, c.editor, c.membersAreaId, inputFor(c));
-		await removeOccasion(c.db, c.editor, id, 1, THREE_WAVES);
+		await archive(c, id);
 		await expect(updateSender(c.db, c.admin, c.senderId, release(c, []), 1)).rejects.toThrow(
 			SenderAreaInUseError,
 		);
@@ -528,7 +558,7 @@ describe('opt-outs of an occasion', () => {
 		const c = await club();
 		const { id } = await createOccasion(c.db, c.editor, c.membersAreaId, inputFor(c));
 		await c.db.insert(contactOptOuts).values(optOut(id));
-		await removeOccasion(c.db, c.editor, id, 1, THREE_WAVES);
+		await archive(c, id);
 		await expect(c.db.select().from(contactOptOuts)).resolves.toHaveLength(1);
 	});
 });

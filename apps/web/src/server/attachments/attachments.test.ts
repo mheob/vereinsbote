@@ -5,10 +5,12 @@ import { describe, expect, it } from 'vite-plus/test';
 
 import { userWith } from '@/server/contacts/testing';
 import { attachments, occasions } from '@/server/db/schema';
-import { OccasionNotFoundError } from '@/server/occasions/errors';
+import { OccasionInvalidError, OccasionNotFoundError } from '@/server/occasions/errors';
+import { removeOccasion } from '@/server/occasions/occasions';
 import { insertOccasion } from '@/server/occasions/testing';
 import { ForbiddenError } from '@/server/permissions/principal';
 import type { ObjectStorage } from '@/server/storage/storage';
+import { insertWave } from '@/server/waves/testing';
 
 import {
 	checkRoom,
@@ -89,7 +91,7 @@ describe(storeAttachment, () => {
 		await expect(add(occasionId)).resolves.toBeDefined();
 		await db
 			.update(attachments)
-			.set({ waveId: randomUUID() })
+			.set({ waveId: await insertWave(db, other) })
 			.where(eq(attachments.occasionId, other));
 		await expect(add(other)).resolves.toBeDefined();
 	});
@@ -112,6 +114,28 @@ describe(storeAttachment, () => {
 		await expect(
 			storeAttachment(db, storage, sender, randomUUID(), { bytes: pdfBytes(), name: 'a.pdf' }),
 		).rejects.toBeInstanceOf(OccasionNotFoundError);
+	});
+
+	it('refuses a file for an archived occasion and leaves no object behind', async () => {
+		const { db, membersAreaId, occasionId, sender, storage } = await setUpAttachments();
+		const editor = await userWith(db, { [membersAreaId]: 'edit' });
+		await insertWave(db, occasionId);
+		await expect(removeOccasion(db, editor, occasionId, 1)).resolves.toBe('archived');
+		const written: string[] = [];
+		const watching: ObjectStorage = {
+			...storage,
+			async put(key, bytes, options): Promise<void> {
+				written.push(key);
+				await storage.put(key, bytes, options);
+			},
+		};
+		const refused = storeAttachment(db, watching, sender, occasionId, {
+			bytes: pdfBytes(),
+			name: 'a.pdf',
+		});
+		await expect(refused).rejects.toBeInstanceOf(OccasionInvalidError);
+		await expect(refused).rejects.toMatchObject({ problem: 'archived' });
+		expect(written).toStrictEqual([]);
 	});
 
 	it('deletes the object again when the row cannot be written', async () => {
@@ -177,7 +201,8 @@ describe(removeAttachment, () => {
 		await expect(removeAttachment(db, storage, sender, 'x'.repeat(22))).rejects.toBeInstanceOf(
 			AttachmentNotFoundError,
 		);
-		await db.update(attachments).set({ waveId: randomUUID() }).where(eq(attachments.id, id));
+		const waveId = await insertWave(db, occasionId);
+		await db.update(attachments).set({ waveId }).where(eq(attachments.id, id));
 		await expect(removeAttachment(db, storage, sender, id)).rejects.toBeInstanceOf(
 			AttachmentLockedError,
 		);

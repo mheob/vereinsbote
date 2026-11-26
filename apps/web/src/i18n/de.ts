@@ -884,6 +884,12 @@ export const de = {
 	'notFound.text': 'Diese Seite gibt es nicht.',
 	'notFound.title': 'Seite nicht gefunden',
 	'occasions.actions': 'Aktionen',
+	'occasions.archive': 'Archivieren',
+	'occasions.archiveAria': '{name} archivieren',
+	'occasions.archiveConfirm': 'Archivieren',
+	'occasions.archiveText':
+		'Der Anlass hat schon Wellen und wird deshalb archiviert: Er lässt sich dann nicht mehr wählen oder ändern, Verlauf und Widersprüche bleiben.',
+	'occasions.archiveTitle': '„{name}“ archivieren?',
 	'occasions.archived': '(archiviert)',
 	'occasions.archivedInvalid': 'Der Anlass ist archiviert und lässt sich nicht mehr ändern.',
 	'occasions.archivedNote':
@@ -903,8 +909,7 @@ export const de = {
 	'occasions.delete': 'Löschen',
 	'occasions.deleteAria': '{name} löschen',
 	'occasions.deleteConfirm': 'Löschen',
-	'occasions.deleteText':
-		'Ein Anlass ohne Welle wird endgültig gelöscht. Hat er schon Wellen, wird er archiviert: Er lässt sich dann nicht mehr wählen oder ändern, Verlauf und Widersprüche bleiben.',
+	'occasions.deleteText': 'Der Anlass hat noch keine Welle und wird endgültig gelöscht.',
 	'occasions.deleteTitle': '„{name}“ löschen?',
 	'occasions.deleted': 'Der Anlass „{name}“ wurde gelöscht.',
 	'occasions.edit': 'Bearbeiten',

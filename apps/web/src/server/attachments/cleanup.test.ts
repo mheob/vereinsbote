@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vite-plus/test';
 
@@ -10,6 +8,7 @@ import { parseEnv } from '@/server/env';
 import { removeOccasion } from '@/server/occasions/occasions';
 import type { ObjectStorage } from '@/server/storage/storage';
 import type { TickContext } from '@/server/tick/tick';
+import { insertWave } from '@/server/waves/testing';
 
 import { storeAttachment } from './attachments';
 import type { AttachmentRecord } from './attachments';
@@ -62,7 +61,10 @@ describe('attachment-cleanup', () => {
 		});
 		await db
 			.update(attachments)
-			.set({ createdAt: new Date(Date.now() - 2 * DAY_MS), waveId: randomUUID() })
+			.set({
+				createdAt: new Date(Date.now() - 2 * DAY_MS),
+				waveId: await insertWave(db, occasionId),
+			})
 			.where(eq(attachments.id, inWave.id));
 		await expect(attachmentCleanup.run(context(db, storage))).resolves.toStrictEqual({
 			moreWork: false,

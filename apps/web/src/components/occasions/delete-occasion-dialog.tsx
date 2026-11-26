@@ -14,18 +14,22 @@ import { useT } from '@/i18n/use-t';
 type RemovedOccasion = 'archived' | 'deleted' | 'gone';
 
 /**
- * The button „Löschen“ of an occasion and its dialog „{name} löschen?“. An occasion without
- * waves is deleted, one with waves is archived; the dialog says both. React Aria's modal keeps
- * the focus inside the dialog and returns it to the button when it closes. An occasion saved
- * since the page loaded it is not removed; the dialog says so and the page loads it anew.
+ * The button „Löschen“ of an occasion without waves and its dialog „{name} löschen?“, or
+ * „Archivieren“ and „{name} archivieren?“ for one with waves: an occasion with waves is archived,
+ * not deleted. Should a wave be made after the page loaded, the occasion is archived and the list
+ * says so. React Aria's modal keeps the focus inside the dialog and returns it to the button when
+ * it closes. An occasion saved since the page loaded it is not removed; the dialog says so and the
+ * page loads it anew.
  *
  * @param props The props.
  * @param props.announce Announces a failure in the page's live region.
- * @param props.label The accessible name of the button; the visible one is „Löschen“.
- * @param props.occasion The occasion: id, name and the version the page loaded.
+ * @param props.label The accessible name of the button; the visible one is „Löschen“ or
+ *   „Archivieren“.
+ * @param props.occasion The occasion: id, name, its waves and the version the page loaded.
  * @param props.occasion.id The occasion.
  * @param props.occasion.name Its name as the page shows it.
  * @param props.occasion.version The version the page loaded.
+ * @param props.occasion.waves How many waves it had when the page loaded it.
  * @param props.onRemoved Called when the occasion is gone or archived.
  * @returns The button with its dialog.
  */
@@ -37,7 +41,7 @@ export function DeleteOccasionDialog({
 }: Readonly<{
 	announce: Announce;
 	label: string;
-	occasion: Readonly<{ id: string; name: string; version: number }>;
+	occasion: Readonly<{ id: string; name: string; version: number; waves: number }>;
 	onRemoved: (result: RemovedOccasion) => void;
 }>): ReactNode {
 	const t = useT();
@@ -46,6 +50,7 @@ export function DeleteOccasionDialog({
 	const [isOpen, setIsOpen] = useState(false);
 	const [isPending, startPending] = useTransition();
 	const { id, version } = occasion;
+	const archives = occasion.waves > 0;
 	const confirm = useCallback(() => {
 		startPending(async () => {
 			const result = await settle(remove({ data: { id, version } }));
@@ -69,7 +74,7 @@ export function DeleteOccasionDialog({
 		<DialogTrigger isOpen={isOpen} onOpenChange={setIsOpen}>
 			{/* Pending until hydrated: focusable, but a press does nothing yet. */}
 			<Button aria-label={label} className={dangerButtonClass} isPending={!hydrated}>
-				{t('occasions.delete')}
+				{t(archives ? 'occasions.archive' : 'occasions.delete')}
 			</Button>
 			{/* While the occasion is being removed, the dialog stays until the result is in. */}
 			<ModalOverlay
@@ -79,15 +84,17 @@ export function DeleteOccasionDialog({
 				<Modal className="w-full max-w-md rounded-md bg-white p-6 shadow-lg">
 					<Dialog className="flex flex-col gap-4 outline-none">
 						<Heading className="text-xl font-bold" slot="title">
-							{t('occasions.deleteTitle', { name: occasion.name })}
+							{t(archives ? 'occasions.archiveTitle' : 'occasions.deleteTitle', {
+								name: occasion.name,
+							})}
 						</Heading>
-						<p>{t('occasions.deleteText')}</p>
+						<p>{t(archives ? 'occasions.archiveText' : 'occasions.deleteText')}</p>
 						<div className="flex justify-end gap-3">
 							<Button className={secondaryButtonClass} isDisabled={isPending} slot="close">
 								{t('occasions.cancel')}
 							</Button>
 							<Button className={dangerButtonClass} isPending={isPending} onPress={confirm}>
-								{t('occasions.deleteConfirm')}
+								{t(archives ? 'occasions.archiveConfirm' : 'occasions.deleteConfirm')}
 							</Button>
 						</div>
 					</Dialog>

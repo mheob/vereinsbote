@@ -19,9 +19,14 @@
  */
 import type { Platform } from '@/platform/platform';
 import { budgetedFetch, isSubrequestLimit, SUBREQUEST_LIMIT_CODE } from '@/platform/subrequests';
+import type { SubrequestBudget } from '@/platform/subrequests';
 import { SecretDecryptError } from '@/server/crypto/secrets';
+import type { DbHandle } from '@/server/db/client';
+import type { Env } from '@/server/env';
 import { errorLabel } from '@/server/error-label';
-import type { TickContext, TickStep } from '@/server/tick/tick';
+import type { ObjectStorage } from '@/server/storage/storage';
+import { runTick } from '@/server/tick/tick';
+import type { TickContext, TickReport, TickStep } from '@/server/tick/tick';
 
 import { disturbanceReason } from './disturbance';
 import { SenderNotFoundError } from './errors';
@@ -104,13 +109,15 @@ interface Lane {
 
 /**
  * A connection as this run sees it. `open`: its mails go; `probing`: disturbed without a token to
- * fetch, so one entry tests it; `closed`: disturbed, its mails wait. `disturbedSince` is the start
- * of a disturbance found at the start of the run; it stays the start when a probe succeeds and
- * the next send is refused anyway (a mailbox the app may not use).
+ * fetch, so one entry tests it; `closed`: disturbed, its mails wait. `disturbedSince` and
+ * `disturbedCode` are the start and the code of a disturbance found at the start of the run; the
+ * start stays when a probe succeeds and the next send is refused anyway (a mailbox the app may not
+ * use), and a probe clears only that disturbance.
  */
 interface ConnectionState {
 	readonly mode: 'closed' | 'open' | 'probing';
 	readonly disturbedSince: Date | null;
+	readonly disturbedCode: string | null;
 }
 
 /**
@@ -522,6 +529,7 @@ class OutboxRun {
 	 */
 	private async check(due: Readonly<DueSender>, transport: Transport): Promise<ConnectionState> {
 		const state: ConnectionState = {
+			disturbedCode: due.disturbedCode,
 			disturbedSince: due.disturbedSince,
 			mode: await this.modeOf(due, transport),
 		};
@@ -547,7 +555,10 @@ class OutboxRun {
 		if (!tokenDecides(transport, disturbedCode)) return 'probing';
 		const probed = await probeSafely(transport.probe);
 		if (probed.ok) {
-			await clearDisturbance(this.ctx.db, connectionId);
+			await clearDisturbance(this.ctx.db, connectionId, {
+				code: disturbedCode,
+				since: disturbedSince,
+			});
 			return 'open';
 		}
 		if (probed.failure === 'unauthorized') {
@@ -836,7 +847,13 @@ class OutboxRun {
 			this.closeConnection(lane.connectionId);
 			return false;
 		}
-		await clearDisturbance(this.ctx.db, lane.connectionId);
+		const { disturbedCode, disturbedSince } = connection;
+		if (disturbedSince !== null) {
+			await clearDisturbance(this.ctx.db, lane.connectionId, {
+				code: disturbedCode,
+				since: disturbedSince,
+			});
+		}
 		this.connections.set(lane.connectionId, { ...connection, mode: 'open' });
 		return true;
 	}
@@ -854,8 +871,12 @@ class OutboxRun {
 	}
 
 	private closeConnection(connectionId: string): void {
-		const disturbedSince = this.connections.get(connectionId)?.disturbedSince ?? null;
-		this.connections.set(connectionId, { disturbedSince, mode: 'closed' });
+		const known = this.connections.get(connectionId);
+		this.connections.set(connectionId, {
+			disturbedCode: known?.disturbedCode ?? null,
+			disturbedSince: known?.disturbedSince ?? null,
+			mode: 'closed',
+		});
 		this.lanes = this.lanes.filter((lane) => lane.connectionId !== connectionId);
 	}
 
@@ -909,16 +930,55 @@ async function started(run: () => Promise<unknown>): Promise<unknown> {
  *
  * The run must not use the request's database: on Cloudflare it ends with the response
  * (`requestDbReleaser`), and an entry the run took then would stay `sending` and later turn
- * `uncertain`. The caller passes a run that opens a database of its own and ends it afterwards,
- * as the cron handler does (`cloudflare-worker.ts`), and gives its tick the subrequest budget of
- * the request's invocation (`invocationBudget`).
+ * `uncertain`. The caller passes `kickRun`, which opens a database of its own and ends it
+ * afterwards, as the cron handler does (`cloudflare-worker.ts`), and gives its tick the subrequest
+ * budget of the request's invocation (`invocationBudget`).
  *
  * @param platform The platform.
- * @param run The run, e.g. a tick with the budget `KICK_BUDGET_MS` and a database of its own.
+ * @param run The run: `kickRun` with the outbox step.
  */
 function kickOutbox(platform: Platform, run: () => Promise<unknown>): void {
 	platform.waitUntil(started(run));
 }
 
-export { KICK_BUDGET_MS, createOutboxStep, kickOutbox };
-export type { OutboxDeps };
+/** What a run of `kickOutbox` needs: its steps, and a database and a budget of its own. */
+interface KickRunDeps {
+	readonly env: Env;
+	readonly storage: ObjectStorage | null;
+	/** The steps to run: the outbox step. */
+	readonly steps: readonly TickStep[];
+	/** Opens a database that only the run uses; the run ends it when it is done. */
+	readonly openDb: () => Promise<DbHandle>;
+	/** The provider requests the invocation may still make (`invocationBudget`). */
+	readonly subrequests: SubrequestBudget | null;
+}
+
+/**
+ * The run that `kickOutbox` keeps alive after the response: a tick with the budget
+ * `KICK_BUDGET_MS` on a database it opens when it starts and ends when it is done, never the
+ * request's. It takes the tick lock like every tick, so a tick that runs already sends instead. It
+ * does not ping the heartbeat: the monitor watches the scheduler, and a kick is none of its runs.
+ *
+ * @param deps The environment, the storage, the steps, the database and the budget.
+ * @returns The run.
+ */
+function kickRun(deps: KickRunDeps): () => Promise<TickReport> {
+	return async () => {
+		const { db, end } = await deps.openDb();
+		try {
+			return await runTick({
+				budgetMs: KICK_BUDGET_MS,
+				db,
+				env: { ...deps.env, heartbeatUrl: null },
+				steps: deps.steps,
+				storage: deps.storage,
+				subrequests: deps.subrequests,
+			});
+		} finally {
+			await end();
+		}
+	};
+}
+
+export { KICK_BUDGET_MS, createOutboxStep, kickOutbox, kickRun };
+export type { KickRunDeps, OutboxDeps };

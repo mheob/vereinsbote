@@ -4,6 +4,7 @@ import { sql } from 'drizzle-orm/sql';
 import { areas } from './areas';
 import { user } from './auth';
 import { occasions } from './occasions';
+import { waves } from './waves';
 
 /** The file types a mail may carry (Design 10.2); the check below repeats them. */
 const ATTACHMENT_TYPE_VALUES = ['application/pdf', 'image/jpeg', 'image/png'] as const;
@@ -11,8 +12,8 @@ const ATTACHMENT_TYPE_VALUES = ['application/pdf', 'image/jpeg', 'image/png'] as
 /**
  * A file attached to the mails of a wave (Design 10.2). The bytes are in the object storage under
  * `attachments/<id>`, never served publicly. Before the wave is made `wave_id` is null: such a
- * file belongs to the occasion's open flow, and the tick removes it after one day. `wave_id` has
- * no foreign key yet; the task that adds the `waves` table adds it.
+ * file belongs to the occasion's open flow, and the tick removes it after one day. The confirmation
+ * of a wave sets `wave_id`; the file then goes with the wave.
  */
 export const attachments = pgTable(
 	'attachments',
@@ -32,7 +33,7 @@ export const attachments = pgTable(
 		occasionId: uuid('occasion_id').references(() => occasions.id, { onDelete: 'set null' }),
 		size: integer('size').notNull(),
 		type: text('type', { enum: ATTACHMENT_TYPE_VALUES }).notNull(),
-		waveId: uuid('wave_id'),
+		waveId: uuid('wave_id').references(() => waves.id, { onDelete: 'cascade' }),
 	},
 	(table) => [
 		check(

@@ -72,7 +72,9 @@ export const Route = createFileRoute('/occasions/$occasionId')({
 						<div>
 							<DeleteOccasionDialog
 								announce={announce}
-								label={t('occasions.deleteAria', { name })}
+								label={t(occasion.waves > 0 ? 'occasions.archiveAria' : 'occasions.deleteAria', {
+									name,
+								})}
 								occasion={occasion}
 								onRemoved={onRemoved}
 							/>

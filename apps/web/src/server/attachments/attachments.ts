@@ -3,7 +3,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Db } from '@/server/db/client';
 import { attachments, occasions } from '@/server/db/schema';
 import { newMediaId } from '@/server/media/ids';
-import { OccasionNotFoundError } from '@/server/occasions/errors';
+import { OccasionInvalidError, OccasionNotFoundError } from '@/server/occasions/errors';
 import { getOccasion } from '@/server/occasions/occasions';
 import { assertArea } from '@/server/permissions/principal';
 import type { Principal } from '@/server/permissions/principal';
@@ -59,21 +59,24 @@ function checkRoom(count: number, total: number, size: number): void {
 
 /**
  * Checks the count and the sum of the open attachments of the occasion together with the new one.
- * The occasion row is locked first, so two uploads at once cannot both pass.
+ * The occasion row is locked first, so two uploads at once cannot both pass, and an occasion
+ * archived meanwhile takes no file.
  *
  * @param tx The transaction.
  * @param occasionId The occasion.
  * @param size The size of the new file.
  * @throws {OccasionNotFoundError} When the occasion is gone.
+ * @throws {OccasionInvalidError} When the occasion is archived (`archived`).
  * @throws {AttachmentInvalidError} When there would be too many files or bytes (`count`, `total`).
  */
 async function assertRoom(tx: Db, occasionId: string, size: number): Promise<void> {
 	const [locked] = await tx
-		.select({ id: occasions.id })
+		.select({ archivedAt: occasions.archivedAt })
 		.from(occasions)
 		.where(eq(occasions.id, occasionId))
 		.for('update');
 	if (locked === undefined) throw new OccasionNotFoundError();
+	if (locked.archivedAt !== null) throw new OccasionInvalidError('archived');
 	const [open] = await tx
 		.select({
 			count: sql<number>`count(*)::int`,
@@ -99,6 +102,24 @@ function checkedType(bytes: Uint8Array): AttachmentType {
 }
 
 /**
+ * The area of an occasion that may take files for its next wave.
+ *
+ * @param db The database.
+ * @param actor Who uploads; needs `send` in the area.
+ * @param occasionId The occasion.
+ * @returns The area.
+ * @throws {OccasionNotFoundError} When the occasion is gone.
+ * @throws {ForbiddenError} Without `send` in the area.
+ * @throws {OccasionInvalidError} When the occasion is archived (`archived`): it sends no wave.
+ */
+async function sendingArea(db: Db, actor: Principal, occasionId: string): Promise<string> {
+	const { archivedAt, areaId } = await getOccasion(db, actor, occasionId);
+	assertArea(actor, areaId, 'send');
+	if (archivedAt !== null) throw new OccasionInvalidError('archived');
+	return areaId;
+}
+
+/**
  * Stores a file for the next wave of an occasion. Type and size come from the file itself, never
  * from its name. The object is written first, then the row; when that fails the object is deleted
  * again. Attachments without a wave count against the limits (5 files, 20 MiB together).
@@ -113,6 +134,7 @@ function checkedType(bytes: Uint8Array): AttachmentType {
  * @returns The stored attachment.
  * @throws {OccasionNotFoundError} When the occasion is gone.
  * @throws {ForbiddenError} Without `send` in the area.
+ * @throws {OccasionInvalidError} When the occasion is archived (`archived`): it sends no wave.
  * @throws {AttachmentInvalidError} For anything but a PDF, JPEG or PNG of at most 4 MiB, or when
  *   the mail would have too many files or bytes.
  */
@@ -124,8 +146,7 @@ async function storeAttachment(
 	occasionId: string,
 	file: Readonly<{ name: string; bytes: Uint8Array }>,
 ): Promise<AttachmentRecord> {
-	const { areaId } = await getOccasion(db, actor, occasionId);
-	assertArea(actor, areaId, 'send');
+	const areaId = await sendingArea(db, actor, occasionId);
 	const { bytes } = file;
 	const type = checkedType(bytes);
 	const id = newMediaId();

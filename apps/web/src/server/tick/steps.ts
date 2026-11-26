@@ -29,4 +29,7 @@ const tickSteps: readonly TickStep[] = [
 	sendingWarnings,
 ];
 
-export { tickSteps };
+/** The steps of a short run right after a wave is confirmed ("sofort", `kickRun`): the outbox only. */
+const kickSteps: readonly TickStep[] = [outbox];
+
+export { kickSteps, tickSteps };

@@ -13,6 +13,7 @@ import { sql } from 'drizzle-orm/sql';
 
 import { areas } from './areas';
 import { user } from './auth';
+// oxlint-disable-next-line import/no-cycle -- a lazy reference only, see the note in `./waves`
 import { senders } from './sending';
 import { templates } from './templates';
 

@@ -494,16 +494,34 @@ async function disturbConnection(
 }
 
 /**
- * Ends the disturbance of a connection: the provider took its credentials again.
+ * Ends the disturbance of a connection: the provider took its credentials (or its mails) again.
+ * Only the disturbance the caller read is cleared: another run (a kick and a tick, the system
+ * mailer) may have recorded a newer one meanwhile, with another code or after this one ended, and
+ * that one stays.
  *
  * @param db The database.
  * @param connectionId The connection.
+ * @param read The disturbance as the caller read it: its code and its start.
+ * @param read.code The code of the refusal.
+ * @param read.since When the disturbance began.
  */
-async function clearDisturbance(db: Db, connectionId: string): Promise<void> {
+async function clearDisturbance(
+	db: Db,
+	connectionId: string,
+	read: Readonly<{ code: string | null; since: Date }>,
+): Promise<void> {
 	await db
 		.update(mailConnections)
 		.set({ disturbedCode: null, disturbedSince: null })
-		.where(eq(mailConnections.id, connectionId));
+		.where(
+			and(
+				eq(mailConnections.id, connectionId),
+				read.code === null
+					? isNull(mailConnections.disturbedCode)
+					: eq(mailConnections.disturbedCode, read.code),
+				eq(mailConnections.disturbedSince, read.since),
+			),
+		);
 }
 
 export {

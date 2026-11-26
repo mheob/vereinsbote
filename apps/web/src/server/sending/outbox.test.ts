@@ -1,14 +1,16 @@
-import { asc } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vite-plus/test';
 
 import { setUpClub } from '@/server/contacts/testing';
-import { outboxEntries } from '@/server/db/schema';
+import { mailConnections, outboxEntries } from '@/server/db/schema';
 import { createTestDb } from '@/server/db/test-db';
 
 import {
 	MAX_ATTEMPTS,
 	RETRY_DELAYS_MS,
 	UNCERTAIN_AFTER_MS,
+	clearDisturbance,
+	disturbConnection,
 	markUncertain,
 	nextAttemptDelay,
 	outcomeOf,
@@ -117,5 +119,33 @@ describe(markUncertain, () => {
 			{ code: 'outbox.interrupted', messageId: '<b@example.org>', status: 'uncertain' },
 			{ code: null, messageId: null, status: 'planned' },
 		]);
+	});
+});
+
+describe(clearDisturbance, () => {
+	it('clears only the disturbance it read', async () => {
+		const db = await createTestDb();
+		const { admin } = await setUpClub(db);
+		const connectionId = await graphConnection(db, admin);
+		const since = new Date(NOW.getTime() - HOUR_MS);
+		const disturbance = async (): Promise<unknown> => {
+			const [row] = await db
+				.select({ code: mailConnections.disturbedCode, since: mailConnections.disturbedSince })
+				.from(mailConnections)
+				.where(eq(mailConnections.id, connectionId));
+			return row;
+		};
+		await disturbConnection(db, connectionId, 'graph.mailbox', since);
+		// Another run found the credentials refused after this one read the mailbox refusal.
+		await clearDisturbance(db, connectionId, { code: 'graph.unauthorized', since });
+		await expect(disturbance()).resolves.toStrictEqual({ code: 'graph.mailbox', since });
+		// A disturbance that ended and began again since is another one.
+		await clearDisturbance(db, connectionId, {
+			code: 'graph.mailbox',
+			since: new Date(since.getTime() - MINUTE_MS),
+		});
+		await expect(disturbance()).resolves.toStrictEqual({ code: 'graph.mailbox', since });
+		await clearDisturbance(db, connectionId, { code: 'graph.mailbox', since });
+		await expect(disturbance()).resolves.toStrictEqual({ code: null, since: null });
 	});
 });

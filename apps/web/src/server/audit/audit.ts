@@ -47,7 +47,8 @@ type AuditAction =
 	| 'user.disabled'
 	| 'user.enabled'
 	| 'user.invitation_resent'
-	| 'user.invited';
+	| 'user.invited'
+	| 'wave.created';
 
 interface AuditEntry {
 	/** The acting user, or null for the system. */

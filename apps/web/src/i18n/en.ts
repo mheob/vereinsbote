@@ -865,6 +865,12 @@ export const en: Record<keyof typeof de, string> = {
 	'notFound.text': 'This page does not exist.',
 	'notFound.title': 'Page not found',
 	'occasions.actions': 'Actions',
+	'occasions.archive': 'Archive',
+	'occasions.archiveAria': 'Archive {name}',
+	'occasions.archiveConfirm': 'Archive',
+	'occasions.archiveText':
+		'The occasion already has waves, so it is archived: it can then no longer be chosen or changed, its history and opt-outs stay.',
+	'occasions.archiveTitle': 'Archive “{name}”?',
 	'occasions.archived': '(archived)',
 	'occasions.archivedInvalid': 'The occasion is archived and cannot be changed any more.',
 	'occasions.archivedNote':
@@ -883,8 +889,7 @@ export const en: Record<keyof typeof de, string> = {
 	'occasions.delete': 'Delete',
 	'occasions.deleteAria': 'Delete {name}',
 	'occasions.deleteConfirm': 'Delete',
-	'occasions.deleteText':
-		'An occasion without waves is deleted for good. If it already has waves it is archived: it can then no longer be chosen or changed, its history and opt-outs stay.',
+	'occasions.deleteText': 'The occasion has no waves yet and is deleted for good.',
 	'occasions.deleteTitle': 'Delete “{name}”?',
 	'occasions.deleted': 'The occasion “{name}” was deleted.',
 	'occasions.edit': 'Edit',

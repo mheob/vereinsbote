@@ -8,7 +8,7 @@
  * history, its opt-outs and the hold on its template and sender. The activity log names ids and
  * the area.
  */
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, count, eq, inArray, max, sql } from 'drizzle-orm';
 
 import { writeAudit } from '@/server/audit/audit';
 import type { AuditAction } from '@/server/audit/audit';
@@ -23,6 +23,7 @@ import {
 	senderAreas,
 	senders,
 	templates,
+	waves,
 } from '@/server/db/schema';
 import { assertArea, canAccessArea } from '@/server/permissions/principal';
 import type { Principal } from '@/server/permissions/principal';
@@ -60,39 +61,77 @@ interface OccasionRecord extends OccasionInput {
 	readonly version: number;
 }
 
+/** How many waves an occasion has and when the latest was made. */
+interface WaveStats {
+	readonly waves: number;
+	readonly lastWaveAt: Date | null;
+}
+
 /**
- * The count of waves of an occasion. There are none until the waves of sub-plan 4b exist; the
- * task that adds their table counts them here and fills `lastWaveAt` of the records.
+ * The count of waves of an occasion.
  *
- * @param _db The database or transaction.
- * @param _occasionId The occasion.
+ * @param db The database or transaction.
+ * @param occasionId The occasion.
  * @returns The number of waves.
  */
-// oxlint-disable-next-line typescript/require-await -- the real count, an await, comes with the waves table
-async function countWaves(_db: Db, _occasionId: string): Promise<number> {
-	return 0;
+async function countWaves(db: Db, occasionId: string): Promise<number> {
+	const [row] = await db
+		.select({ waves: count() })
+		.from(waves)
+		.where(eq(waves.occasionId, occasionId));
+	return row?.waves ?? 0;
+}
+
+/**
+ * The waves of occasions: how many and when the latest was made, in one query.
+ *
+ * @param db The database.
+ * @param occasionIds The occasions.
+ * @returns The numbers per occasion that has waves.
+ */
+async function waveStats(db: Db, occasionIds: readonly string[]): Promise<Map<string, WaveStats>> {
+	if (occasionIds.length === 0) return new Map();
+	const rows = await db
+		.select({
+			lastWaveAt: max(waves.createdAt),
+			occasionId: waves.occasionId,
+			waves: count(),
+		})
+		.from(waves)
+		.where(inArray(waves.occasionId, [...occasionIds]))
+		.groupBy(waves.occasionId);
+	return new Map(
+		rows.map(({ lastWaveAt, occasionId, waves: made }) => [
+			occasionId,
+			{ lastWaveAt, waves: made },
+		]),
+	);
 }
 
 /**
  * The stored row as a record.
  *
  * @param row The row.
+ * @param stats Its waves; none when absent.
  * @returns The record.
  */
-function toRecord(row: typeof occasions.$inferSelect): OccasionRecord {
+function toRecord(
+	row: typeof occasions.$inferSelect,
+	stats: WaveStats | undefined,
+): OccasionRecord {
 	return {
 		archivedAt: row.archivedAt,
 		areaId: row.areaId,
 		id: row.id,
 		kind: row.kind,
-		lastWaveAt: null,
+		lastWaveAt: stats?.lastWaveAt ?? null,
 		name: row.name,
 		senderId: row.senderId,
 		templateId: row.templateId,
 		trigger: row.trigger,
 		unsubscribe: row.unsubscribe,
 		version: row.version,
-		waves: 0,
+		waves: stats?.waves ?? 0,
 	};
 }
 
@@ -111,7 +150,11 @@ async function listOccasions(db: Db, actor: Principal): Promise<OccasionRecord[]
 		.from(occasions)
 		.where(inArray(occasions.areaId, areaIds))
 		.orderBy(sql`lower(${occasions.name})`, occasions.name, occasions.id);
-	return rows.map((row) => toRecord(row));
+	const stats = await waveStats(
+		db,
+		rows.map(({ id }) => id),
+	);
+	return rows.map((row) => toRecord(row, stats.get(row.id)));
 }
 
 /**
@@ -128,7 +171,8 @@ async function getOccasion(db: Db, actor: Principal, id: string): Promise<Occasi
 	const [row] = await db.select().from(occasions).where(eq(occasions.id, id));
 	if (row === undefined) throw new OccasionNotFoundError();
 	assertArea(actor, row.areaId, 'read');
-	return toRecord(row);
+	const stats = await waveStats(db, [row.id]);
+	return toRecord(row, stats.get(row.id));
 }
 
 /**
@@ -374,26 +418,25 @@ async function updateOccasion(
  * @param actor Who removes it; needs `edit` in the occasion's area.
  * @param id The occasion.
  * @param version The version the page loaded.
- * @param waveCount Counts the waves of the occasion; the default reads the real ones.
  * @returns What happened to the occasion.
  * @throws {OccasionNotFoundError} When no occasion has the id.
  * @throws {ForbiddenError} Without `edit` in the area.
  * @throws {OccasionChangedError} When somebody saved since the page loaded the occasion.
  * @throws {OccasionInvalidError} When the occasion is archived already (`archived`).
  */
-// oxlint-disable-next-line max-params -- the plan's interface fixes these parameters, the count is a test seam
+// oxlint-disable-next-line max-params -- the plan's interface fixes these parameters
 async function removeOccasion(
 	db: Db,
 	actor: Principal,
 	id: string,
 	version: number,
-	waveCount: (db: Db, occasionId: string) => Promise<number> = countWaves,
 ): Promise<'archived' | 'deleted'> {
 	const areaId = await areaOfOccasion(db, id);
 	assertArea(actor, areaId, 'edit');
 	return db.transaction(async (tx) => {
+		// The lock waits for a wave being made (`confirmWave` holds the row), so its count is final.
 		await lockLive(tx, id, version);
-		if ((await waveCount(tx, id)) === 0) {
+		if ((await countWaves(tx, id)) === 0) {
 			await tx.delete(occasions).where(eq(occasions.id, id));
 			await logOccasion(tx, { action: 'occasion.deleted', actor, areaId, occasionId: id });
 			return 'deleted';

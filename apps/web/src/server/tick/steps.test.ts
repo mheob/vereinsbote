@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 
-import { tickSteps } from './steps';
+import { kickSteps, tickSteps } from './steps';
 
 describe('the steps of a tick', () => {
 	it('runs the steps in the order of the plan (sending before warnings)', () => {
@@ -11,5 +11,9 @@ describe('the steps of a tick', () => {
 			'stale-import-warning',
 			'sending-warnings',
 		]);
+	});
+
+	it('runs only the outbox step of the ticks right after a confirmation', () => {
+		expect(kickSteps).toStrictEqual([tickSteps[1]]);
 	});
 });

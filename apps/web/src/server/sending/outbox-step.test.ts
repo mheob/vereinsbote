@@ -1,4 +1,4 @@
-import { eq, inArray } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import { describe, expect, it, vi } from 'vite-plus/test';
 
 import type { Platform } from '@/platform/platform';
@@ -7,14 +7,14 @@ import type { SubrequestBudget } from '@/platform/subrequests';
 import { compareCodePoints } from '@/server/compare-code-points';
 import { setUpClub } from '@/server/contacts/testing';
 import { SecretDecryptError } from '@/server/crypto/secrets';
-import type { Db } from '@/server/db/client';
+import type { Db, DbHandle } from '@/server/db/client';
 import { mailConnections, outboxEntries, senders } from '@/server/db/schema';
 import { createTestDb } from '@/server/db/test-db';
 import type { TickStep } from '@/server/tick/tick';
 
 import { openSenderTransport } from './open-transport';
 import type { ClaimedEntry, EntryPreparer, PreparedMail } from './outbox';
-import { KICK_BUDGET_MS, createOutboxStep, kickOutbox } from './outbox-step';
+import { KICK_BUDGET_MS, createOutboxStep, kickOutbox, kickRun } from './outbox-step';
 import type { OutboxDeps } from './outbox-step';
 import { quotaToday, scopePause } from './quota';
 import { fakeProviders, graphConnection, resendConnection, senderOn, testEnv } from './testing';
@@ -1358,5 +1358,66 @@ describe(kickOutbox, () => {
 		]);
 		// Workers keep work after the response for 30 seconds only.
 		expect(KICK_BUDGET_MS).toBeLessThan(30 * SECOND_MS);
+	});
+});
+
+/**
+ * A kick run on a test database that records what its step saw and the end of the database.
+ *
+ * @param db The database the run opens.
+ * @returns The run, its step, the end of its database and its budget.
+ */
+function recordingKick(db: Db): {
+	run: () => Promise<unknown>;
+	step: ReturnType<typeof vi.fn<TickStep['run']>>;
+	end: ReturnType<typeof vi.fn<() => Promise<void>>>;
+	subrequests: SubrequestBudget;
+} {
+	const step = vi.fn<TickStep['run']>().mockResolvedValue({ moreWork: false });
+	const end = vi.fn<() => Promise<void>>().mockResolvedValue();
+	const subrequests = createSubrequestBudget(10);
+	const run = kickRun({
+		env: { ...testEnv(), heartbeatUrl: 'https://heartbeat.example.org/ping' },
+		openDb: vi.fn<() => Promise<DbHandle>>().mockResolvedValue({ db, end }),
+		steps: [{ name: 'outbox', run: step }],
+		storage: null,
+		subrequests,
+	});
+	return { end, run, step, subrequests };
+}
+
+describe(kickRun, () => {
+	it('runs the steps on a database of its own with the budget of the invocation', async () => {
+		const db = await createTestDb();
+		const kick = recordingKick(db);
+		// Nothing is opened before the run starts, after the response.
+		expect(kick.end).not.toHaveBeenCalled();
+		const before = Date.now();
+		await expect(kick.run()).resolves.toMatchObject({ status: 'completed' });
+		const seen = kick.step.mock.calls.map(([ctx]) => ({
+			db: ctx.db,
+			kickBudget: ctx.deadline - before >= KICK_BUDGET_MS,
+			subrequests: ctx.subrequests,
+		}));
+		expect(seen).toStrictEqual([{ db, kickBudget: true, subrequests: kick.subrequests }]);
+		expect(kick.end).toHaveBeenCalledOnce();
+	});
+
+	it('pings no heartbeat: only the ticks report to the monitor', async () => {
+		const kick = recordingKick(await createTestDb());
+		const pinged = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('no network'));
+		await kick.run();
+		expect(pinged).not.toHaveBeenCalled();
+		pinged.mockRestore();
+	});
+
+	it('ends its database when the run fails', async () => {
+		const db = await createTestDb();
+		// Without the table of the tick lock no run can start.
+		await db.execute(sql`drop table system_state`);
+		const kick = recordingKick(db);
+		await expect(kick.run()).rejects.toThrow();
+		expect(kick.step).not.toHaveBeenCalled();
+		expect(kick.end).toHaveBeenCalledOnce();
 	});
 });
