@@ -73,7 +73,10 @@ type DuplicateResult = Readonly<
 	| { ok: false; failure: 'forbiddenPlaceholders'; keys: readonly string[] }
 >;
 
-type DeleteTemplateResult = Readonly<{ ok: true } | { ok: false; failure: 'changed' | 'gone' }>;
+type DeleteTemplateResult =
+	| Readonly<{ ok: true }>
+	| Readonly<{ ok: false; failure: 'changed' | 'gone' }>
+	| Readonly<{ ok: false; failure: 'inUse'; occasions: readonly string[] }>;
 
 type SaveTemplateResult = Readonly<{ ok: true; version: number }> | SaveFailure;
 

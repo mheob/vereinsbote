@@ -398,12 +398,12 @@ function createSystemMailer(deps: SystemMailerDeps): SystemMailer {
  *
  * @param db The database.
  * @param sender The system sender.
- * @returns When its disturbance began (null: none), or null when a token cannot tell.
+ * @returns When its disturbance began (null: none) and its code, or null when a token cannot tell.
  */
 async function tokenCheckable(
 	db: Db,
 	sender: Readonly<SystemSender>,
-): Promise<{ since: Date | null } | null> {
+): Promise<{ since: Date | null; code: string | null } | null> {
 	const [connection] = await db
 		.select({ code: mailConnections.disturbedCode, since: mailConnections.disturbedSince })
 		.from(mailConnections)
@@ -411,7 +411,7 @@ async function tokenCheckable(
 	if (connection === undefined) return null;
 	const refusedMailbox =
 		connection.since !== null && disturbanceReason(connection.code) !== 'credentials';
-	return refusedMailbox ? null : { since: connection.since };
+	return refusedMailbox ? null : connection;
 }
 
 /**
@@ -433,7 +433,12 @@ async function checkSystemSender(db: Db, env: Env, deps: OpenDeps): Promise<void
 	const { transport } = await openSystemTransport(db, env, sender, deps);
 	if (transport.probe === null) return;
 	const probed = await transport.probe();
-	if (probed.ok && connection.since !== null) await clearDisturbance(db, sender.connectionId);
+	if (probed.ok && connection.since !== null) {
+		await clearDisturbance(db, sender.connectionId, {
+			code: connection.code,
+			since: connection.since,
+		});
+	}
 	if (!probed.ok && probed.failure === 'unauthorized') {
 		await disturbConnection(db, sender.connectionId, probed.code, deps.now());
 	}

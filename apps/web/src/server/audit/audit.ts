@@ -8,9 +8,12 @@ type AuditAction =
 	| 'connection.created'
 	| 'connection.deleted'
 	| 'connection.updated'
+	| 'contact.bounce_cleared'
 	| 'contact.opt_out_removed'
 	| 'contact.opted_out'
 	| 'contact.suppressed'
+	| 'contact.unsubscribe_undone'
+	| 'contact.unsubscribed'
 	| 'contact.unsuppressed'
 	| 'contacts.settings_changed'
 	| 'layout.created'
@@ -22,6 +25,10 @@ type AuditAction =
 	| 'import.members'
 	| 'import.partners'
 	| 'import.stale_warning'
+	| 'occasion.archived'
+	| 'occasion.created'
+	| 'occasion.deleted'
+	| 'occasion.updated'
 	| 'partner.created'
 	| 'partner.deleted'
 	| 'partner.updated'
@@ -33,6 +40,7 @@ type AuditAction =
 	| 'sending.digest_sent'
 	| 'sending.disturbance_warned'
 	| 'sending.secret_warned'
+	| 'sending.webhook_secret_warned'
 	| 'setup.completed'
 	| 'template.created'
 	| 'template.deleted'
@@ -43,7 +51,11 @@ type AuditAction =
 	| 'user.disabled'
 	| 'user.enabled'
 	| 'user.invitation_resent'
-	| 'user.invited';
+	| 'user.invited'
+	| 'wave.created'
+	| 'wave.entry_resent'
+	| 'wave.stopped'
+	| 'wave.test_sent';
 
 interface AuditEntry {
 	/** The acting user, or null for the system. */

@@ -15,6 +15,7 @@ import { isUniqueViolation } from '@/server/db/errors';
 import {
 	areas,
 	mailConnections,
+	occasions,
 	outboxEntries,
 	senderAreas,
 	senders,
@@ -26,6 +27,7 @@ import { isValidUserEmail } from '@/server/users/form';
 
 import type { ConnectionKind } from './connections';
 import {
+	SenderAreaInUseError,
 	SenderChangedError,
 	SenderEmailTakenError,
 	SenderInUseError,
@@ -399,6 +401,40 @@ async function createSender(
 }
 
 /**
+ * Refuses taking an area from a sender while an occasion of that area, an archived one too, uses
+ * it. Runs under the sender's row lock, which `createOccasion` and `updateOccasion` wait for.
+ *
+ * @param tx The transaction.
+ * @param id The sender.
+ * @param areaIds The areas the sender keeps.
+ * @throws {SenderAreaInUseError} When an occasion of a removed area uses the sender.
+ */
+async function assertAreasFree(tx: Db, id: string, areaIds: readonly string[]): Promise<void> {
+	const using = await tx
+		.select({ areaId: occasions.areaId, id: occasions.id })
+		.from(occasions)
+		.where(eq(occasions.senderId, id))
+		.orderBy(occasions.id);
+	const blocked = using.filter(({ areaId }) => !areaIds.includes(areaId));
+	if (blocked.length > 0)
+		throw new SenderAreaInUseError(blocked.map(({ id: occasionId }) => occasionId));
+}
+
+/**
+ * Replaces the areas a sender is released to.
+ *
+ * @param tx The transaction.
+ * @param id The sender.
+ * @param areaIds The areas it is released to from now on.
+ */
+async function replaceAreas(tx: Db, id: string, areaIds: readonly string[]): Promise<void> {
+	await tx.delete(senderAreas).where(eq(senderAreas.senderId, id));
+	if (areaIds.length > 0) {
+		await tx.insert(senderAreas).values(areaIds.map((areaId) => ({ areaId, senderId: id })));
+	}
+}
+
+/**
  * Changes a sender. The row is locked and its version compared, so of two saves based on the same
  * version the second is refused.
  *
@@ -413,6 +449,7 @@ async function createSender(
  * @throws {SenderChangedError} When somebody saved it since the page loaded it.
  * @throws {SenderInvalidError} When a value is missing, out of range or names nothing.
  * @throws {SenderEmailTakenError} When another sender has the address.
+ * @throws {SenderAreaInUseError} When an occasion of an area taken from the sender uses it.
  */
 // oxlint-disable-next-line max-params -- the plan's interface fixes these parameters
 async function updateSender(
@@ -433,17 +470,13 @@ async function updateSender(
 				.for('update');
 			if (row === undefined) throw new SenderNotFoundError();
 			if (row.version !== version) throw new SenderChangedError();
-			// Task 12 hooks in here: taking an area from the sender is refused (SenderAreaInUseError)
-			// while an occasion of that area uses the sender.
+			await assertAreasFree(tx, id, areaIds);
 			const next = version + 1;
 			await tx
 				.update(senders)
 				.set({ ...columns, updatedAt: new Date(), updatedByUserId: actor.userId, version: next })
 				.where(and(eq(senders.id, id), eq(senders.version, version)));
-			await tx.delete(senderAreas).where(eq(senderAreas.senderId, id));
-			if (areaIds.length > 0) {
-				await tx.insert(senderAreas).values(areaIds.map((areaId) => ({ areaId, senderId: id })));
-			}
+			await replaceAreas(tx, id, areaIds);
 			await logSender(tx, 'sender.updated', actor, id);
 			return { version: next };
 		});
@@ -464,7 +497,8 @@ async function updateSender(
  * @param id The sender.
  * @throws {ForbiddenError} For anybody but an admin.
  * @throws {SenderNotFoundError} When no sender has the id.
- * @throws {SenderInUseError} When open outbox entries hang on the sender (`entries`).
+ * @throws {SenderInUseError} When open outbox entries hang on the sender (`entries`) or an
+ *   occasion uses it, an archived one too (`occasions`).
  */
 async function deleteSender(db: Db, actor: Principal, id: string): Promise<void> {
 	assertAdmin(actor);
@@ -486,7 +520,12 @@ async function deleteSender(db: Db, actor: Principal, id: string): Promise<void>
 			)
 			.limit(1);
 		if (open !== undefined) throw new SenderInUseError('entries');
-		// Task 12 hooks in here: an occasion that uses the sender refuses it ('occasions').
+		const [using] = await tx
+			.select({ id: occasions.id })
+			.from(occasions)
+			.where(eq(occasions.senderId, id))
+			.limit(1);
+		if (using !== undefined) throw new SenderInUseError('occasions');
 		await tx.delete(senders).where(eq(senders.id, id));
 		await logSender(tx, 'sender.deleted', actor, id);
 	});

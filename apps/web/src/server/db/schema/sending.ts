@@ -15,6 +15,8 @@ import { sql } from 'drizzle-orm/sql';
 
 import { areas } from './areas';
 import { user } from './auth';
+// oxlint-disable-next-line import/no-cycle -- a lazy reference only, see the note in `./waves`
+import { waves } from './waves';
 
 /** Where an outbox entry comes from: a wave of sub-plan 4b (`source_id` is the wave). */
 const OUTBOX_SOURCES = ['wave'] as const;
@@ -132,7 +134,8 @@ export const senderAreas = pgTable(
  * (`sending`), sends it and stores the outcome. `message_id` is made at the first take and kept
  * for every retry (Resend's idempotency, bounce matching); `recipient` is the address the mail went
  * to. The sender may be deleted once no entry is open (`deleteSender`); sent entries keep their
- * history without it.
+ * history without it. An entry of a wave (`source` `wave`) carries the wave in `wave_id` too and
+ * goes with it.
  */
 export const outboxEntries = pgTable(
 	'outbox_entries',
@@ -142,6 +145,11 @@ export const outboxEntries = pgTable(
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 		/** When the admins' digest reported the entry as failed or uncertain; null until then. */
 		digestedAt: timestamp('digested_at', { withTimezone: true }),
+		/**
+		 * When its mail first went to a provider; kept for every retry. A provider keeps an
+		 * idempotency key only for a while (ruling R7).
+		 */
+		firstAttemptAt: timestamp('first_attempt_at', { withTimezone: true }),
 		id: uuid('id').primaryKey().defaultRandom(),
 		lastErrorCode: text('last_error_code'),
 		messageId: text('message_id'),
@@ -155,6 +163,7 @@ export const outboxEntries = pgTable(
 		source: text('source', { enum: OUTBOX_SOURCES }).notNull(),
 		sourceId: uuid('source_id').notNull(),
 		status: text('status', { enum: OUTBOX_STATUSES }).notNull().default('planned'),
+		waveId: uuid('wave_id').references(() => waves.id, { onDelete: 'cascade' }),
 	},
 	(table) => [
 		check('outbox_entries_source_check', sql`${table.source} in ('wave')`),
@@ -167,6 +176,7 @@ export const outboxEntries = pgTable(
 		index('outbox_entries_sender_status_idx').on(table.senderId, table.status),
 		uniqueIndex('outbox_entries_message_id_idx').on(table.messageId),
 		index('outbox_entries_provider_id_idx').on(table.providerId),
+		index('outbox_entries_wave_idx').on(table.waveId),
 	],
 );
 

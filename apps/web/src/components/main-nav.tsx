@@ -20,10 +20,38 @@ const NEVER_CURRENT = { exact: true } as const;
 const ONLY_THIS_PATH = { exact: true, includeSearch: false } as const;
 
 /**
- * The main navigation of a signed-in user: the start page, then each part the user may use. The
- * link of the current page is marked with `aria-current="page"` (TanStack Router sets it); the
- * start page and the contact list count only for themselves, whatever the kind of contact; the
- * link to the administration is never marked, the admin navigation marks the current admin page.
+ * The number of bounce marks at „Versand“: a badge for the eye, the number with its noun for
+ * screen readers, so the link reads „Versand 3 Rückläufer“. Nothing without marks.
+ *
+ * @param props The props.
+ * @param props.count The number of marks the user sees.
+ * @returns The badge, or nothing.
+ */
+function BounceBadge({ count }: Readonly<{ count: number }>): ReactNode {
+	const t = useT();
+	if (count === 0) return null;
+	return (
+		<>
+			{' '}
+			<span
+				aria-hidden="true"
+				className="ml-1 inline-block rounded-full bg-red-700 px-2 text-sm text-white no-underline"
+			>
+				{count}
+			</span>
+			<span className="sr-only">
+				{count === 1 ? t('nav.bouncesOne') : t('nav.bounces', { count })}
+			</span>
+		</>
+	);
+}
+
+/**
+ * The main navigation of a signed-in user: the start page, then each part the user may use; the
+ * sending overview shows the number of bounce marks the user sees. The link of the current page is
+ * marked with `aria-current="page"` (TanStack Router sets it); the start page and the contact list
+ * count only for themselves, whatever the kind of contact; the link to the administration is never
+ * marked, the admin navigation marks the current admin page.
  *
  * @param props The props.
  * @param props.nav The links the user may follow (`loadFrameInfo`).
@@ -57,6 +85,21 @@ export function MainNav({ nav }: Readonly<{ nav: FrameInfo['nav'] }>): ReactNode
 					<li>
 						<Link className={linkClass} to="/contacts/import/partners">
 							{t('nav.importPartners')}
+						</Link>
+					</li>
+				) : null}
+				{nav.occasions ? (
+					<li>
+						<Link className={linkClass} to="/occasions">
+							{t('nav.occasions')}
+						</Link>
+					</li>
+				) : null}
+				{nav.sending ? (
+					<li>
+						<Link className={linkClass} to="/sending">
+							{t('nav.sending')}
+							<BounceBadge count={nav.bounces} />
 						</Link>
 					</li>
 				) : null}

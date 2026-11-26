@@ -8,14 +8,15 @@
  * the source first.
  *
  * Contact data and `{{content}}` live in text only; attributes, `<style>` and `<title>` take
- * brand values (Design 10).
+ * brand values (Design 10). `{{unsubscribe.url}}` stands in text or as the whole value of an
+ * `href`, without a fallback there (Design 12 of sub-plan 4).
  */
 import { BUILTIN_PLACEHOLDERS, CONTENT_KEY } from '@/mail/placeholders/registry';
 import { formatPlaceholder, parsePlaceholders } from '@/mail/placeholders/syntax';
 import type { PlaceholderRef, TextSegment } from '@/mail/placeholders/syntax';
 
 import type { ImportRefusal } from './import-html';
-import { URL_BRAND_KEYS } from './media-refs';
+import { URL_BRAND_KEYS, URL_SLOT_KEYS } from './media-refs';
 
 /** The keys a template or layout may use. */
 interface PlaceholderKeys {
@@ -59,10 +60,13 @@ const TOKEN = new RegExp(`${TOKEN_START}(?<index>\\d+)${TOKEN_END}`, 'gu');
 const LEADING_TOKEN = new RegExp(`^${TOKEN_START}(?<index>\\d+)${TOKEN_END}`, 'u');
 const CSS_TOKEN = /vbph(?<index>\d+)x/gu;
 const FALLBACK_REFERENCE = /[\w#]/u;
-/** The brand values; the only placeholders outside text. */
+/** The brand values; with `unsubscribe.url` in an `href` the only placeholders outside text. */
 const BRAND_KEYS: ReadonlySet<string> = new Set(
-	BUILTIN_PLACEHOLDERS.filter(({ context }) => context === 'attribute').map(({ key }) => key),
+	BUILTIN_PLACEHOLDERS.filter(({ group }) => group === 'brand').map(({ key }) => key),
 );
+
+/** What an `href` takes: an address brand value, or an address the app puts in per mail. */
+const HREF_KEYS: ReadonlySet<string> = new Set([...URL_BRAND_KEYS, ...URL_SLOT_KEYS]);
 
 /** The brand values a style attribute and a style sheet take: colours and font stacks. */
 const CSS_BRAND_KEYS: ReadonlySet<string> = new Set([
@@ -75,20 +79,23 @@ const CSS_BRAND_KEYS: ReadonlySet<string> = new Set([
 	'brand.headingFontFamily',
 ]);
 
-/** What a place takes: text takes what the area allows, an address attribute only address brand values. */
-type PlaceRule = 'text' | 'url' | 'css' | 'free';
+/**
+ * What a place takes: text takes what the area allows, `src` only address brand values, `href`
+ * those and the addresses of `URL_SLOT_KEYS`.
+ */
+type PlaceRule = 'text' | 'href' | 'src' | 'css' | 'free';
 
 /**
  * What kind of values a place takes.
  *
  * @param place The place.
- * @returns `url` for `href` and `src`, `css` for CSS, `free` for the other attributes and the title.
+ * @returns `href` and `src` for these, `css` for CSS, `free` for the other attributes and the title.
  */
 function ruleOf(place: Place): PlaceRule {
 	if (place.kind === 'text') return 'text';
 	if (place.kind === 'style') return 'css';
 	if (place.kind === 'title') return 'free';
-	if (place.name === 'href' || place.name === 'src') return 'url';
+	if (place.name === 'href' || place.name === 'src') return place.name;
 	return place.name === 'style' ? 'css' : 'free';
 }
 
@@ -181,6 +188,22 @@ function refuse(state: State, refusal: ImportRefusal): void {
 }
 
 /**
+ * Judges whether the area allows a placeholder, and refuses it when not.
+ *
+ * @param state The state.
+ * @param key The key.
+ * @returns Whether it is allowed.
+ */
+function judgeAllowed(state: State, key: string): boolean {
+	if (state.allowed.keys.has(key)) return true;
+	refuse(state, {
+		key,
+		kind: state.allowed.known.has(key) ? 'placeholderForbidden' : 'placeholderUnknown',
+	});
+	return false;
+}
+
+/**
  * Judges a placeholder in text: it must be allowed in the area.
  *
  * @param state The state.
@@ -188,11 +211,7 @@ function refuse(state: State, refusal: ImportRefusal): void {
  */
 function judgeInText(state: State, key: string): void {
 	if (key === CONTENT_KEY) state.content.total += 1;
-	if (state.allowed.keys.has(key)) return;
-	refuse(state, {
-		key,
-		kind: state.allowed.known.has(key) ? 'placeholderForbidden' : 'placeholderUnknown',
-	});
+	judgeAllowed(state, key);
 }
 
 /** Where a placeholder stands and whether it is the whole value of its attribute. */
@@ -202,20 +221,22 @@ interface Site {
 }
 
 /**
- * The brand keys a kind of place takes.
+ * The keys a kind of place outside text takes.
  *
  * @param rule The kind of place.
  * @returns The keys.
  */
 function keysFor(rule: PlaceRule): ReadonlySet<string> {
-	if (rule === 'url') return URL_BRAND_KEYS;
+	if (rule === 'href') return HREF_KEYS;
+	if (rule === 'src') return URL_BRAND_KEYS;
 	return rule === 'css' ? CSS_BRAND_KEYS : BRAND_KEYS;
 }
 
 /**
  * Judges a placeholder outside text. An address attribute takes an address brand value as its
- * whole value, CSS takes a colour or font brand value, any other attribute and the title any brand
- * value. A fallback is written into the mail as it is, so an address and CSS take none.
+ * whole value, an `href` the unsubscribe link as well (when the area allows it), CSS takes a
+ * colour or font brand value, any other attribute and the title any brand value. A fallback is
+ * written into the mail as it is, so an address and CSS take none.
  *
  * @param state The state.
  * @param ref The placeholder.
@@ -224,7 +245,9 @@ function keysFor(rule: PlaceRule): ReadonlySet<string> {
 function judgeOutsideText(state: State, ref: Readonly<PlaceholderRef>, site: Site): void {
 	const { key } = ref;
 	const rule = ruleOf(site.place);
-	if (!keysFor(rule).has(key) || (rule === 'url' && !site.whole)) {
+	const address = rule === 'href' || rule === 'src';
+	if (address && URL_SLOT_KEYS.has(key) && !judgeAllowed(state, key)) return;
+	if (!keysFor(rule).has(key) || (address && !site.whole)) {
 		refuse(
 			state,
 			state.allowed.known.has(key) || BRAND_KEYS.has(key)

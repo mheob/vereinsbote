@@ -25,6 +25,8 @@ interface OverviewConnection extends Omit<
 > {
 	/** Whole days until the secret expires (negative: expired), or null without a date. */
 	readonly secretDaysLeft: number | null;
+	/** A Resend webhook secret that does not decrypt: its webhook refuses every event. */
+	readonly webhookSecretBroken: boolean;
 }
 
 /** A sender of the overview with the names of its connection and areas. */
@@ -209,14 +211,17 @@ function credentialsChanged(
 /** The connections and senders for the overview; for admins only. */
 const loadSendingOverview = createServerFn({ method: 'GET' }).handler(
 	async (): Promise<SendingOverview> => {
-		const [{ requireRequestPrincipal }, { sendingOverview }, { listAreas }] = await Promise.all([
-			import('@/platform/request-principal'),
-			import('@/server/sending/connections'),
-			import('@/server/areas/areas'),
-		]);
+		const [{ requireRequestPrincipal }, { sendingOverview }, { listAreas }, { deriveSecretsKey }] =
+			await Promise.all([
+				import('@/platform/request-principal'),
+				import('@/server/sending/connections'),
+				import('@/server/areas/areas'),
+				import('@/server/crypto/secrets'),
+			]);
 		const { context, principal } = await requireRequestPrincipal();
+		const key = await deriveSecretsKey(context.env.appSecret);
 		const [overview, areas] = await Promise.all([
-			sendingOverview(context.db, principal, new Date()),
+			sendingOverview(context.db, principal, new Date(), key),
 			listAreas(context.db, principal),
 		]);
 		const areaName = new Map(areas.map(({ id, name }) => [id, name]));

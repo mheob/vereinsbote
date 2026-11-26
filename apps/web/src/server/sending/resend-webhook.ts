@@ -98,7 +98,15 @@ function bounceEvent(id: string, data: unknown): ResendEvent | null {
 	};
 }
 
-function readEvent(id: string, body: string): ResendEvent | null {
+/**
+ * Reads the event of a webhook whose signature was checked (`verifyResendSignature`).
+ *
+ * @param id The Svix id of the event.
+ * @param body The raw request body.
+ * @returns The event (`other` for a type the app does not handle), or `null` when the body is no
+ *   event or a bounce or complaint lacks its fields.
+ */
+function readResendEvent(id: string, body: string): ResendEvent | null {
 	const event = eventSchema.safeParse(parseJson(body));
 	if (!event.success) return null;
 	const { data, type } = event.data;
@@ -111,6 +119,33 @@ function readEvent(id: string, body: string): ResendEvent | null {
 function withinTolerance(timestamp: string, now: Date): boolean {
 	const sentAt = Number(timestamp) * MS_PER_SECOND;
 	return Math.abs(now.getTime() - sentAt) <= WEBHOOK_TOLERANCE_MS;
+}
+
+/**
+ * Checks the signature, the time and the size of a webhook.
+ *
+ * @param secret The webhook secret (`whsec_…`).
+ * @param headers The request headers.
+ * @param body The raw request body.
+ * @param now The current time.
+ * @returns The Svix id of the event, or `null` when the size, the time or the signature is wrong.
+ */
+// oxlint-disable-next-line max-params -- the same parameters as verifyResendWebhook
+async function verifyResendSignature(
+	secret: string,
+	headers: Headers,
+	body: string,
+	now: Date,
+): Promise<string | null> {
+	if (encoder.encode(body).length > WEBHOOK_MAX_BYTES) return null;
+	const id = headers.get('svix-id') ?? '';
+	const timestamp = headers.get('svix-timestamp') ?? '';
+	const signatures = headers.get('svix-signature') ?? '';
+	if (id === '' || signatures === '' || !TIMESTAMP.test(timestamp)) return null;
+	if (!withinTolerance(timestamp, now)) return null;
+	const expected = await sign(secret, `${id}.${timestamp}.${body}`);
+	if (expected === null || !(await anySignatureMatches(signatures, expected))) return null;
+	return id;
 }
 
 /**
@@ -129,16 +164,15 @@ async function verifyResendWebhook(
 	body: string,
 	now: Date,
 ): Promise<ResendEvent | null> {
-	if (encoder.encode(body).length > WEBHOOK_MAX_BYTES) return null;
-	const id = headers.get('svix-id') ?? '';
-	const timestamp = headers.get('svix-timestamp') ?? '';
-	const signatures = headers.get('svix-signature') ?? '';
-	if (id === '' || signatures === '' || !TIMESTAMP.test(timestamp)) return null;
-	if (!withinTolerance(timestamp, now)) return null;
-	const expected = await sign(secret, `${id}.${timestamp}.${body}`);
-	if (expected === null || !(await anySignatureMatches(signatures, expected))) return null;
-	return readEvent(id, body);
+	const id = await verifyResendSignature(secret, headers, body, now);
+	return id === null ? null : readResendEvent(id, body);
 }
 
-export { verifyResendWebhook, WEBHOOK_MAX_BYTES, WEBHOOK_TOLERANCE_MS };
+export {
+	readResendEvent,
+	verifyResendSignature,
+	verifyResendWebhook,
+	WEBHOOK_MAX_BYTES,
+	WEBHOOK_TOLERANCE_MS,
+};
 export type { ResendEvent };

@@ -31,12 +31,12 @@ import { loadPreviewValues } from '@/functions/templates';
 import type { TemplateEditorPage } from '@/functions/templates';
 import { useT } from '@/i18n/use-t';
 import type { SalutationTexts } from '@/mail/placeholders/salutation';
+import type { MailSource } from '@/mail/render/compile';
 import type { SampleContactKind } from '@/mail/sample';
 import type { PreviewContact } from '@/server/templates/preview-values';
 
 import { PreviewContactPicker } from './preview-contact-picker';
 import { sampleValues } from './preview-source';
-import type { previewSource } from './preview-source';
 import { contactValuesState } from './preview-values-state';
 import type { ContactValuesResult, ContactValuesState } from './preview-values-state';
 
@@ -193,7 +193,7 @@ export function PreviewPanel({
 	source,
 }: Readonly<{
 	page: TemplateEditorPage;
-	source: ReturnType<typeof previewSource>;
+	source: MailSource;
 	salutationTexts: SalutationTexts;
 	announce: Announce;
 }>): ReactNode {

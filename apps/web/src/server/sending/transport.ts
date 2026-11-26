@@ -47,6 +47,12 @@ interface BounceReport {
 
 interface Transport {
 	readonly send: (mail: Readonly<OutgoingMail>) => Promise<SendResult>;
+	/**
+	 * How long after the first attempt of a mail a retry with its idempotency key is still safe
+	 * (Resend; ruling R7). Absent for a provider without keys (Graph), which answers `uncertain`
+	 * instead of `transient` when a mail may have gone.
+	 */
+	readonly idempotencyTrustedMs?: number;
 	/** Graph: fetch a token. Resend: `null`. */
 	readonly probe: (() => Promise<SendResult>) | null;
 	readonly fetchBounces:

@@ -7,7 +7,10 @@
  * and `nodemailer`, no `@/` imports. Accepted mail is handed to `deliver` (by default: SMTP to the
  * local Mailpit). Every secret is accepted except `wrong-secret` (401). Graph reads of a mailbox
  * that is not in the `senders` list answer 403, so the restriction check can tell "restricted"; the
- * one exception is `readable@verein.test`, which is readable (the warning case).
+ * one exception is `readable@verein.test`, which is readable (the warning case). The control
+ * endpoints under `/__control/` reset it, set the readable senders, put a bounce report into an
+ * inbox, send a signed Resend webhook and list the recorded requests and the accepted Resend mails
+ * with their ids (Resend's attachments are not passed on to Mailpit).
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -32,6 +35,12 @@ interface RecordedRequest {
 	readonly method: string;
 	readonly path: string;
 	readonly savedToSentItems?: boolean;
+}
+
+/** A mail the fake Resend accepted: the id it answered with and the recipients. */
+interface AcceptedResendMail {
+	readonly id: string;
+	readonly to: readonly string[];
 }
 
 interface NdrMessage {
@@ -216,22 +225,25 @@ function graphJsonMime(mailbox: string, payload: Json): string {
 	});
 }
 
+// A Resend address field: one address or a list.
+function textList(value: unknown): string[] {
+	return (Array.isArray(value) ? value : [value])
+		.map((entry) => asText(entry))
+		.filter((entry) => entry !== '');
+}
+
 function resendMime(payload: Json): string {
-	const toList = (value: unknown): string[] =>
-		(Array.isArray(value) ? value : [value])
-			.map((entry) => asText(entry))
-			.filter((entry) => entry !== '');
 	const headers = record(payload.headers);
 	const replyTo = asText(payload.reply_to);
 	return simpleMime({
-		bcc: toList(payload.bcc),
+		bcc: textList(payload.bcc),
 		from: asText(payload.from),
 		html: asText(payload.html),
 		messageId: asText(headers['Message-ID']),
 		...(replyTo === '' ? {} : { replyTo }),
 		subject: asText(payload.subject),
 		text: asText(payload.text),
-		to: toList(payload.to),
+		to: textList(payload.to),
 	});
 }
 
@@ -306,6 +318,7 @@ async function startFakeProviders(
 	let senders = new Set<string>();
 	let ndrs: { mailbox: string; message: NdrMessage }[] = [];
 	let idempotent = new Map<string, string>();
+	let resendMails: AcceptedResendMail[] = [];
 
 	async function deliverMime(mime: string, response: ServerResponse): Promise<boolean> {
 		try {
@@ -445,10 +458,12 @@ async function startFakeProviders(
 		const id = randomUUID();
 		// Stored before the delivery, so a concurrent duplicate finds it.
 		if (typeof key === 'string') idempotent.set(key, id);
-		if (!(await deliverMime(resendMime(parseJson(raw)), response))) {
+		const payload = parseJson(raw);
+		if (!(await deliverMime(resendMime(payload), response))) {
 			if (typeof key === 'string') idempotent.delete(key);
 			return true;
 		}
+		resendMails.push({ id, to: textList(payload.to) });
 		send(response, HTTP_OK, { id });
 		return true;
 	}
@@ -481,6 +496,10 @@ async function startFakeProviders(
 			send(response, HTTP_OK, requests);
 			return true;
 		}
+		if (request.method === 'GET' && path === '/resend/emails') {
+			send(response, HTTP_OK, resendMails);
+			return true;
+		}
 		if (request.method !== 'POST') return false;
 		const input = parseJson(await readBody(request));
 		switch (path) {
@@ -489,6 +508,7 @@ async function startFakeProviders(
 				senders = new Set();
 				ndrs = [];
 				idempotent = new Map();
+				resendMails = [];
 				send(response, HTTP_OK, {});
 				return true;
 			}

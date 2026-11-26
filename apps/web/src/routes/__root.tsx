@@ -3,59 +3,69 @@ import { createServerFn } from '@tanstack/react-start';
 import { useCallback } from 'react';
 import type { ReactNode } from 'react';
 import { I18nProvider, RouterProvider } from 'react-aria-components';
+import { z } from 'zod';
 
 import { PageFrame } from '@/components/page-frame';
 import { DEFAULT_LOCALE, intlLocale } from '@/i18n/locale';
 import type { Locale } from '@/i18n/locale';
 import { pageHead } from '@/i18n/page-title';
 import { LocaleProvider } from '@/i18n/use-t';
+import { isUnsubscribePath } from '@/paths';
 import type { FrameInfo } from '@/server/frame';
 
 import appCss from '@/styles.css?url';
+
+/** Whether the frame is a user's: false for a public page of the recipients of a mail. */
+const frameRequest = z.object({ withSession: z.boolean() });
 
 /**
  * What the frame of every page needs from the server: the language of the request (the `locale`
  * cookie, then `Accept-Language`, then German), whether it has a valid session, for the header's
  * Sign out button, and for a signed-in user the navigation and the notice about the member data
  * (`loadFrameInfo`). A failed check counts as signed out and is logged by code: the pages check
- * the session themselves, so the frame should not turn every page into an error page. The server
- * modules are imported inside the handler, so they stay out of the client bundle.
+ * the session themselves, so the frame should not turn every page into an error page. A public
+ * page for the recipients of a mail (an unsubscribe link) reads no session: its frame has the
+ * language only. The server modules are imported inside the handler, so they stay out of the
+ * client bundle.
  */
-const loadFrame = createServerFn({ method: 'GET' }).handler(
-	async (): Promise<{ frame: FrameInfo | null; locale: Locale; signedIn: boolean }> => {
-		const [
-			{ getRequest },
-			{ getRequestLocale },
-			{ getAppContext },
-			{ getSessionUser },
-			{ loadPrincipal },
-			{ loadFrameInfo },
-			{ errorLabelWithCause },
-		] = await Promise.all([
-			import('@tanstack/react-start/server'),
-			import('@/server/i18n/request-locale'),
-			import('@/platform/context'),
-			import('@/server/auth/session'),
-			import('@/server/permissions/principal'),
-			import('@/server/frame'),
-			import('@/server/error-label'),
-		]);
-		const { headers } = getRequest();
-		const locale = getRequestLocale(headers);
-		try {
-			const { auth, db } = await getAppContext();
-			const user = await getSessionUser(auth, db, headers);
-			if (user === null) return { frame: null, locale, signedIn: false };
-			const principal = await loadPrincipal(db, user.id);
-			const frame = principal === null ? null : await loadFrameInfo(db, principal, new Date());
-			return { frame, locale, signedIn: true };
-		} catch (error) {
-			// oxlint-disable-next-line no-console -- code or name only, the message may carry details
-			console.error('frame check failed', errorLabelWithCause(error));
-			return { frame: null, locale, signedIn: false };
-		}
-	},
-);
+const loadFrame = createServerFn({ method: 'GET' })
+	.validator(frameRequest)
+	.handler(
+		async ({ data }): Promise<{ frame: FrameInfo | null; locale: Locale; signedIn: boolean }> => {
+			const [
+				{ getRequest },
+				{ getRequestLocale },
+				{ getAppContext },
+				{ getSessionUser },
+				{ loadPrincipal },
+				{ loadFrameInfo },
+				{ errorLabelWithCause },
+			] = await Promise.all([
+				import('@tanstack/react-start/server'),
+				import('@/server/i18n/request-locale'),
+				import('@/platform/context'),
+				import('@/server/auth/session'),
+				import('@/server/permissions/principal'),
+				import('@/server/frame'),
+				import('@/server/error-label'),
+			]);
+			const { headers } = getRequest();
+			const locale = getRequestLocale(headers);
+			if (!data.withSession) return { frame: null, locale, signedIn: false };
+			try {
+				const { auth, db } = await getAppContext();
+				const user = await getSessionUser(auth, db, headers);
+				if (user === null) return { frame: null, locale, signedIn: false };
+				const principal = await loadPrincipal(db, user.id);
+				const frame = principal === null ? null : await loadFrameInfo(db, principal, new Date());
+				return { frame, locale, signedIn: true };
+			} catch (error) {
+				// oxlint-disable-next-line no-console -- code or name only, the message may carry details
+				console.error('frame check failed', errorLabelWithCause(error));
+				return { frame: null, locale, signedIn: false };
+			}
+		},
+	);
 
 export const Route = createRootRoute({
 	head: (context) => ({
@@ -69,7 +79,10 @@ export const Route = createRootRoute({
 		],
 	}),
 	// Loader data is part of the SSR payload, so hydration renders what the server resolved.
-	loader: async () => loadFrame(),
+	// The parameter is annotated: inferring it from the route tree would make the loader's data
+	// depend on itself.
+	loader: async ({ location }: Readonly<{ location: Readonly<{ pathname: string }> }>) =>
+		loadFrame({ data: { withSession: !isUnsubscribePath(location.pathname) } }),
 	// The name gives React a component (hooks rules, DevTools); TanStack Router names the property.
 	// oxlint-disable-next-line func-name-matching -- see above; ReactNode cannot be made deeply readonly
 	shellComponent: function RootShell({ children }: Readonly<{ children: ReactNode }>): ReactNode {

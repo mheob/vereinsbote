@@ -51,7 +51,8 @@ interface TemplateEditorData {
 }
 
 /**
- * The library images of an area among the ones a template shows.
+ * The library images of an area among the ones a template shows. The sending takes them from here
+ * as well (`templateMailSource`), so a wave shows what the editor showed.
  *
  * @param db The database.
  * @param areaId The area.
@@ -152,5 +153,5 @@ async function loadTemplateEditorData(
 	};
 }
 
-export { loadTemplateEditorData };
+export { areaImages, loadTemplateEditorData };
 export type { EditorMedia, LayoutSource, TemplateEditorData };

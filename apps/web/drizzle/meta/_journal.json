@@ -120,6 +120,55 @@
       "when": 1795662365873,
       "tag": "0016_polite_triton",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1795673024739,
+      "tag": "0017_mighty_roulette",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1795675718534,
+      "tag": "0018_breezy_pyro",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1795679689774,
+      "tag": "0019_omniscient_rogue",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1795680742339,
+      "tag": "0020_great_sasquatch",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1795683917880,
+      "tag": "0021_busy_killmonger",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1795704928569,
+      "tag": "0022_brief_typhoid_mary",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1795723263381,
+      "tag": "0023_empty_mariko_yashida",
+      "breakpoints": true
     }
   ]
 }

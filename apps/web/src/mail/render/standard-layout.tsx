@@ -31,6 +31,8 @@ interface LayoutContext {
 	/** The origin of the app, without a trailing slash. */
 	readonly origin: string;
 	readonly locale: Locale;
+	/** The address of the unsubscribe link (the marker of its slot); null for a mail without one. */
+	readonly unsubscribe: string | null;
 }
 
 /**
@@ -178,8 +180,8 @@ function footerLinks(context: LayoutContext): { texts: TextLink[]; icons: IconLi
 }
 
 /**
- * The footer: logo, name, address, register, links, icons and the free text. Empty values leave
- * their element out.
+ * The footer: logo, name, address, register, links, icons, the free text and, for an occasion
+ * with the unsubscribe link, that link last. Empty values leave their element out.
  *
  * @param props The footer props.
  * @param props.context The layout context.
@@ -241,6 +243,13 @@ function Footer({ context }: { readonly context: LayoutContext }): ReactNode {
 			)}
 			{footer.text.trim() !== '' && (
 				<FooterLine theme={theme}>{withBreaks(footer.text.trim())}</FooterLine>
+			)}
+			{context.unsubscribe !== null && (
+				<FooterLine theme={theme}>
+					<Link color={theme.footerText} href={context.unsubscribe}>
+						{translate(locale, 'mail.layout.unsubscribe')}
+					</Link>
+				</FooterLine>
 			)}
 			<Spacer height={24} />
 		</>

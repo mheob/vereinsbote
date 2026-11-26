@@ -62,6 +62,44 @@ describe(computePreview, () => {
 		const state = await computePreview(source({ subject: '{{broken' }), BRAND, ORIGIN, anna);
 		expect(state).toStrictEqual({ kind: 'invalid' });
 	});
+
+	it('shows the unsubscribe link a template places, to the page of test mails', async () => {
+		const html = `<p><a href='{{unsubscribe.url}}'>Abmelden</a></p>`;
+		const state = await computePreview(
+			source({ body: { html, kind: 'html' } }),
+			BRAND,
+			ORIGIN,
+			anna,
+		);
+		expect(state).toHaveProperty('kind', 'ready');
+		expect(JSON.stringify(state)).toContain(
+			`<p><a href='${ORIGIN}/unsubscribe/test'>Abmelden</a></p>`,
+		);
+	});
+
+	it('adds no unsubscribe link to a template that does not place it', async () => {
+		const state = await computePreview(source(), BRAND, ORIGIN, anna);
+		expect(state).toHaveProperty('kind', 'ready');
+		expect(JSON.stringify(state)).not.toContain('unsubscribe');
+	});
+
+	it('shows the link of an occasion that sends it, also where the template does not place it', async () => {
+		const state = await computePreview(source(), BRAND, ORIGIN, anna, 'with');
+		expect(state).toHaveProperty('kind', 'ready');
+		expect(JSON.stringify(state)).toContain(`${ORIGIN}/unsubscribe/test`);
+	});
+
+	it('refuses a template that places the link for an occasion that sends none', async () => {
+		const html = `<p><a href='{{unsubscribe.url}}'>Abmelden</a></p>`;
+		const withLink = source({ body: { html, kind: 'html' } });
+		await expect(computePreview(withLink, BRAND, ORIGIN, anna, 'without')).resolves.toStrictEqual({
+			kind: 'invalid',
+		});
+		await expect(computePreview(source(), BRAND, ORIGIN, anna, 'without')).resolves.toHaveProperty(
+			'kind',
+			'ready',
+		);
+	});
 });
 
 describe(schedulePreview, () => {

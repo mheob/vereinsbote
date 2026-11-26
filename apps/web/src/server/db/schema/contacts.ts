@@ -18,6 +18,7 @@ import { CONTACT_KINDS, CUSTOM_FIELD_TYPES, GENDERS, PROTECTIONS } from '@/serve
 
 import { areas } from './areas';
 import { user } from './auth';
+import { occasions } from './occasions';
 
 /** `'member', 'partner'` as a SQL list for the checks. */
 /**
@@ -212,8 +213,8 @@ export const contactOptOuts = pgTable(
 		}),
 		id: uuid('id').primaryKey().defaultRandom(),
 		kind: text('kind', { enum: CONTACT_KINDS }).notNull(),
-		/** No foreign key: the table of occasions comes in a later sub-plan. */
-		occasionId: uuid('occasion_id'),
+		/** The occasion an opt-out of scope `occasion` is for; it goes with the occasion. */
+		occasionId: uuid('occasion_id').references(() => occasions.id, { onDelete: 'cascade' }),
 		scope: text('scope', { enum: ['area', 'occasion'] }).notNull(),
 	},
 	(table) => [
@@ -226,5 +227,8 @@ export const contactOptOuts = pgTable(
 		uniqueIndex('contact_opt_outs_area_idx')
 			.on(table.kind, table.contactKey, table.areaId)
 			.where(sql`${table.scope} = 'area'`),
+		uniqueIndex('contact_opt_outs_occasion_idx')
+			.on(table.kind, table.contactKey, table.occasionId)
+			.where(sql`${table.scope} = 'occasion'`),
 	],
 );

@@ -7,6 +7,8 @@ const webhookResult = z.object({ status: z.number() });
 const recorded = z.array(
 	z.object({ method: z.string(), path: z.string(), savedToSentItems: z.boolean().optional() }),
 );
+const addressList = z.array(z.string());
+const acceptedResend = z.array(z.object({ id: z.string(), to: addressList }));
 
 async function post(path: string, body: unknown): Promise<Response> {
 	const response = await fetch(`${PROVIDERS_URL}/__control${path}`, {
@@ -18,7 +20,10 @@ async function post(path: string, body: unknown): Promise<Response> {
 	return response;
 }
 
-/** Forgets the recorded requests, the sender list, the bounce reports and the idempotency keys. */
+/**
+ * Forgets the recorded requests, the sender list, the bounce reports, the idempotency keys and the
+ * accepted Resend mails.
+ */
 async function resetProviders(): Promise<void> {
 	await post('/reset', {});
 }
@@ -70,4 +75,15 @@ async function recordedRequests(): Promise<z.infer<typeof recorded>> {
 	return recorded.parse(await response.json());
 }
 
-export { addNdr, recordedRequests, resetProviders, sendResendWebhook, setSenders };
+/**
+ * The mails the fake Resend accepted since the last reset, each once, with the id it answered; a
+ * Resend webhook names a mail by that id.
+ *
+ * @returns The ids and the recipients, oldest first.
+ */
+async function resendMails(): Promise<z.infer<typeof acceptedResend>> {
+	const response = await fetch(`${PROVIDERS_URL}/__control/resend/emails`);
+	return acceptedResend.parse(await response.json());
+}
+
+export { addNdr, recordedRequests, resendMails, resetProviders, sendResendWebhook, setSenders };

@@ -4,17 +4,19 @@
  * before that it was 1,000). A `fetch` beyond the limit throws `Error: Too many subrequests.`
  * before anything leaves the Worker.
  *
- * The outbox spends at most `CLOUDFLARE_PROVIDER_REQUESTS` of them on the providers per
- * invocation: across all senders and all ticks a cron event chains (`runScheduledTicks`), and in
- * the request of `/api/tick`. That leaves most of the limit to the database, the storage, the
- * warnings and the heartbeat. Node and Vercel have no such limit and get no budget.
+ * The outbox and the Graph bounce check spend at most `CLOUDFLARE_PROVIDER_REQUESTS` of them
+ * together on the providers per invocation: across all senders and all ticks a cron event chains
+ * (`runScheduledTicks`), and in the request of `/api/tick`. That leaves most of the limit to the
+ * database, the storage, the system and warning mails and the heartbeat. Node and Vercel have no
+ * such limit and get no budget.
  */
 import type { PlatformName } from './platform';
 
 /**
- * Provider requests (Graph, Resend) the outbox makes in one Worker invocation: a tenth of the
- * 10,000 subrequests of Workers Paid, so that even the old limit of 1,000 would hold the outbox
- * alone. A Graph mail costs one request, and one more for the token of a sender's run.
+ * Provider requests (Graph, Resend) the outbox and the Graph bounce check make together in one
+ * Worker invocation: a tenth of the 10,000 subrequests of Workers Paid, so that even the old limit
+ * of 1,000 would hold them alone. A Graph mail costs one request, and one more for the token of a
+ * sender's run; the bounce check costs two per Graph sender (token and inbox).
  */
 const CLOUDFLARE_PROVIDER_REQUESTS = 1000;
 

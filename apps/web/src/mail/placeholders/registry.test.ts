@@ -7,6 +7,7 @@ import {
 	BUILTIN_PLACEHOLDERS,
 	CONTENT_KEY,
 	SALUTATION_KEY,
+	UNSUBSCRIBE_URL_KEY,
 	customPlaceholderKey,
 } from './registry';
 import { parsePlaceholders } from './syntax';
@@ -59,7 +60,9 @@ describe('builtin placeholders', () => {
 
 	it('keeps contact data and the salutation out of attributes', () => {
 		const attribute = BUILTIN_PLACEHOLDERS.filter(({ context }) => context === 'attribute');
-		expect(attribute.every(({ group }) => group === 'brand')).toBe(true);
+		expect(
+			attribute.filter(({ group }) => group !== 'brand').map(({ group, key }) => `${group}:${key}`),
+		).toStrictEqual([`layout:${UNSUBSCRIBE_URL_KEY}`]);
 	});
 
 	it('protects birth date, entry and exit date and the address', () => {
@@ -77,11 +80,17 @@ describe('builtin placeholders', () => {
 		]);
 	});
 
-	it('has the salutation and the layout content', () => {
+	it('has the salutation, the layout content and the unsubscribe link', () => {
 		expect(BUILTIN_PLACEHOLDERS.find(({ key }) => key === SALUTATION_KEY)?.group).toBe(
 			'salutation',
 		);
 		expect(BUILTIN_PLACEHOLDERS.find(({ key }) => key === CONTENT_KEY)?.group).toBe('layout');
+		expect(BUILTIN_PLACEHOLDERS.find(({ key }) => key === UNSUBSCRIBE_URL_KEY)).toMatchObject({
+			base: true,
+			context: 'attribute',
+			group: 'layout',
+			key: 'unsubscribe.url',
+		});
 	});
 
 	it('has valid, unique keys and a label in both languages', () => {

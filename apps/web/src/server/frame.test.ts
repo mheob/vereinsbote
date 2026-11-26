@@ -1,6 +1,8 @@
 import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vite-plus/test';
 
+import { recordBounce } from '@/server/bounces/bounces';
+import { setUpSentWave } from '@/server/bounces/testing';
 import { recordConfirmedImport } from '@/server/contacts/import-state';
 import { setUpClub, userWith } from '@/server/contacts/testing';
 import { mailConnections } from '@/server/db/schema';
@@ -21,9 +23,12 @@ describe(loadFrameInfo, () => {
 		await expect(loadFrameInfo(db, editor, NOW)).resolves.toMatchObject({
 			nav: {
 				admin: false,
+				bounces: 0,
 				contacts: true,
 				importMembers: false,
 				importPartners: true,
+				occasions: true,
+				sending: true,
 				templates: true,
 			},
 		});
@@ -31,9 +36,12 @@ describe(loadFrameInfo, () => {
 		await expect(loadFrameInfo(db, outsider, NOW)).resolves.toStrictEqual({
 			nav: {
 				admin: false,
+				bounces: 0,
 				contacts: false,
 				importMembers: false,
 				importPartners: false,
+				occasions: false,
+				sending: false,
 				templates: false,
 			},
 			noSystemSender: false,
@@ -44,9 +52,12 @@ describe(loadFrameInfo, () => {
 		await expect(loadFrameInfo(db, admin, NOW)).resolves.toMatchObject({
 			nav: {
 				admin: true,
+				bounces: 0,
 				contacts: true,
 				importMembers: true,
 				importPartners: false,
+				occasions: true,
+				sending: true,
 				templates: true,
 			},
 		});
@@ -81,9 +92,12 @@ describe(loadFrameInfo, () => {
 		await expect(loadFrameInfo(db, reader, NOW)).resolves.toStrictEqual({
 			nav: {
 				admin: false,
+				bounces: 0,
 				contacts: true,
 				importMembers: false,
 				importPartners: false,
+				occasions: true,
+				sending: true,
 				templates: true,
 			},
 			noSystemSender: false,
@@ -127,5 +141,30 @@ describe(loadFrameInfo, () => {
 		});
 		// Only admins learn it.
 		await expect(loadFrameInfo(db, reader, NOW)).resolves.toMatchObject({ sendingNotice: null });
+	});
+
+	it('shows the bounce marks of the areas the user reads at „Versand“', async () => {
+		const sent = await setUpSentWave();
+		const { admin, db, membersAreaId, partnersAreaId } = sent.club;
+		await recordBounce(db, {
+			at: NOW,
+			entry: { messageId: sent.family.messageId },
+			hard: true,
+			source: 'graph',
+		});
+		const reader = await userWith(db, { [membersAreaId]: 'read' });
+		const finance = await userWith(db, { [partnersAreaId]: 'read' });
+		await expect(loadFrameInfo(db, reader, NOW)).resolves.toMatchObject({
+			nav: { bounces: 2, sending: true },
+		});
+		await expect(loadFrameInfo(db, finance, NOW)).resolves.toMatchObject({
+			nav: { bounces: 0, sending: true },
+		});
+		// The setup gave the admin `edit` in the members area; the admin role alone gives nothing.
+		await expect(loadFrameInfo(db, admin, NOW)).resolves.toMatchObject({ nav: { bounces: 2 } });
+		const adminWithoutArea = await userWith(db, {}, { isAdmin: true });
+		await expect(loadFrameInfo(db, adminWithoutArea, NOW)).resolves.toMatchObject({
+			nav: { bounces: 0, sending: false },
+		});
 	});
 });

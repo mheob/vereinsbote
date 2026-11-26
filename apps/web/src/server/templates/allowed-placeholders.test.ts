@@ -174,6 +174,18 @@ describe(templatePlaceholders, () => {
 		);
 		expect(allowed.keys).toContain('contact.custom.notiz');
 	});
+
+	it('allows the unsubscribe link in every template and every layout, content in layouts only', () => {
+		const template = templatePlaceholders({ member: new Set(), partner: new Set() }, []);
+		const own = allowedLayoutPlaceholders('template', template);
+		const global = allowedLayoutPlaceholders('global', []);
+		expect(
+			[template.keys, own.keys, global.keys].map((keys) => keys.has('unsubscribe.url')),
+		).toStrictEqual([true, true, true]);
+		expect([template.keys, own.keys, global.keys].map((keys) => keys.has('content'))).toStrictEqual(
+			[false, true, true],
+		);
+	});
 });
 
 const field = (placeholderKey: string, protection: 'base' | 'protected'): CustomFieldRecord => ({

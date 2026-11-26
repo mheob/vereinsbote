@@ -123,6 +123,7 @@ const HTTP_NOT_FOUND = 404;
 interface FakeCall {
 	readonly url: string;
 	readonly method: string;
+	readonly headers: Headers;
 	readonly body: string;
 }
 
@@ -174,7 +175,7 @@ function fakeProviders(behavior: Readonly<FakeBehavior> = {}): {
 		let url = input instanceof Request ? input.url : String(input);
 		if (input instanceof URL) url = input.href;
 		const body = typeof init?.body === 'string' ? init.body : '';
-		calls.push({ body, method: init?.method ?? 'GET', url });
+		calls.push({ body, headers: new Headers(init?.headers), method: init?.method ?? 'GET', url });
 		const response = await Promise.resolve(answerFor(url, behavior));
 		return response;
 	};

@@ -7,6 +7,7 @@ import { canAccessArea } from '@/server/permissions/principal';
 import type { Principal } from '@/server/permissions/principal';
 import { sendingNotice } from '@/server/sending/warnings';
 import type { SendingNotice } from '@/server/sending/warnings';
+import { bounceCount } from '@/server/waves/overview';
 
 type FrameNotice =
 	| Readonly<{ kind: 'stale'; lastImportAt: string; weeks: number; canImport: boolean }>
@@ -16,9 +17,15 @@ type FrameNotice =
 interface FrameInfo {
 	readonly nav: Readonly<{
 		admin: boolean;
+		/** The bounce marks of the areas the user reads, shown at „Versand“ (Design 13). */
+		bounces: number;
 		contacts: boolean;
 		importMembers: boolean;
 		importPartners: boolean;
+		/** Occasions: `read` in any area (the admin role alone gives none). */
+		occasions: boolean;
+		/** The sending overview: `read` in any area (the admin role alone gives none). */
+		sending: boolean;
 		/** Templates and image library: `read` in any area (the admin role alone gives none). */
 		templates: boolean;
 	}>;
@@ -82,16 +89,20 @@ async function frameNotice(
  */
 async function loadFrameInfo(db: Db, principal: Principal, now: Date): Promise<FrameInfo> {
 	// Not inside a transaction: the access loads its parts in parallel.
-	const [access, noSystemSender, sending] = await Promise.all([
+	const [access, noSystemSender, sending, bounces] = await Promise.all([
 		loadContactAccess(db, principal),
 		lacksSystemSender(db, principal),
 		principal.isAdmin ? sendingNotice(db, now) : null,
+		bounceCount(db, principal),
 	]);
 	const nav = {
 		admin: principal.isAdmin,
+		bounces,
 		contacts: access.canList,
 		importMembers: access.canManage.member,
 		importPartners: access.canManage.partner,
+		occasions: principal.areas.size > 0,
+		sending: principal.areas.size > 0,
 		templates: principal.areas.size > 0,
 	};
 	const notice = await frameNotice(db, principal, { canImport: access.canManage.member, now });

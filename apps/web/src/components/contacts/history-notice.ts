@@ -7,11 +7,13 @@
 /** A notice in the history state. */
 type HistoryNoticeKey =
 	| 'deletedContact'
+	| 'occasionNotice'
 	| 'partnerSaved'
 	| 'sendingCheck'
 	| 'sendingNotice'
 	| 'sendingSelfTest'
-	| 'templateNotice';
+	| 'templateNotice'
+	| 'waveNotice';
 
 /** The part of `window.history` a notice needs. */
 interface NoticeHistory {

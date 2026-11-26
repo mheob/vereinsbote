@@ -1,18 +1,23 @@
-import { asc } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vite-plus/test';
 
 import { setUpClub } from '@/server/contacts/testing';
-import { outboxEntries } from '@/server/db/schema';
+import { mailConnections, outboxEntries } from '@/server/db/schema';
 import { createTestDb } from '@/server/db/test-db';
 
 import {
 	MAX_ATTEMPTS,
 	RETRY_DELAYS_MS,
 	UNCERTAIN_AFTER_MS,
+	clearDisturbance,
+	disturbConnection,
+	guardKeyLifetime,
+	keyOutlived,
 	markUncertain,
 	nextAttemptDelay,
 	outcomeOf,
 } from './outbox';
+import type { EntryOutcome } from './outbox';
 import { graphConnection, senderOn } from './testing';
 import type { SendFailureClass, SendResult } from './transport';
 
@@ -86,6 +91,57 @@ describe(outcomeOf, () => {
 	});
 });
 
+describe(keyOutlived, () => {
+	const trustedMs = 23 * HOUR_MS;
+	const sentAt = new Date(NOW.getTime() - trustedMs);
+
+	it('lets an entry go while the key of its first counted attempt is trusted', () => {
+		expect(keyOutlived({ attempts: 2, firstAttemptAt: sentAt }, trustedMs, NOW)).toBe(false);
+	});
+
+	it('stops an entry whose first counted attempt is older than the key is trusted', () => {
+		const later = new Date(NOW.getTime() + 1);
+		expect(keyOutlived({ attempts: 1, firstAttemptAt: sentAt }, trustedMs, later)).toBe(true);
+	});
+
+	it.each([
+		['a first attempt', { attempts: 0, firstAttemptAt: null }, trustedMs],
+		['an entry from before the column', { attempts: 3, firstAttemptAt: null }, trustedMs],
+		['a provider without keys', { attempts: 3, firstAttemptAt: new Date(0) }, null],
+	] as const)('never stops %s', (_name, entry, trusted) => {
+		expect(keyOutlived(entry, trusted, NOW)).toBe(false);
+	});
+});
+
+describe(guardKeyLifetime, () => {
+	const trustedMs = 23 * HOUR_MS;
+	const firstAttemptAt = new Date(NOW.getTime() - 22 * HOUR_MS);
+	const retryAt = (hours: number): EntryOutcome => ({
+		at: new Date(firstAttemptAt.getTime() + hours * HOUR_MS),
+		code: 'resend.server',
+		kind: 'retry',
+	});
+
+	it('keeps a retry that comes while the key is trusted', () => {
+		expect(guardKeyLifetime(retryAt(23), { firstAttemptAt, trustedMs })).toStrictEqual(retryAt(23));
+	});
+
+	it('makes a retry uncertain at once when it would come after the key', () => {
+		expect(guardKeyLifetime(retryAt(30), { firstAttemptAt, trustedMs })).toStrictEqual({
+			code: 'resend.server',
+			kind: 'uncertain',
+		});
+	});
+
+	it('keeps the retries of a provider without keys and every other outcome', () => {
+		expect(guardKeyLifetime(retryAt(30), { firstAttemptAt, trustedMs: null })).toStrictEqual(
+			retryAt(30),
+		);
+		const failed: EntryOutcome = { attempt: true, code: 'resend.server', kind: 'failed' };
+		expect(guardKeyLifetime(failed, { firstAttemptAt, trustedMs })).toStrictEqual(failed);
+	});
+});
+
 describe(markUncertain, () => {
 	it('marks entries sending for more than ten minutes as uncertain', async () => {
 		const db = await createTestDb();
@@ -117,5 +173,33 @@ describe(markUncertain, () => {
 			{ code: 'outbox.interrupted', messageId: '<b@example.org>', status: 'uncertain' },
 			{ code: null, messageId: null, status: 'planned' },
 		]);
+	});
+});
+
+describe(clearDisturbance, () => {
+	it('clears only the disturbance it read', async () => {
+		const db = await createTestDb();
+		const { admin } = await setUpClub(db);
+		const connectionId = await graphConnection(db, admin);
+		const since = new Date(NOW.getTime() - HOUR_MS);
+		const disturbance = async (): Promise<unknown> => {
+			const [row] = await db
+				.select({ code: mailConnections.disturbedCode, since: mailConnections.disturbedSince })
+				.from(mailConnections)
+				.where(eq(mailConnections.id, connectionId));
+			return row;
+		};
+		await disturbConnection(db, connectionId, 'graph.mailbox', since);
+		// Another run found the credentials refused after this one read the mailbox refusal.
+		await clearDisturbance(db, connectionId, { code: 'graph.unauthorized', since });
+		await expect(disturbance()).resolves.toStrictEqual({ code: 'graph.mailbox', since });
+		// A disturbance that ended and began again since is another one.
+		await clearDisturbance(db, connectionId, {
+			code: 'graph.mailbox',
+			since: new Date(since.getTime() - MINUTE_MS),
+		});
+		await expect(disturbance()).resolves.toStrictEqual({ code: 'graph.mailbox', since });
+		await clearDisturbance(db, connectionId, { code: 'graph.mailbox', since });
+		await expect(disturbance()).resolves.toStrictEqual({ code: null, since: null });
 	});
 });

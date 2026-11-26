@@ -281,6 +281,23 @@ function requestDbReleaser(): (() => Promise<void>) | null {
 	};
 }
 
-export { getAppContext, getAppEnv, getAppServices, requestDbReleaser };
+/**
+ * Opens a database of its own with the platform's driver, for work after the response that must
+ * not use the request's database (on Cloudflare that one ends with the response): the run of
+ * `kickOutbox`. The caller ends it.
+ *
+ * @param env The environment.
+ * @returns The database and the function that closes it.
+ */
+async function openOwnDb(env: Env): Promise<DbHandle> {
+	const driver =
+		import.meta.env.VITE_VB_PLATFORM === 'cloudflare' ||
+		import.meta.env.VITE_VB_PLATFORM === 'vercel'
+			? 'neon'
+			: 'pg';
+	return openAppDb(env, driver);
+}
+
+export { getAppContext, getAppEnv, getAppServices, openOwnDb, requestDbReleaser };
 export type { AppContext };
 export type { PlatformName } from './platform';

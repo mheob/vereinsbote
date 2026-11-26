@@ -8,6 +8,7 @@ import { StorageNotConfiguredError } from '@/server/storage/storage';
 import {
 	LayoutNotFoundError,
 	TemplateChangedError,
+	TemplateInUseError,
 	TemplateInvalidError,
 	TemplateNameTakenError,
 	TemplateNotFoundError,
@@ -29,7 +30,10 @@ type DuplicateFailure = Readonly<
 	| { ok: false; failure: 'forbiddenPlaceholders'; keys: readonly string[] }
 >;
 
-type DeleteFailure = Readonly<{ ok: false; failure: 'changed' | 'gone' }>;
+type DeleteFailure = Readonly<
+	| { ok: false; failure: 'changed' | 'gone' }
+	| { ok: false; failure: 'inUse'; occasions: readonly string[] }
+>;
 
 type SaveFailure = Readonly<
 	| { ok: false; failure: 'changed' | 'gone' | 'nameTaken' | 'layoutGone' }
@@ -88,7 +92,8 @@ function duplicateFailure(error: unknown): DuplicateFailure | null {
 }
 
 /**
- * The result for an error of deleting a template.
+ * The result for an error of deleting a template: it is gone, somebody saved it meanwhile, or
+ * occasions use it (they come along by name).
  *
  * @param error What was thrown.
  * @returns The failure, or null when the error is not an expected refusal.
@@ -96,6 +101,9 @@ function duplicateFailure(error: unknown): DuplicateFailure | null {
 function deleteFailure(error: unknown): DeleteFailure | null {
 	if (error instanceof TemplateNotFoundError) return { failure: 'gone', ok: false };
 	if (error instanceof TemplateChangedError) return { failure: 'changed', ok: false };
+	if (error instanceof TemplateInUseError) {
+		return { failure: 'inUse', occasions: error.occasions, ok: false };
+	}
 	return null;
 }
 

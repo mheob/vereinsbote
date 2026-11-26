@@ -2,8 +2,15 @@ import { describe, expect, it } from 'vite-plus/test';
 
 import { createArea } from '@/server/areas/areas';
 import type { Db } from '@/server/db/client';
-import { contactOptOuts, contacts, contactSuppressions, customFields } from '@/server/db/schema';
+import {
+	contactBounces,
+	contactOptOuts,
+	contacts,
+	contactSuppressions,
+	customFields,
+} from '@/server/db/schema';
 import { createTestDb } from '@/server/db/test-db';
+import { insertOccasion } from '@/server/occasions/testing';
 import { ForbiddenError } from '@/server/permissions/principal';
 import type { Principal } from '@/server/permissions/principal';
 
@@ -237,6 +244,7 @@ describe(getContact, () => {
 		const db = await createTestDb();
 		const { admin, membersAreaId, partnersAreaId } = await setUpClub(db);
 		const { areaId: youthAreaId } = await createArea(db, admin, 'jugend');
+		const occasionId = await insertOccasion(db, admin, youthAreaId);
 		const id = await insertContact(db, { kind: 'member', memberNumber: '7' });
 		const other = await insertContact(db, { kind: 'member', memberNumber: '8' });
 		await insertContact(db, { customerNumber: '8', kind: 'partner' });
@@ -261,7 +269,7 @@ describe(getContact, () => {
 				scope: 'area',
 			},
 			{ areaId: membersAreaId, contactKey: 'nr:8', kind: 'partner', scope: 'area' },
-			{ contactKey: 'nr:7', kind: 'member', occasionId: UNKNOWN_ID, scope: 'occasion' },
+			{ contactKey: 'nr:7', kind: 'member', occasionId, scope: 'occasion' },
 		]);
 
 		const reader = await detail(db, await userWith(db, { [membersAreaId]: 'read' }), id);
@@ -293,6 +301,50 @@ describe(getContact, () => {
 			optOuts: [],
 			suppression: null,
 		});
+	});
+
+	it('shows the marking of an invalid address with whether the user may clear it', async () => {
+		const db = await createTestDb();
+		const { membersAreaId, partnersAreaId } = await setUpClub(db);
+		const marked = await insertContact(db, {
+			email: 'sieben@example.org',
+			kind: 'member',
+			memberNumber: '7',
+		});
+		const moved = await insertContact(db, {
+			email: 'acht.neu@example.org',
+			kind: 'member',
+			memberNumber: '8',
+		});
+		await db.insert(contactBounces).values([
+			{
+				contactKey: 'nr:7',
+				createdAt: new Date('2026-05-04T11:00:00Z'),
+				email: 'sieben@example.org',
+				kind: 'member',
+				source: 'resend',
+			},
+			// Member 8 has another address now: the marking no longer applies.
+			{ contactKey: 'nr:8', email: 'acht@example.org', kind: 'member', source: 'graph' },
+		]);
+		const reader = await userWith(db, { [membersAreaId]: 'read' });
+		const editor = await userWith(db, { [membersAreaId]: 'edit' });
+
+		await expect(detail(db, reader, marked)).resolves.toMatchObject({
+			bounce: { at: '2026-05-04T11:00:00.000Z', canClear: false },
+		});
+		await expect(detail(db, editor, marked)).resolves.toMatchObject({
+			bounce: { at: '2026-05-04T11:00:00.000Z', canClear: true },
+		});
+		await expect(detail(db, editor, moved)).resolves.toMatchObject({ bounce: null });
+		const page = await list(db, await userWith(db, { [partnersAreaId]: 'read' }), {
+			kind: 'member',
+		});
+		// Without names the list sorts by address: "acht.neu@…" first.
+		expect(page.items.map((item) => [item.number, item.invalidEmail])).toStrictEqual([
+			['8', false],
+			['7', true],
+		]);
 	});
 
 	it('returns null for an unknown or malformed id', async () => {

@@ -1,17 +1,28 @@
 import { eq, sql } from 'drizzle-orm';
 import { describe, expect, it } from 'vite-plus/test';
 
+import { getContactSettings } from '@/server/contacts/settings';
 import { setUpClub } from '@/server/contacts/testing';
+import { encryptSecret, secretAad } from '@/server/crypto/secrets';
 import type { Db } from '@/server/db/client';
 import { auditLog, mailConnections, outboxEntries, systemState } from '@/server/db/schema';
 import { createTestDb } from '@/server/db/test-db';
 import type { SystemMail } from '@/server/mail/system-mailer';
 import { CapturingMailer } from '@/server/mail/testing';
+import { insertOccasion } from '@/server/occasions/testing';
 import { runTick } from '@/server/tick/tick';
 import { insertUser } from '@/server/users/repo';
+import { insertWave } from '@/server/waves/testing';
 
 import { setSystemSender } from './senders';
-import { fakeProviders, graphConnection, resendConnection, senderOn, testEnv } from './testing';
+import {
+	fakeProviders,
+	graphConnection,
+	resendConnection,
+	senderOn,
+	testEnv,
+	testKey,
+} from './testing';
 import { SECRET_WARNING_DAYS, createSendingWarningsStep, secretWarningStage } from './warnings';
 
 const DAY_MS = 86_400_000;
@@ -55,6 +66,8 @@ async function setUpGraph(db: Db): Promise<{
 interface Failure {
 	readonly status: 'failed' | 'uncertain';
 	readonly claimedAt: Date;
+	/** The wave of the entry; none by default. */
+	readonly waveId?: string;
 }
 
 async function failEntries(
@@ -63,15 +76,16 @@ async function failEntries(
 	entries: readonly Readonly<Failure>[],
 ): Promise<void> {
 	await db.insert(outboxEntries).values(
-		entries.map(({ claimedAt, status }) => ({
+		entries.map(({ claimedAt, status, waveId }) => ({
 			claimedAt,
 			lastErrorCode: 'graph.unavailable',
 			priority: 'group' as const,
 			recipient: 'member@example.org',
 			senderId,
 			source: 'wave' as const,
-			sourceId: WAVE_ID,
+			sourceId: waveId ?? WAVE_ID,
 			status,
+			waveId,
 		})),
 	);
 }
@@ -172,18 +186,31 @@ function breakingMailer(db: Db): CapturingMailer {
 	return mailer;
 }
 
-// A club with two senders, on Graph and on Resend, and a capturing mailer.
+// A club with two senders, on Graph and on Resend, a wave in each of its areas and a capturing
+// mailer.
 async function setUpDigest(): Promise<{
 	db: Db;
 	mailer: CapturingMailer;
 	senderId: string;
 	resendSenderId: string;
+	membersWaveId: string;
+	partnersWaveId: string;
 }> {
 	const db = await createTestDb();
 	const { admin, senderId } = await setUpGraph(db);
 	const resendId = await resendConnection(db, admin);
 	const resendSenderId = await senderOn(db, admin, resendId, 'news@example.org');
-	return { db, mailer: new CapturingMailer(), resendSenderId, senderId };
+	const { membersAreaId, partnersAreaId } = await getContactSettings(db);
+	const waveIn = async (areaId: string | null): Promise<string> =>
+		insertWave(db, await insertOccasion(db, admin, areaId ?? ''));
+	return {
+		db,
+		mailer: new CapturingMailer(),
+		membersWaveId: await waveIn(membersAreaId),
+		partnersWaveId: await waveIn(partnersAreaId),
+		resendSenderId,
+		senderId,
+	};
 }
 
 describe(createSendingWarningsStep, () => {
@@ -348,6 +375,101 @@ describe(createSendingWarningsStep, () => {
 	});
 });
 
+/**
+ * Gives a connection's webhook secret the ciphertext of another row, which does not decrypt there
+ * (its associated data names the other row), as after a change of `APP_SECRET`.
+ *
+ * @param db The database.
+ * @param connectionId The connection.
+ * @param from The connection whose ciphertext it gets.
+ */
+async function breakWebhookSecret(db: Db, connectionId: string, from: string): Promise<void> {
+	const [row] = await db
+		.select({ secret: mailConnections.webhookSecretCiphertext })
+		.from(mailConnections)
+		.where(eq(mailConnections.id, from));
+	await db
+		.update(mailConnections)
+		.set({ webhookSecretCiphertext: row?.secret })
+		.where(eq(mailConnections.id, connectionId));
+}
+
+/**
+ * Stores a webhook secret that decrypts, as saving it on the connection's page does.
+ *
+ * @param db The database.
+ * @param connectionId The connection.
+ */
+async function fixWebhookSecret(db: Db, connectionId: string): Promise<void> {
+	const aad = secretAad('mail_connections', connectionId, 'webhook_secret_ciphertext');
+	const ciphertext = await encryptSecret('whsec_dGVzdA==', await testKey(), aad);
+	await db
+		.update(mailConnections)
+		.set({ webhookSecretCiphertext: ciphertext })
+		.where(eq(mailConnections.id, connectionId));
+}
+
+describe('the warning about a webhook secret that does not decrypt', () => {
+	it('warns once per broken secret, forgets it once it decrypts and warns about a new one', async () => {
+		const db = await createTestDb();
+		const { admin } = await setUpClub(db);
+		const resendId = await resendConnection(db, admin, 'Resend');
+		const other = await resendConnection(db, admin, 'Andere');
+		const third = await resendConnection(db, admin, 'Dritte');
+		const mailer = new CapturingMailer();
+		await breakWebhookSecret(db, resendId, other);
+
+		const counts = await sentAfterEach(db, mailer, [
+			'2026-11-25T10:00:00Z',
+			'2026-11-25T10:15:00Z',
+		]);
+		await fixWebhookSecret(db, resendId);
+		counts.push(...(await sentAfterEach(db, mailer, ['2026-11-25T10:30:00Z'])));
+		const marker = await db
+			.select({ value: systemState.value })
+			.from(systemState)
+			.where(eq(systemState.key, 'sending_webhook_secret_warned'));
+		await breakWebhookSecret(db, resendId, third);
+		counts.push(...(await sentAfterEach(db, mailer, ['2026-11-25T10:45:00Z'])));
+
+		expect(counts).toStrictEqual([1, 1, 1, 2]);
+		expect(marker).toStrictEqual([{ value: {} }]);
+		expect(mailer.sent.map((mail) => mail.subject)).toStrictEqual([
+			'Das Webhook-Secret der Anbindung Resend ist nicht lesbar',
+			'Das Webhook-Secret der Anbindung Resend ist nicht lesbar',
+		]);
+	});
+
+	it('names the connection, leaves it undisturbed and logs neither secret nor ciphertext', async () => {
+		const db = await createTestDb();
+		const { admin } = await setUpClub(db);
+		const resendId = await resendConnection(db, admin, 'Resend');
+		await breakWebhookSecret(db, resendId, await resendConnection(db, admin, 'Andere'));
+		const mailer = new CapturingMailer();
+
+		await tickAt(db, NOW, mailer);
+
+		expect(textOf(mailer.sent[0])).toContain('Resend-Anbindung Resend');
+		expect(mailer.sent[0]?.content.button?.url).toBe(
+			`https://bote.example.org/admin/sending/connections/${resendId}`,
+		);
+		const entries = await db
+			.select({ details: auditLog.details, target: auditLog.target })
+			.from(auditLog)
+			.where(eq(auditLog.action, 'sending.webhook_secret_warned'));
+		expect(entries).toStrictEqual([
+			{ details: { failed: 0, sent: 1 }, target: `connection:${resendId}` },
+		]);
+		await expect(
+			db
+				.select({ since: mailConnections.disturbedSince })
+				.from(mailConnections)
+				.where(eq(mailConnections.id, resendId)),
+		).resolves.toStrictEqual([{ since: null }]);
+		expect(JSON.stringify([mailer.sent, entries])).not.toMatch(/whsec|v2\./u);
+	});
+});
+
 describe('the digest of the sending warnings', () => {
 	it('sends nothing without failed or uncertain entries', async () => {
 		const { db, mailer } = await setUpDigest();
@@ -374,6 +496,37 @@ describe('the digest of the sending warnings', () => {
 		const entries = await auditEntries(db, 'sending.digest_sent');
 		expect(entries.map((entry) => entry.details)).toStrictEqual([
 			{ failed: 0, failedEntries: 2, senders: 2, sent: 1, uncertainEntries: 2 },
+		]);
+	});
+
+	it('counts the entries of a wave per area and sender', async () => {
+		const { db, mailer, membersWaveId, partnersWaveId, resendSenderId, senderId } =
+			await setUpDigest();
+		const at = new Date('2026-11-25T08:00:00Z');
+		await failEntries(db, senderId, [
+			{ claimedAt: at, status: 'failed', waveId: membersWaveId },
+			{ claimedAt: at, status: 'failed', waveId: membersWaveId },
+			{ claimedAt: at, status: 'uncertain', waveId: partnersWaveId },
+			{ claimedAt: at, status: 'uncertain' },
+		]);
+		await failEntries(db, resendSenderId, [
+			{ claimedAt: at, status: 'failed', waveId: membersWaveId },
+		]);
+		await tickAt(db, NOW, mailer);
+		const text = textOf(mailer.sent[0]);
+		expect(text).toContain('Je Bereich und Absender:');
+		expect(text).toContain(
+			[
+				'Finanzen – verein@example.org: 0 fehlgeschlagen, 1 unklar',
+				'Mitglieder – news@example.org: 1 fehlgeschlagen, 0 unklar',
+				'Mitglieder – verein@example.org: 2 fehlgeschlagen, 0 unklar',
+				'verein@example.org: 0 fehlgeschlagen, 1 unklar',
+			].join('\n'),
+		);
+		expect(text).not.toContain('member@example.org');
+		const entries = await auditEntries(db, 'sending.digest_sent');
+		expect(entries.map((entry) => entry.details)).toStrictEqual([
+			{ failed: 0, failedEntries: 3, senders: 2, sent: 1, uncertainEntries: 2 },
 		]);
 	});
 

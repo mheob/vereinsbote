@@ -1,10 +1,15 @@
 /*
- * Fills a compiled mail for one recipient. Values go in once, in their context: escaped in HTML,
- * as they are in plain text, on one line in the subject and the preview text. A value is never
- * read for placeholders or markers again.
+ * Fills a compiled mail for one recipient. Values go in once, in their context: escaped in HTML
+ * (text and quoted attributes alike), as they are in plain text, on one line in the subject and
+ * the preview text. A value is never read for placeholders or markers again.
+ *
+ * The slot `unsubscribe.url` stands in an `href`; its value comes from the outbox. It takes only
+ * an absolute `http:` or `https:` address, anything else counts as missing, so no other scheme can
+ * reach the link.
  */
 
 import { cleanHeaderText, escapeHtml, stripMarkers } from '@/mail/escape';
+import { UNSUBSCRIBE_URL_KEY } from '@/mail/placeholders/registry';
 import { compareCodePoints } from '@/server/compare-code-points';
 
 import type { CompiledMail } from './compile';
@@ -19,9 +24,26 @@ interface FilledMail {
 
 type FillResult = { ok: true; mail: FilledMail } | { ok: false; missing: string[] };
 
+/** The schemes the unsubscribe link takes. */
+const WEB_SCHEMES: ReadonlySet<string> = new Set(['http:', 'https:']);
+
+/**
+ * The value a slot takes: the unsubscribe link only an absolute web address, every other slot
+ * any text.
+ *
+ * @param key The placeholder key of the slot.
+ * @param value The value without markers.
+ * @returns The value, or `''` when the slot cannot take it.
+ */
+function usableValue(key: string, value: string): string {
+	if (key !== UNSUBSCRIBE_URL_KEY) return value;
+	return URL.canParse(value) && WEB_SCHEMES.has(new URL(value).protocol) ? value : '';
+}
+
 /**
  * The value of each slot: the recipient's value, else the fallback (`''` included). A value that
- * is empty once the markers are stripped (`U+E000`, `U+E001` and spaces only) counts as missing.
+ * is empty once the markers are stripped (`U+E000`, `U+E001` and spaces only) counts as missing,
+ * and so does an unsubscribe address that is no web address.
  *
  * @param compiled The compiled mail.
  * @param values The values per placeholder key.
@@ -34,7 +56,7 @@ function slotValues(
 	const missing = new Set<string>();
 	const resolved = compiled.slots.map((slot) => {
 		const raw = values.get(slot.key);
-		const value = raw === undefined ? '' : stripMarkers(raw);
+		const value = raw === undefined ? '' : usableValue(slot.key, stripMarkers(raw));
 		if (value.trim() !== '') return value;
 		if (slot.fallback === null) missing.add(slot.key);
 		return slot.fallback ?? '';

@@ -1,8 +1,14 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 
 import { writeAudit } from '@/server/audit/audit';
 import type { Db } from '@/server/db/client';
-import { areas, contactOptOuts, contacts, contactSuppressions } from '@/server/db/schema';
+import {
+	areas,
+	contactBounces,
+	contactOptOuts,
+	contacts,
+	contactSuppressions,
+} from '@/server/db/schema';
 import type { Principal } from '@/server/permissions/principal';
 
 import { assertCanList, assertCanManage, loadContactAccess } from './access';
@@ -50,6 +56,44 @@ function auditTarget(
 ): string {
 	const number = contact.kind === 'member' ? contact.memberNumber : contact.customerNumber;
 	return number === null ? `contact:${contact.id}` : `${contact.kind}:${number}`;
+}
+
+/** The start of the key of a contact with a member or customer number. */
+const NUMBER_KEY_PREFIX = 'nr:';
+
+/**
+ * How the audit log names the contacts of some keys (an opt-out without a user: an unsubscribe, a
+ * complaint): each contact with the key by its audit target; a key without a contact by its number,
+ * or not at all when it is an address.
+ *
+ * @param tx The transaction.
+ * @param keyed The contacts by kind and key.
+ * @returns The targets, in the order of the keys.
+ */
+async function auditTargetsOfKeys(
+	tx: Db,
+	keyed: readonly Readonly<{ kind: ContactKind; key: string }>[],
+): Promise<(string | null)[]> {
+	if (keyed.length === 0) return [];
+	const keys = [...new Set(keyed.map(({ key }) => key))];
+	const rows = await tx
+		.select({
+			contactKey: contacts.contactKey,
+			customerNumber: contacts.customerNumber,
+			id: contacts.id,
+			kind: contacts.kind,
+			memberNumber: contacts.memberNumber,
+		})
+		.from(contacts)
+		.where(inArray(contacts.contactKey, keys))
+		.orderBy(contacts.id);
+	return keyed.flatMap(({ key, kind }) => {
+		const found = rows.filter((row) => row.kind === kind && row.contactKey === key);
+		if (found.length > 0) return found.map((row) => auditTarget(row));
+		return [
+			key.startsWith(NUMBER_KEY_PREFIX) ? `${kind}:${key.slice(NUMBER_KEY_PREFIX.length)}` : null,
+		];
+	});
 }
 
 /**
@@ -212,10 +256,43 @@ async function setOptOut(
 	});
 }
 
+/** The scope of an opt-out: one occasion, or every mail of an area. */
+type OptOutScope = (typeof contactOptOuts.$inferInsert)['scope'];
+
 /**
- * Copies the suppression and the opt-outs of a key to another key, e.g. when one of two partners
- * with the same address gets a new one: the other partner keeps them under the old key. Entries
- * the target key already has stay; nothing is duplicated.
+ * Records a contact's objection by its key, without a user: the recipient of a mail unsubscribes
+ * (Design 12), or a provider reports a complaint. The key needs no contact, so the opt-out also
+ * holds for a contact that an import removed and brings back. A repeated call changes nothing. The
+ * caller holds the import-state lock of the kind (`lockImportState`), bumps the stock version when
+ * something changed and writes the audit entry.
+ *
+ * @param tx The transaction.
+ * @param input The kind and key of the contact, the scope and its occasion or area (the other null).
+ * @returns True when the opt-out is new; false when the contact had it already.
+ */
+async function optOutByKey(
+	tx: Db,
+	input: Readonly<{
+		kind: ContactKind;
+		contactKey: string;
+		scope: OptOutScope;
+		occasionId: string | null;
+		areaId: string | null;
+	}>,
+): Promise<boolean> {
+	const made = await tx
+		.insert(contactOptOuts)
+		.values({ ...input, createdByUserId: null })
+		.onConflictDoNothing()
+		.returning({ id: contactOptOuts.id });
+	return made.length > 0;
+}
+
+/**
+ * Copies the suppression, the opt-outs and the bounce marks of a key to another key, e.g. when one
+ * of two partners with the same address gets a new one: the other partner keeps them under the old
+ * key. Entries the target key already has stay; nothing is duplicated. A mark holds for its
+ * address only (`isEmailInvalid`), so a copied mark applies once the target has that address.
  *
  * @param tx The transaction.
  * @param kind The kind.
@@ -244,12 +321,18 @@ async function copyContactKey(tx: Db, kind: ContactKind, from: string, to: strin
 			and kept.area_id is not distinct from old.area_id
 			and kept.occasion_id is not distinct from old.occasion_id)
 		on conflict do nothing`);
+	// A mark is keyed by kind, key and address: the target's own mark of an address stays.
+	await tx.execute(sql`
+		insert into contact_bounces (kind, contact_key, email, entry_id, source, created_at)
+		select kind, ${to}, email, entry_id, source, created_at from contact_bounces
+		where kind = ${kind} and contact_key = ${from}
+		on conflict do nothing`);
 }
 
 /**
- * Moves the suppression and the opt-outs of a contact to a new key, e.g. when a partner gets a
- * customer number. Entries the target key already has stay; nothing is duplicated. The caller
- * bumps the stock version and writes the audit entry.
+ * Moves the suppression, the opt-outs and the bounce marks of a contact to a new key, e.g. when a
+ * partner gets a customer number. Entries the target key already has stay; nothing is duplicated.
+ * The caller bumps the stock version and writes the audit entry.
  *
  * @param tx The transaction.
  * @param kind The kind.
@@ -266,6 +349,19 @@ async function rekeyContactKey(tx: Db, kind: ContactKind, from: string, to: stri
 	await tx
 		.delete(contactOptOuts)
 		.where(and(eq(contactOptOuts.kind, kind), eq(contactOptOuts.contactKey, from)));
+	await tx
+		.delete(contactBounces)
+		.where(and(eq(contactBounces.kind, kind), eq(contactBounces.contactKey, from)));
 }
 
-export { auditTarget, contactKey, copyContactKey, rekeyContactKey, setOptOut, setSuppression };
+export {
+	auditTarget,
+	auditTargetsOfKeys,
+	contactKey,
+	copyContactKey,
+	optOutByKey,
+	rekeyContactKey,
+	setOptOut,
+	setSuppression,
+};
+export type { OptOutScope };

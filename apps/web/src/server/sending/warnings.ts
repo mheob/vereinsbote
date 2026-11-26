@@ -1,9 +1,11 @@
 /*
  * The warnings to the admins about the senders (Spec 6.10, Design 15): a Graph secret that is
  * about to expire (once per stage of 30, 14, 7 and 1 day), a connection the provider refuses
- * (once per disturbance) and at most one digest a club day of new failed or uncertain entries of
- * the outbox. They run as one tick step and go to the active admins in their language. A mail
- * names the connection, the sender and the numbers, never a recipient or a secret.
+ * (once per disturbance), a Resend webhook secret that does not decrypt (once per stored secret,
+ * ruling R16) and at most one digest a club day of new failed or uncertain entries of the outbox,
+ * counted per area and sender (Design 15). They run as one tick step and go to the active admins
+ * in their language. A mail names the connection, the area, the sender and the numbers, never a
+ * recipient or a secret.
  *
  * Every warning follows the order of the stale-data warning: the marker in `system_state` is set
  * first, so two runs never send it twice, then the mails go, then the activity log. When the log
@@ -27,8 +29,9 @@ import {
 } from '@/server/contacts/calendar';
 import { WARNING_RETRY_MS, activeAdmins, tickMailer } from '@/server/contacts/stale-import';
 import type { Recipient } from '@/server/contacts/stale-import';
+import { deriveSecretsKey } from '@/server/crypto/secrets';
 import type { Db } from '@/server/db/client';
-import { mailConnections, outboxEntries, senders } from '@/server/db/schema';
+import { areas, mailConnections, outboxEntries, senders, waves } from '@/server/db/schema';
 import { errorLabel } from '@/server/error-label';
 import type { SystemMail, SystemMailer } from '@/server/mail/system-mailer';
 import { clearState, getState, setState } from '@/server/system-state';
@@ -37,6 +40,7 @@ import type { TickContext, TickStep } from '@/server/tick/tick';
 
 import { disturbanceReason } from './disturbance';
 import { checkSystemSender } from './system-mailer';
+import { brokenWebhookSecrets } from './webhook-secret';
 
 /** The days before the expiry of a secret at which the admins are warned, once each. */
 // oxlint-disable-next-line no-magic-numbers -- the stages are the point of the list
@@ -302,7 +306,10 @@ async function attempt<Result>(warning: () => Promise<Result>): Promise<Result |
 interface Watch<Value extends number | string> {
 	readonly key: StateKey;
 	readonly action: AuditAction;
-	readonly buttonKey: 'mail.system.sendingDisturbed.button' | 'mail.system.sendingSecret.button';
+	readonly buttonKey:
+		| 'mail.system.sendingDisturbed.button'
+		| 'mail.system.sendingSecret.button'
+		| 'mail.system.webhookSecret.button';
 	/** Where the connection stands, or null while there is nothing to warn about. */
 	readonly valueOf: (connection: Readonly<WatchedConnection>, today: string) => Value | null;
 	readonly details: (
@@ -532,21 +539,149 @@ const disturbanceWatch: Watch<string> = {
 	valueOf: ({ disturbedSince }) => disturbedSince?.toISOString() ?? null,
 };
 
-/** The failed and uncertain entries of one sender since the last digest. */
+/**
+ * A Resend webhook secret that does not decrypt (ruling R16): one warning per stored secret, told
+ * apart by a fingerprint of its ciphertext. Once it decrypts again or a new one is saved, the
+ * marker forgets the connection; a later broken secret warns afresh.
+ *
+ * @param broken The fingerprint of each broken secret by connection id.
+ * @returns The kind of warning.
+ */
+function webhookSecretWatch(broken: ReadonlyMap<string, string>): Watch<string> {
+	return {
+		action: 'sending.webhook_secret_warned',
+		buttonKey: 'mail.system.webhookSecret.button',
+		details: () => ({}),
+		key: 'sending_webhook_secret_warned',
+		texts: ({ connection, locale }) => ({
+			heading: translate(locale, 'mail.system.webhookSecret.heading'),
+			subject: translate(locale, 'mail.system.webhookSecret.subject', { name: connection.name }),
+			text: translate(locale, 'mail.system.webhookSecret.text', { name: connection.name }),
+		}),
+		valueOf: ({ id }) => broken.get(id) ?? null,
+	};
+}
+
+/**
+ * The Resend webhook secrets that do not decrypt; a failure is logged by its code.
+ *
+ * @param ctx The tick's context.
+ * @returns The fingerprints by connection id, or null when the check failed (the marker then stays
+ *   as it is).
+ */
+async function brokenWebhookSecretsSafely(
+	ctx: TickContext,
+): Promise<ReadonlyMap<string, string> | null> {
+	try {
+		return await brokenWebhookSecrets(ctx.db, await deriveSecretsKey(ctx.env.appSecret));
+	} catch (error) {
+		// oxlint-disable-next-line no-console -- the code only
+		console.error('webhook secret check failed', errorLabel(error));
+		return null;
+	}
+}
+
+/**
+ * Warns about the connections: their secrets, their disturbances and their webhook secrets.
+ *
+ * @param run The run.
+ */
+async function warnAboutConnections(
+	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- see Run
+	run: Readonly<Run>,
+): Promise<void> {
+	const connections = await watchedConnections(run.ctx.db);
+	await warnAbout(run, connections, secretWatch);
+	await warnAbout(run, connections, disturbanceWatch);
+	const broken = await brokenWebhookSecretsSafely(run.ctx);
+	if (broken !== null) await warnAbout(run, connections, webhookSecretWatch(broken));
+}
+
+/**
+ * The failed and uncertain entries since the last digest of one sender in one area (Design 15:
+ * the area of the entry's wave), or of one sender for entries without a wave.
+ */
 interface DigestRow {
+	/** The name of the area of the entries' wave; null for entries without a wave. */
+	readonly area: string | null;
 	readonly email: string | null;
 	readonly failed: number;
 	readonly uncertain: number;
 }
 
 /**
+ * The names of the areas of some waves.
+ *
+ * @param db The database.
+ * @param waveIds The waves.
+ * @returns The name of each wave's area, by the wave's id.
+ */
+async function areaNamesOfWaves(
+	db: Db,
+	waveIds: readonly string[],
+): Promise<ReadonlyMap<string, string>> {
+	if (waveIds.length === 0) return new Map();
+	const rows = await db
+		.select({ id: waves.id, name: areas.name })
+		.from(waves)
+		.innerJoin(areas, eq(areas.id, waves.areaId))
+		.where(inArray(waves.id, [...waveIds]));
+	return new Map(rows.map(({ id, name }) => [id, name]));
+}
+
+/**
+ * The order of the digest's lines: by area, then by sender; the lines without a wave last.
+ *
+ * @param a A line.
+ * @param b Another line.
+ * @returns Negative, zero or positive, as `Array.prototype.sort` wants it.
+ */
+function compareDigestRows(a: Readonly<DigestRow>, b: Readonly<DigestRow>): number {
+	const withoutWave = Number(a.area === null) - Number(b.area === null);
+	if (withoutWave !== 0) return withoutWave;
+	const byArea = compareCodePoints(a.area ?? '', b.area ?? '');
+	return byArea === 0 ? compareCodePoints(a.email ?? '', b.email ?? '') : byArea;
+}
+
+/** A claimed entry with the address of its sender and the name of its wave's area. */
+interface ClaimedProblem {
+	readonly status: 'failed' | 'uncertain';
+	readonly email: string | null;
+	readonly area: string | null;
+}
+
+/**
+ * Counts claimed entries per area and sender.
+ *
+ * @param problems The entries.
+ * @returns One row per area and sender, in the order of the digest.
+ */
+function tallyProblems(problems: readonly ClaimedProblem[]): DigestRow[] {
+	const rows = new Map<string, DigestRow>();
+	for (const { area, email, status } of problems) {
+		const key = JSON.stringify([area, email]);
+		const row = rows.get(key) ?? { area, email, failed: 0, uncertain: 0 };
+		rows.set(
+			key,
+			status === 'failed'
+				? { ...row, failed: row.failed + 1 }
+				: { ...row, uncertain: row.uncertain + 1 },
+		);
+	}
+	return [...rows.values()].toSorted(compareDigestRows);
+}
+
+/**
  * Claims the failed and uncertain entries no digest reported yet, by stamping them with the
- * instant of the run, and counts them per sender. An entry counts when it is failed or uncertain,
- * whenever and however it became so (a run, or the sweep of interrupted entries).
+ * instant of the run, and counts them per area and sender (Design 15): an entry of a wave counts
+ * under the wave's area, one without a wave under its sender only. An entry counts when it is
+ * failed or uncertain, whenever and however it became so (a run, or the sweep of interrupted
+ * entries).
  *
  * @param db The database.
  * @param at The instant of the run; it marks the claimed entries.
- * @returns One row per sender, by address; entries of a deleted sender share one row.
+ * @returns One row per area and sender (by name and address); entries of a deleted sender share
+ *   the sender.
  */
 async function claimProblems(db: Db, at: Date): Promise<DigestRow[]> {
 	const claimed = await db
@@ -555,21 +690,22 @@ async function claimProblems(db: Db, at: Date): Promise<DigestRow[]> {
 		.where(
 			and(inArray(outboxEntries.status, ['failed', 'uncertain']), isNull(outboxEntries.digestedAt)),
 		)
-		.returning({ senderId: outboxEntries.senderId, status: outboxEntries.status });
+		.returning({
+			senderId: outboxEntries.senderId,
+			status: outboxEntries.status,
+			waveId: outboxEntries.waveId,
+		});
 	const known = await db.select({ email: senders.email, id: senders.id }).from(senders);
 	const addresses = new Map(known.map(({ email, id }) => [id, email]));
-	const bySender = new Map<string | null, DigestRow>();
-	for (const { senderId, status } of claimed) {
-		const email = senderId === null ? null : (addresses.get(senderId) ?? null);
-		const row = bySender.get(email) ?? { email, failed: 0, uncertain: 0 };
-		bySender.set(
-			email,
-			status === 'failed'
-				? { ...row, failed: row.failed + 1 }
-				: { ...row, uncertain: row.uncertain + 1 },
-		);
-	}
-	return [...bySender.values()].toSorted((a, b) => compareCodePoints(a.email ?? '', b.email ?? ''));
+	const waveIds = new Set(claimed.flatMap(({ waveId }) => (waveId === null ? [] : [waveId])));
+	const areaNames = await areaNamesOfWaves(db, [...waveIds]);
+	return tallyProblems(
+		claimed.map(({ senderId, status, waveId }) => ({
+			area: waveId === null ? null : (areaNames.get(waveId) ?? null),
+			email: senderId === null ? null : (addresses.get(senderId) ?? null),
+			status: status === 'failed' ? 'failed' : 'uncertain',
+		})),
+	);
 }
 
 /**
@@ -583,7 +719,7 @@ async function releaseProblems(db: Db, at: Date): Promise<void> {
 }
 
 /**
- * The mail of the digest: the numbers per sender, no recipient.
+ * The mail of the digest: the numbers per area and sender, no recipient.
  *
  * @param rows The numbers.
  * @param url The link of the button.
@@ -594,13 +730,16 @@ function digestMail(rows: readonly Readonly<DigestRow>[], url: string): Notice['
 	const uncertain = rows.reduce((sum, row) => sum + row.uncertain, 0);
 	return (recipient) => {
 		const { locale } = recipient;
-		const lines = rows.map((row) =>
-			translate(locale, 'mail.system.sendingDigest.line', {
+		const lines = rows.map((row) => {
+			const params = {
 				failed: row.failed,
 				sender: row.email ?? translate(locale, 'mail.system.sendingDigest.unknownSender'),
 				uncertain: row.uncertain,
-			}),
-		);
+			};
+			return row.area === null
+				? translate(locale, 'mail.system.sendingDigest.line', params)
+				: translate(locale, 'mail.system.sendingDigest.areaLine', { ...params, area: row.area });
+		});
 		return {
 			content: {
 				button: { label: translate(locale, 'mail.system.sendingDigest.button'), url },
@@ -638,7 +777,7 @@ async function sendDigest(
 		action: 'sending.digest_sent',
 		details: {
 			failedEntries: rows.reduce((sum, row) => sum + row.failed, 0),
-			senders: rows.length,
+			senders: new Set(rows.map(({ email }) => email)).size,
 			uncertainEntries: rows.reduce((sum, row) => sum + row.uncertain, 0),
 		},
 		key: 'sending_digest_day',
@@ -693,9 +832,7 @@ function createSendingWarningsStep(
 				mailer: createMailer(ctx),
 				now: ctx.now(),
 			};
-			const connections = await watchedConnections(ctx.db);
-			await warnAbout(run, connections, secretWatch);
-			await warnAbout(run, connections, disturbanceWatch);
+			await warnAboutConnections(run);
 			if (ctx.now().getTime() >= ctx.deadline) return { moreWork: true };
 			await attempt(async () => sendDigest(run));
 			return { moreWork: false };

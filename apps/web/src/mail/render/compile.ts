@@ -3,6 +3,11 @@
  * mail is rendered to HTML and plain text with a marker per slot. The result is split at the
  * markers; filling (`fill.ts`) only puts values into the slots. Runs in the browser (preview), on
  * Workers and on Node (sending).
+ *
+ * For an occasion with the unsubscribe link (`{ unsubscribe: true }`) the mail gets a required slot
+ * `unsubscribe.url`: the standard layout shows the link in its footer, imported HTML where it places
+ * `{{unsubscribe.url}}`, else in a line before `</body>` (and so at the end of the plain text).
+ * Without the link the placeholder is refused, so no dead link goes out.
  */
 import { render, toPlainText } from '@react-email/render';
 import { createElement } from 'react';
@@ -21,7 +26,7 @@ import { brandPlaceholderValues } from '@/mail/brand/brand-values';
 import { COLUMN_STYLE } from '@/mail/components/mobile-rules';
 import { Preheader } from '@/mail/components/preheader';
 import { cleanHeaderText, stripMarkers } from '@/mail/escape';
-import { CONTENT_KEY } from '@/mail/placeholders/registry';
+import { CONTENT_KEY, UNSUBSCRIBE_URL_KEY } from '@/mail/placeholders/registry';
 import { parsePlaceholders } from '@/mail/placeholders/syntax';
 import type { PlaceholderRef } from '@/mail/placeholders/syntax';
 import { compareCodePoints } from '@/server/compare-code-points';
@@ -37,6 +42,7 @@ import { BlockContent, BlockRows } from './render-blocks';
 import type { BlockContext } from './render-blocks';
 import { StandardLayout } from './standard-layout';
 import { mailTheme } from './theme';
+import { UnsubscribeLine } from './unsubscribe-line';
 
 interface MediaInfo {
 	readonly type: ImageType;
@@ -72,9 +78,16 @@ interface CompiledMail {
 
 /**
  * Why a source cannot be compiled: a broken placeholder, blocks or a brand that fail their
- * schema, a misplaced or missing `{{content}}`, or an image the source does not describe.
+ * schema, a misplaced or missing `{{content}}`, an image the source does not describe, or
+ * `{{unsubscribe.url}}` in a mail without the unsubscribe link.
  */
-type CompileFailure = 'syntax' | 'blocks' | 'brand' | 'content' | 'media';
+type CompileFailure = 'syntax' | 'blocks' | 'brand' | 'content' | 'media' | 'unsubscribe';
+
+/** How a mail is compiled. */
+interface CompileOptions {
+	/** Whether the mail has the unsubscribe link (the occasion's setting). */
+	readonly unsubscribe: boolean;
+}
 
 type CompileResult =
 	| { ok: true; mail: CompiledMail }
@@ -103,6 +116,13 @@ interface SlotTable {
 }
 
 const BRAND_PREFIX = 'brand.';
+/**
+ * The slot of the unsubscribe link as the standard footer and the appended line write it. It has
+ * no fallback, so a mail of an occasion with the link cannot go out without its address.
+ */
+const UNSUBSCRIBE_REF: Readonly<PlaceholderRef> = { fallback: null, key: UNSUBSCRIBE_URL_KEY };
+/** The end tag of the body, before which the unsubscribe line goes. */
+const BODY_CLOSE = /<\/body(?=[\s/>])/giu;
 /** The comments React writes around a document's parts; mail clients need none of them. */
 const REACT_COMMENTS = /<!--(?:\/?\$|html|head|body)-->/gu;
 const DOCTYPE = /^<!DOCTYPE[^>]*>/u;
@@ -161,6 +181,16 @@ function segmentsOf(text: string): Segments | null {
  */
 function refsOf(segments: Segments): Readonly<PlaceholderRef>[] {
 	return segments.flatMap((segment) => (segment.kind === 'placeholder' ? [segment.ref] : []));
+}
+
+/**
+ * Whether placeholders include `{{unsubscribe.url}}`.
+ *
+ * @param refs The placeholders.
+ * @returns True when one of them is the unsubscribe link.
+ */
+function hasUnsubscribe(refs: readonly Readonly<PlaceholderRef>[]): boolean {
+	return refs.some((ref) => ref.key === UNSUBSCRIBE_URL_KEY);
 }
 
 /**
@@ -395,6 +425,8 @@ interface RenderInput {
 	readonly locale: Locale;
 	readonly subject: string;
 	readonly preheader: string;
+	/** The address of the unsubscribe link (the marker of its slot); null for a mail without one. */
+	readonly unsubscribe: string | null;
 }
 
 /**
@@ -418,6 +450,30 @@ function blockContext(input: RenderInput): BlockContext {
 }
 
 /**
+ * Adds the unsubscribe line to imported HTML that does not place `{{unsubscribe.url}}` itself:
+ * before the last `</body>`, or at the end when there is none.
+ *
+ * @param html The rendered HTML.
+ * @param segments The segments of the imported HTML (a template or a layout).
+ * @param input The render input.
+ * @returns The HTML with the line, or as it was for a mail without the link or with the placeholder.
+ */
+async function withUnsubscribeLine(
+	html: string,
+	segments: Segments,
+	input: RenderInput,
+): Promise<string> {
+	const { locale, prepared, unsubscribe } = input;
+	if (unsubscribe === null || hasUnsubscribe(refsOf(segments))) return html;
+	const theme = mailTheme(prepared.brand);
+	const line = await renderFragment(
+		createElement(UnsubscribeLine, { href: unsubscribe, locale, theme }),
+	);
+	const end = [...html.matchAll(BODY_CLOSE)].pop()?.index;
+	return end === undefined ? `${html}${line}` : `${html.slice(0, end)}${line}${html.slice(end)}`;
+}
+
+/**
  * Renders blocks in the standard layout, or into `{{content}}` of an HTML layout.
  *
  * @param input The render input.
@@ -432,8 +488,14 @@ async function renderBlocks(
 ): Promise<string> {
 	const context = blockContext(input);
 	if (layout === null) {
-		const { locale, origin, prepared, preheader, subject } = input;
-		const layoutContext = { brand: prepared.brand, locale, origin, theme: context.theme };
+		const { locale, origin, prepared, preheader, subject, unsubscribe } = input;
+		const layoutContext = {
+			brand: prepared.brand,
+			locale,
+			origin,
+			theme: context.theme,
+			unsubscribe,
+		};
 		const rows = createElement(BlockRows, { blocks, context });
 		return renderDocument(
 			createElement(StandardLayout, { context: layoutContext, preheader, subject }, rows),
@@ -442,7 +504,7 @@ async function renderBlocks(
 	const content = await renderFragment(createElement(BlockContent, { blocks, context }));
 	const { origin, resolve } = input;
 	const html = joinHtml(withStyleInHead(layout, COLUMN_STYLE), { content, origin, resolve });
-	return withPreheader(html, input.preheader);
+	return withUnsubscribeLine(await withPreheader(html, input.preheader), layout, input);
 }
 
 /**
@@ -456,7 +518,7 @@ async function renderHtml(input: RenderInput): Promise<string> {
 	if (body.kind === 'blocks') return renderBlocks(input, body.blocks, body.layout);
 	const { origin, resolve } = input;
 	const html = joinHtml(body.segments, { origin, resolve });
-	return withPreheader(html, input.preheader);
+	return withUnsubscribeLine(await withPreheader(html, input.preheader), body.segments, input);
 }
 
 /**
@@ -479,6 +541,8 @@ interface MailInput {
 	readonly media: ReadonlyMap<string, MediaInfo>;
 	readonly origin: string;
 	readonly locale: Locale;
+	/** Whether the mail has the unsubscribe link. */
+	readonly unsubscribe: boolean;
 }
 
 /**
@@ -489,11 +553,21 @@ interface MailInput {
  */
 async function renderMail(input: MailInput): Promise<CompiledMail> {
 	const { locale, media, origin, prepared } = input;
-	const table = slotTable(input.refs);
+	const table = slotTable(input.unsubscribe ? [...input.refs, UNSUBSCRIBE_REF] : input.refs);
 	const resolve = resolverFor(table, input.brandValues);
 	const subject = cleanHeaderText(joinSegments(prepared.subject, resolve));
 	const preheader = cleanHeaderText(joinSegments(prepared.preheader, resolve));
-	const html = await renderHtml({ locale, media, origin, preheader, prepared, resolve, subject });
+	const unsubscribe = input.unsubscribe ? resolve(UNSUBSCRIBE_REF) : null;
+	const html = await renderHtml({
+		locale,
+		media,
+		origin,
+		preheader,
+		prepared,
+		resolve,
+		subject,
+		unsubscribe,
+	});
 	const text = toPlainText(html, PLAIN_TEXT_OPTIONS).replaceAll(BLANK_LINES, '\n\n').trim();
 	return {
 		html: splitParts(html),
@@ -504,6 +578,9 @@ async function renderMail(input: MailInput): Promise<CompiledMail> {
 	};
 }
 
+/** A mail without the unsubscribe link: the default of a preview, a system mail and a sample. */
+const WITHOUT_UNSUBSCRIBE: CompileOptions = { unsubscribe: false };
+
 /**
  * Compiles a template for sending or a preview.
  *
@@ -511,6 +588,7 @@ async function renderMail(input: MailInput): Promise<CompiledMail> {
  * @param brand The brand.
  * @param appOrigin The origin of the app (`APP_URL`), for absolute image URLs.
  * @param locale The language of the layout's fixed texts.
+ * @param options Whether the mail has the unsubscribe link; without by default.
  * @returns The compiled mail, the missing required brand values, or why the source is invalid.
  */
 // oxlint-disable-next-line max-params -- the plan's interface fixes these parameters
@@ -519,12 +597,14 @@ async function compileMail(
 	brand: Brand,
 	appOrigin: string,
 	locale: Locale = DEFAULT_LOCALE,
+	options: CompileOptions = WITHOUT_UNSUBSCRIBE,
 ): Promise<CompileResult> {
 	const prepared = prepare(source, brand);
 	if (!prepared.ok) return prepared;
+	const refs = allRefs(prepared);
+	if (!options.unsubscribe && hasUnsubscribe(refs)) return fail('unsubscribe');
 	const origin = trimOrigin(appOrigin);
 	const brandValues = brandPlaceholderValues(prepared.brand, origin);
-	const refs = allRefs(prepared);
 	const missingBrand = missingBrandKeys(refs, brandValues);
 	if (missingBrand.length > 0) return { missingBrand, ok: false };
 	const mail = await renderMail({
@@ -534,6 +614,7 @@ async function compileMail(
 		origin,
 		prepared,
 		refs,
+		unsubscribe: options.unsubscribe,
 	});
 	return { mail, ok: true };
 }
@@ -542,6 +623,7 @@ export { compileMail };
 export type {
 	CompiledMail,
 	CompileFailure,
+	CompileOptions,
 	CompileResult,
 	MailBody,
 	MailLayout,

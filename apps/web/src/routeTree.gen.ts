@@ -14,7 +14,9 @@ import { Route as AdminRouteRouteImport } from './routes/admin/route'
 import { Route as ContactsRouteRouteImport } from './routes/contacts/route'
 import { Route as ImagesRouteImport } from './routes/images'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as OccasionsRouteRouteImport } from './routes/occasions/route'
 import { Route as PreviewFrameRouteImport } from './routes/preview-frame'
+import { Route as SendingRouteRouteImport } from './routes/sending/route'
 import { Route as SetupRouteImport } from './routes/setup'
 import { Route as TemplatesRouteRouteImport } from './routes/templates/route'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
@@ -29,19 +31,27 @@ import { Route as ContactsContactIdRouteImport } from './routes/contacts/$contac
 import { Route as ContactsNewRouteImport } from './routes/contacts/new'
 import { Route as LoginConfirmRouteImport } from './routes/login_.confirm'
 import { Route as MediaFileRouteImport } from './routes/media/$file'
+import { Route as OccasionsIndexRouteImport } from './routes/occasions/index'
+import { Route as OccasionsOccasionIdRouteImport } from './routes/occasions/$occasionId'
+import { Route as OccasionsNewRouteImport } from './routes/occasions/new'
+import { Route as SendingIndexRouteImport } from './routes/sending/index'
 import { Route as TemplatesIndexRouteImport } from './routes/templates/index'
 import { Route as TemplatesTemplateIdRouteImport } from './routes/templates/$templateId'
 import { Route as TemplatesNewRouteImport } from './routes/templates/new'
+import { Route as UnsubscribeTokenRouteImport } from './routes/unsubscribe.$token'
 import { Route as AdminLayoutsIndexRouteImport } from './routes/admin/layouts/index'
 import { Route as AdminLayoutsLayoutIdRouteImport } from './routes/admin/layouts/$layoutId'
 import { Route as AdminSendingIndexRouteImport } from './routes/admin/sending/index'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ContactsImportMembersRouteImport } from './routes/contacts/import/members'
 import { Route as ContactsImportPartnersRouteImport } from './routes/contacts/import/partners'
+import { Route as OccasionsOccasionIdSendRouteImport } from './routes/occasions/$occasionId_.send'
+import { Route as SendingWavesWaveIdRouteImport } from './routes/sending/waves.$waveId'
 import { Route as AdminSendingConnectionsConnectionIdRouteImport } from './routes/admin/sending/connections.$connectionId'
 import { Route as AdminSendingConnectionsNewRouteImport } from './routes/admin/sending/connections.new'
 import { Route as AdminSendingSendersSenderIdRouteImport } from './routes/admin/sending/senders.$senderId'
 import { Route as AdminSendingSendersNewRouteImport } from './routes/admin/sending/senders.new'
+import { Route as ApiWebhooksResendConnectionIdRouteImport } from './routes/api/webhooks/resend.$connectionId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -68,9 +78,19 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OccasionsRouteRoute = OccasionsRouteRouteImport.update({
+  id: '/occasions',
+  path: '/occasions',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PreviewFrameRoute = PreviewFrameRouteImport.update({
   id: '/preview-frame',
   path: '/preview-frame',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SendingRouteRoute = SendingRouteRouteImport.update({
+  id: '/sending',
+  path: '/sending',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SetupRoute = SetupRouteImport.update({
@@ -143,6 +163,26 @@ const MediaFileRoute = MediaFileRouteImport.update({
   path: '/media/$file',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OccasionsIndexRoute = OccasionsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => OccasionsRouteRoute,
+} as any)
+const OccasionsOccasionIdRoute = OccasionsOccasionIdRouteImport.update({
+  id: '/$occasionId',
+  path: '/$occasionId',
+  getParentRoute: () => OccasionsRouteRoute,
+} as any)
+const OccasionsNewRoute = OccasionsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => OccasionsRouteRoute,
+} as any)
+const SendingIndexRoute = SendingIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => SendingRouteRoute,
+} as any)
 const TemplatesIndexRoute = TemplatesIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -157,6 +197,11 @@ const TemplatesNewRoute = TemplatesNewRouteImport.update({
   id: '/new',
   path: '/new',
   getParentRoute: () => TemplatesRouteRoute,
+} as any)
+const UnsubscribeTokenRoute = UnsubscribeTokenRouteImport.update({
+  id: '/unsubscribe/$token',
+  path: '/unsubscribe/$token',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AdminLayoutsIndexRoute = AdminLayoutsIndexRouteImport.update({
   id: '/layouts/',
@@ -188,6 +233,16 @@ const ContactsImportPartnersRoute = ContactsImportPartnersRouteImport.update({
   path: '/import/partners',
   getParentRoute: () => ContactsRouteRoute,
 } as any)
+const OccasionsOccasionIdSendRoute = OccasionsOccasionIdSendRouteImport.update({
+  id: '/$occasionId_/send',
+  path: '/$occasionId/send',
+  getParentRoute: () => OccasionsRouteRoute,
+} as any)
+const SendingWavesWaveIdRoute = SendingWavesWaveIdRouteImport.update({
+  id: '/waves/$waveId',
+  path: '/waves/$waveId',
+  getParentRoute: () => SendingRouteRoute,
+} as any)
 const AdminSendingConnectionsConnectionIdRoute =
   AdminSendingConnectionsConnectionIdRouteImport.update({
     id: '/sending/connections/$connectionId',
@@ -211,11 +266,19 @@ const AdminSendingSendersNewRoute = AdminSendingSendersNewRouteImport.update({
   path: '/sending/senders/new',
   getParentRoute: () => AdminRouteRoute,
 } as any)
+const ApiWebhooksResendConnectionIdRoute =
+  ApiWebhooksResendConnectionIdRouteImport.update({
+    id: '/api/webhooks/resend/$connectionId',
+    path: '/api/webhooks/resend/$connectionId',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteRouteWithChildren
   '/contacts': typeof ContactsRouteRouteWithChildren
+  '/occasions': typeof OccasionsRouteRouteWithChildren
+  '/sending': typeof SendingRouteRouteWithChildren
   '/templates': typeof TemplatesRouteRouteWithChildren
   '/images': typeof ImagesRoute
   '/login': typeof LoginRoute
@@ -231,21 +294,29 @@ export interface FileRoutesByFullPath {
   '/contacts/new': typeof ContactsNewRoute
   '/login/confirm': typeof LoginConfirmRoute
   '/media/$file': typeof MediaFileRoute
+  '/occasions/$occasionId': typeof OccasionsOccasionIdRoute
+  '/occasions/new': typeof OccasionsNewRoute
   '/templates/$templateId': typeof TemplatesTemplateIdRoute
   '/templates/new': typeof TemplatesNewRoute
+  '/unsubscribe/$token': typeof UnsubscribeTokenRoute
   '/admin/': typeof AdminIndexRoute
   '/contacts/': typeof ContactsIndexRoute
+  '/occasions/': typeof OccasionsIndexRoute
+  '/sending/': typeof SendingIndexRoute
   '/templates/': typeof TemplatesIndexRoute
   '/admin/layouts/$layoutId': typeof AdminLayoutsLayoutIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/contacts/import/members': typeof ContactsImportMembersRoute
   '/contacts/import/partners': typeof ContactsImportPartnersRoute
+  '/occasions/$occasionId/send': typeof OccasionsOccasionIdSendRoute
+  '/sending/waves/$waveId': typeof SendingWavesWaveIdRoute
   '/admin/layouts/': typeof AdminLayoutsIndexRoute
   '/admin/sending/': typeof AdminSendingIndexRoute
   '/admin/sending/connections/$connectionId': typeof AdminSendingConnectionsConnectionIdRoute
   '/admin/sending/connections/new': typeof AdminSendingConnectionsNewRoute
   '/admin/sending/senders/$senderId': typeof AdminSendingSendersSenderIdRoute
   '/admin/sending/senders/new': typeof AdminSendingSendersNewRoute
+  '/api/webhooks/resend/$connectionId': typeof ApiWebhooksResendConnectionIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -263,27 +334,37 @@ export interface FileRoutesByTo {
   '/contacts/new': typeof ContactsNewRoute
   '/login/confirm': typeof LoginConfirmRoute
   '/media/$file': typeof MediaFileRoute
+  '/occasions/$occasionId': typeof OccasionsOccasionIdRoute
+  '/occasions/new': typeof OccasionsNewRoute
   '/templates/$templateId': typeof TemplatesTemplateIdRoute
   '/templates/new': typeof TemplatesNewRoute
+  '/unsubscribe/$token': typeof UnsubscribeTokenRoute
   '/admin': typeof AdminIndexRoute
   '/contacts': typeof ContactsIndexRoute
+  '/occasions': typeof OccasionsIndexRoute
+  '/sending': typeof SendingIndexRoute
   '/templates': typeof TemplatesIndexRoute
   '/admin/layouts/$layoutId': typeof AdminLayoutsLayoutIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/contacts/import/members': typeof ContactsImportMembersRoute
   '/contacts/import/partners': typeof ContactsImportPartnersRoute
+  '/occasions/$occasionId/send': typeof OccasionsOccasionIdSendRoute
+  '/sending/waves/$waveId': typeof SendingWavesWaveIdRoute
   '/admin/layouts': typeof AdminLayoutsIndexRoute
   '/admin/sending': typeof AdminSendingIndexRoute
   '/admin/sending/connections/$connectionId': typeof AdminSendingConnectionsConnectionIdRoute
   '/admin/sending/connections/new': typeof AdminSendingConnectionsNewRoute
   '/admin/sending/senders/$senderId': typeof AdminSendingSendersSenderIdRoute
   '/admin/sending/senders/new': typeof AdminSendingSendersNewRoute
+  '/api/webhooks/resend/$connectionId': typeof ApiWebhooksResendConnectionIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteRouteWithChildren
   '/contacts': typeof ContactsRouteRouteWithChildren
+  '/occasions': typeof OccasionsRouteRouteWithChildren
+  '/sending': typeof SendingRouteRouteWithChildren
   '/templates': typeof TemplatesRouteRouteWithChildren
   '/images': typeof ImagesRoute
   '/login': typeof LoginRoute
@@ -299,21 +380,29 @@ export interface FileRoutesById {
   '/contacts/new': typeof ContactsNewRoute
   '/login_/confirm': typeof LoginConfirmRoute
   '/media/$file': typeof MediaFileRoute
+  '/occasions/$occasionId': typeof OccasionsOccasionIdRoute
+  '/occasions/new': typeof OccasionsNewRoute
   '/templates/$templateId': typeof TemplatesTemplateIdRoute
   '/templates/new': typeof TemplatesNewRoute
+  '/unsubscribe/$token': typeof UnsubscribeTokenRoute
   '/admin/': typeof AdminIndexRoute
   '/contacts/': typeof ContactsIndexRoute
+  '/occasions/': typeof OccasionsIndexRoute
+  '/sending/': typeof SendingIndexRoute
   '/templates/': typeof TemplatesIndexRoute
   '/admin/layouts/$layoutId': typeof AdminLayoutsLayoutIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/contacts/import/members': typeof ContactsImportMembersRoute
   '/contacts/import/partners': typeof ContactsImportPartnersRoute
+  '/occasions/$occasionId_/send': typeof OccasionsOccasionIdSendRoute
+  '/sending/waves/$waveId': typeof SendingWavesWaveIdRoute
   '/admin/layouts/': typeof AdminLayoutsIndexRoute
   '/admin/sending/': typeof AdminSendingIndexRoute
   '/admin/sending/connections/$connectionId': typeof AdminSendingConnectionsConnectionIdRoute
   '/admin/sending/connections/new': typeof AdminSendingConnectionsNewRoute
   '/admin/sending/senders/$senderId': typeof AdminSendingSendersSenderIdRoute
   '/admin/sending/senders/new': typeof AdminSendingSendersNewRoute
+  '/api/webhooks/resend/$connectionId': typeof ApiWebhooksResendConnectionIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -321,6 +410,8 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/contacts'
+    | '/occasions'
+    | '/sending'
     | '/templates'
     | '/images'
     | '/login'
@@ -336,21 +427,29 @@ export interface FileRouteTypes {
     | '/contacts/new'
     | '/login/confirm'
     | '/media/$file'
+    | '/occasions/$occasionId'
+    | '/occasions/new'
     | '/templates/$templateId'
     | '/templates/new'
+    | '/unsubscribe/$token'
     | '/admin/'
     | '/contacts/'
+    | '/occasions/'
+    | '/sending/'
     | '/templates/'
     | '/admin/layouts/$layoutId'
     | '/api/auth/$'
     | '/contacts/import/members'
     | '/contacts/import/partners'
+    | '/occasions/$occasionId/send'
+    | '/sending/waves/$waveId'
     | '/admin/layouts/'
     | '/admin/sending/'
     | '/admin/sending/connections/$connectionId'
     | '/admin/sending/connections/new'
     | '/admin/sending/senders/$senderId'
     | '/admin/sending/senders/new'
+    | '/api/webhooks/resend/$connectionId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -368,26 +467,36 @@ export interface FileRouteTypes {
     | '/contacts/new'
     | '/login/confirm'
     | '/media/$file'
+    | '/occasions/$occasionId'
+    | '/occasions/new'
     | '/templates/$templateId'
     | '/templates/new'
+    | '/unsubscribe/$token'
     | '/admin'
     | '/contacts'
+    | '/occasions'
+    | '/sending'
     | '/templates'
     | '/admin/layouts/$layoutId'
     | '/api/auth/$'
     | '/contacts/import/members'
     | '/contacts/import/partners'
+    | '/occasions/$occasionId/send'
+    | '/sending/waves/$waveId'
     | '/admin/layouts'
     | '/admin/sending'
     | '/admin/sending/connections/$connectionId'
     | '/admin/sending/connections/new'
     | '/admin/sending/senders/$senderId'
     | '/admin/sending/senders/new'
+    | '/api/webhooks/resend/$connectionId'
   id:
     | '__root__'
     | '/'
     | '/admin'
     | '/contacts'
+    | '/occasions'
+    | '/sending'
     | '/templates'
     | '/images'
     | '/login'
@@ -403,27 +512,37 @@ export interface FileRouteTypes {
     | '/contacts/new'
     | '/login_/confirm'
     | '/media/$file'
+    | '/occasions/$occasionId'
+    | '/occasions/new'
     | '/templates/$templateId'
     | '/templates/new'
+    | '/unsubscribe/$token'
     | '/admin/'
     | '/contacts/'
+    | '/occasions/'
+    | '/sending/'
     | '/templates/'
     | '/admin/layouts/$layoutId'
     | '/api/auth/$'
     | '/contacts/import/members'
     | '/contacts/import/partners'
+    | '/occasions/$occasionId_/send'
+    | '/sending/waves/$waveId'
     | '/admin/layouts/'
     | '/admin/sending/'
     | '/admin/sending/connections/$connectionId'
     | '/admin/sending/connections/new'
     | '/admin/sending/senders/$senderId'
     | '/admin/sending/senders/new'
+    | '/api/webhooks/resend/$connectionId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRouteRoute: typeof AdminRouteRouteWithChildren
   ContactsRouteRoute: typeof ContactsRouteRouteWithChildren
+  OccasionsRouteRoute: typeof OccasionsRouteRouteWithChildren
+  SendingRouteRoute: typeof SendingRouteRouteWithChildren
   TemplatesRouteRoute: typeof TemplatesRouteRouteWithChildren
   ImagesRoute: typeof ImagesRoute
   LoginRoute: typeof LoginRoute
@@ -433,7 +552,9 @@ export interface RootRouteChildren {
   ApiTickRoute: typeof ApiTickRoute
   LoginConfirmRoute: typeof LoginConfirmRoute
   MediaFileRoute: typeof MediaFileRoute
+  UnsubscribeTokenRoute: typeof UnsubscribeTokenRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiWebhooksResendConnectionIdRoute: typeof ApiWebhooksResendConnectionIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -473,11 +594,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/occasions': {
+      id: '/occasions'
+      path: '/occasions'
+      fullPath: '/occasions'
+      preLoaderRoute: typeof OccasionsRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/preview-frame': {
       id: '/preview-frame'
       path: '/preview-frame'
       fullPath: '/preview-frame'
       preLoaderRoute: typeof PreviewFrameRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sending': {
+      id: '/sending'
+      path: '/sending'
+      fullPath: '/sending'
+      preLoaderRoute: typeof SendingRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/setup': {
@@ -578,6 +713,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MediaFileRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/occasions/': {
+      id: '/occasions/'
+      path: '/'
+      fullPath: '/occasions/'
+      preLoaderRoute: typeof OccasionsIndexRouteImport
+      parentRoute: typeof OccasionsRouteRoute
+    }
+    '/occasions/$occasionId': {
+      id: '/occasions/$occasionId'
+      path: '/$occasionId'
+      fullPath: '/occasions/$occasionId'
+      preLoaderRoute: typeof OccasionsOccasionIdRouteImport
+      parentRoute: typeof OccasionsRouteRoute
+    }
+    '/occasions/new': {
+      id: '/occasions/new'
+      path: '/new'
+      fullPath: '/occasions/new'
+      preLoaderRoute: typeof OccasionsNewRouteImport
+      parentRoute: typeof OccasionsRouteRoute
+    }
+    '/sending/': {
+      id: '/sending/'
+      path: '/'
+      fullPath: '/sending/'
+      preLoaderRoute: typeof SendingIndexRouteImport
+      parentRoute: typeof SendingRouteRoute
+    }
     '/templates/': {
       id: '/templates/'
       path: '/'
@@ -598,6 +761,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/templates/new'
       preLoaderRoute: typeof TemplatesNewRouteImport
       parentRoute: typeof TemplatesRouteRoute
+    }
+    '/unsubscribe/$token': {
+      id: '/unsubscribe/$token'
+      path: '/unsubscribe/$token'
+      fullPath: '/unsubscribe/$token'
+      preLoaderRoute: typeof UnsubscribeTokenRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/admin/layouts/': {
       id: '/admin/layouts/'
@@ -641,6 +811,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ContactsImportPartnersRouteImport
       parentRoute: typeof ContactsRouteRoute
     }
+    '/occasions/$occasionId_/send': {
+      id: '/occasions/$occasionId_/send'
+      path: '/$occasionId/send'
+      fullPath: '/occasions/$occasionId/send'
+      preLoaderRoute: typeof OccasionsOccasionIdSendRouteImport
+      parentRoute: typeof OccasionsRouteRoute
+    }
+    '/sending/waves/$waveId': {
+      id: '/sending/waves/$waveId'
+      path: '/waves/$waveId'
+      fullPath: '/sending/waves/$waveId'
+      preLoaderRoute: typeof SendingWavesWaveIdRouteImport
+      parentRoute: typeof SendingRouteRoute
+    }
     '/admin/sending/connections/$connectionId': {
       id: '/admin/sending/connections/$connectionId'
       path: '/sending/connections/$connectionId'
@@ -668,6 +852,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/sending/senders/new'
       preLoaderRoute: typeof AdminSendingSendersNewRouteImport
       parentRoute: typeof AdminRouteRoute
+    }
+    '/api/webhooks/resend/$connectionId': {
+      id: '/api/webhooks/resend/$connectionId'
+      path: '/api/webhooks/resend/$connectionId'
+      fullPath: '/api/webhooks/resend/$connectionId'
+      preLoaderRoute: typeof ApiWebhooksResendConnectionIdRouteImport
+      parentRoute: typeof rootRouteImport
     }
   }
 }
@@ -727,6 +918,38 @@ const ContactsRouteRouteWithChildren = ContactsRouteRoute._addFileChildren(
   ContactsRouteRouteChildren,
 )
 
+interface OccasionsRouteRouteChildren {
+  OccasionsOccasionIdRoute: typeof OccasionsOccasionIdRoute
+  OccasionsNewRoute: typeof OccasionsNewRoute
+  OccasionsIndexRoute: typeof OccasionsIndexRoute
+  OccasionsOccasionIdSendRoute: typeof OccasionsOccasionIdSendRoute
+}
+
+const OccasionsRouteRouteChildren: OccasionsRouteRouteChildren = {
+  OccasionsOccasionIdRoute: OccasionsOccasionIdRoute,
+  OccasionsNewRoute: OccasionsNewRoute,
+  OccasionsIndexRoute: OccasionsIndexRoute,
+  OccasionsOccasionIdSendRoute: OccasionsOccasionIdSendRoute,
+}
+
+const OccasionsRouteRouteWithChildren = OccasionsRouteRoute._addFileChildren(
+  OccasionsRouteRouteChildren,
+)
+
+interface SendingRouteRouteChildren {
+  SendingIndexRoute: typeof SendingIndexRoute
+  SendingWavesWaveIdRoute: typeof SendingWavesWaveIdRoute
+}
+
+const SendingRouteRouteChildren: SendingRouteRouteChildren = {
+  SendingIndexRoute: SendingIndexRoute,
+  SendingWavesWaveIdRoute: SendingWavesWaveIdRoute,
+}
+
+const SendingRouteRouteWithChildren = SendingRouteRoute._addFileChildren(
+  SendingRouteRouteChildren,
+)
+
 interface TemplatesRouteRouteChildren {
   TemplatesTemplateIdRoute: typeof TemplatesTemplateIdRoute
   TemplatesNewRoute: typeof TemplatesNewRoute
@@ -747,6 +970,8 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRouteRoute: AdminRouteRouteWithChildren,
   ContactsRouteRoute: ContactsRouteRouteWithChildren,
+  OccasionsRouteRoute: OccasionsRouteRouteWithChildren,
+  SendingRouteRoute: SendingRouteRouteWithChildren,
   TemplatesRouteRoute: TemplatesRouteRouteWithChildren,
   ImagesRoute: ImagesRoute,
   LoginRoute: LoginRoute,
@@ -756,7 +981,9 @@ const rootRouteChildren: RootRouteChildren = {
   ApiTickRoute: ApiTickRoute,
   LoginConfirmRoute: LoginConfirmRoute,
   MediaFileRoute: MediaFileRoute,
+  UnsubscribeTokenRoute: UnsubscribeTokenRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiWebhooksResendConnectionIdRoute: ApiWebhooksResendConnectionIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

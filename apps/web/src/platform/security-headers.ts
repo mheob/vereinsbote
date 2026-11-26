@@ -11,7 +11,7 @@ const BASE_SECURITY_HEADERS = {
 } as const;
 
 /** The kinds of response whose security headers differ (Design 17). */
-type HeaderRoute = 'page' | 'loginConfirm' | 'previewFrame' | 'media';
+type HeaderRoute = 'page' | 'loginConfirm' | 'unsubscribe' | 'previewFrame' | 'media';
 
 const PREVIEW_FRAME_PATH = '/preview-frame';
 const MEDIA_PREFIX = '/media/';
@@ -20,18 +20,21 @@ const MEDIA_PREFIX = '/media/';
  * `static-headers.ts`) without the app's import alias. A test keeps both equal.
  */
 const LOGIN_CONFIRM_PATH = '/login/confirm';
+/** `UNSUBSCRIBE_PATH` of `@/paths` with its slash, written out like `LOGIN_CONFIRM_PATH`. */
+const UNSUBSCRIBE_PREFIX = '/unsubscribe/';
 
 /**
  * The kind of response a path gives, for its security headers.
  *
  * @param pathname The path of the request.
  * @returns `previewFrame` for the preview frame, `media` for the images, `loginConfirm` for the
- *   confirmation page of login links, else `page`.
+ *   confirmation page of login links, `unsubscribe` for the unsubscribe links, else `page`.
  */
 function headerRouteOf(pathname: string): HeaderRoute {
 	if (pathname === PREVIEW_FRAME_PATH) return 'previewFrame';
 	if (pathname === LOGIN_CONFIRM_PATH) return 'loginConfirm';
 	if (pathname.startsWith(MEDIA_PREFIX)) return 'media';
+	if (pathname.startsWith(UNSUBSCRIBE_PREFIX)) return 'unsubscribe';
 	return 'page';
 }
 
@@ -75,7 +78,8 @@ function previewFramePolicy(nonce: string): string {
  * and only the preview frame and the images differ from the pages. The confirmation page of login
  * links is a page whose URL holds the token, so it sends the origin only as referrer, also to its
  * own origin (assets, the POST of its button). Not `no-referrer`: a POST would then send
- * `Origin: null`, which the CSRF check of server functions refuses without `Sec-Fetch-Site`.
+ * `Origin: null`, which the CSRF check of server functions refuses without `Sec-Fetch-Site`. The
+ * unsubscribe page holds its token in the URL as well, and its page is not stored by any cache.
  *
  * @param route The kind of response.
  * @param options The request's CSP nonce, and whether `APP_URL` is `https:`.
@@ -101,6 +105,9 @@ function securityHeadersFor(
 		};
 	}
 	const page = { ...BASE_SECURITY_HEADERS, 'content-security-policy': pagePolicy(nonce, https) };
+	if (route === 'unsubscribe') {
+		return { ...page, 'cache-control': 'no-store', 'referrer-policy': 'strict-origin' };
+	}
 	return route === 'loginConfirm' ? { ...page, 'referrer-policy': 'strict-origin' } : page;
 }
 

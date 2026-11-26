@@ -1,23 +1,29 @@
-import { eq, inArray } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import { describe, expect, it, vi } from 'vite-plus/test';
 
 import type { Platform } from '@/platform/platform';
 import { createSubrequestBudget } from '@/platform/subrequests';
 import type { SubrequestBudget } from '@/platform/subrequests';
 import { compareCodePoints } from '@/server/compare-code-points';
-import { setUpClub } from '@/server/contacts/testing';
+import { insertContact, setUpClub } from '@/server/contacts/testing';
 import { SecretDecryptError } from '@/server/crypto/secrets';
-import type { Db } from '@/server/db/client';
+import type { Db, DbHandle } from '@/server/db/client';
 import { mailConnections, outboxEntries, senders } from '@/server/db/schema';
 import { createTestDb } from '@/server/db/test-db';
 import type { TickStep } from '@/server/tick/tick';
+import { wavePreparer } from '@/server/waves/preparer';
+import { resendUncertain, stopWave } from '@/server/waves/stop';
+import { confirmTestWave, setUpWaveClub, waveEntryIds } from '@/server/waves/testing';
+import type { WaveClub } from '@/server/waves/testing';
 
 import { openSenderTransport } from './open-transport';
+import { MAX_ATTEMPTS } from './outbox';
 import type { ClaimedEntry, EntryPreparer, PreparedMail } from './outbox';
-import { KICK_BUDGET_MS, createOutboxStep, kickOutbox } from './outbox-step';
+import { KICK_BUDGET_MS, createOutboxStep, kickOutbox, kickRun } from './outbox-step';
 import type { OutboxDeps } from './outbox-step';
 import { quotaToday, scopePause } from './quota';
 import { fakeProviders, graphConnection, resendConnection, senderOn, testEnv } from './testing';
+import type { FakeCall } from './testing';
 import type { OutgoingMail, SendFailureClass, SendResult, Transport } from './transport';
 
 const WAVE_ID = '00000000-0000-4000-8000-0000000000aa';
@@ -399,6 +405,73 @@ async function runUntilSettled(
 	}
 }
 
+/** A club with a wave of one member's mail. */
+interface WaveEntry {
+	readonly c: WaveClub;
+	readonly db: Db;
+	readonly waveId: string;
+	readonly id: string;
+}
+
+/**
+ * A club whose occasion sends through a provider, with a wave to one member confirmed at `START`.
+ *
+ * @param provider The provider of the occasion's sender.
+ * @returns The club, the wave and the id of its one entry.
+ */
+async function waveEntryOn(provider: 'graph' | 'resend'): Promise<WaveEntry> {
+	const c = await setUpWaveClub({ provider });
+	await insertContact(c.db, { email: 'mitglied-1@example.org', kind: 'member', memberNumber: '1' });
+	const waveId = await confirmTestWave(c, new Date(START));
+	const [id = ''] = await waveEntryIds(c.db, waveId);
+	return { c, db: c.db, id, waveId };
+}
+
+/**
+ * The outbox step with the wave preparer and real transports.
+ *
+ * @param fetchFn The `fetch` of the transports.
+ * @param clock The clock.
+ * @returns The step.
+ */
+function waveStep(fetchFn: typeof fetch, clock: TestClock): TickStep {
+	return createOutboxStep({
+		fetch: fetchFn,
+		preparers: { wave: wavePreparer },
+		sleep: clock.sleep,
+	});
+}
+
+/**
+ * How many mails went to a provider: Graph's `sendMail` and Resend's `/emails`.
+ *
+ * @param calls What the fake providers saw.
+ * @returns The number of mail requests.
+ */
+function mailRequests(calls: readonly FakeCall[]): number {
+	return calls.filter(({ url }) => url.endsWith('/emails') || url.endsWith('/sendMail')).length;
+}
+
+/**
+ * The requests that reached Resend's `/emails`: their idempotency keys, how many bodies differ,
+ * and the first body.
+ *
+ * @param calls What the fake providers saw.
+ * @returns The keys, the number of distinct bodies and the first body.
+ */
+function resendRequests(calls: readonly FakeCall[]): {
+	keys: (string | null)[];
+	versions: number;
+	first: string;
+} {
+	const sends = calls.filter(({ url }) => url.endsWith('/emails'));
+	return {
+		first: sends[0]?.body ?? '',
+		keys: sends.map(({ headers }) => headers.get('idempotency-key')),
+		versions: new Set(sends.map(({ body }) => body)).size,
+	};
+}
+
 /**
  * A club with one Graph sender.
  *
@@ -569,6 +642,7 @@ describe(createOutboxStep, () => {
 				.toSorted((a, b) => compareCodePoints(a.id, b.id))
 				.map((row) => ({
 					attempts: 0,
+					firstAttemptAt: null,
 					id: row.id,
 					messageId: row.messageId,
 					priority: 'group',
@@ -588,6 +662,7 @@ describe(createOutboxStep, () => {
 		const [id = ''] = await planEntries(harness.db, senderId, 1);
 		const claim = {
 			attempts: 0,
+			firstAttemptAt: null,
 			id,
 			messageId: '<x@example.org>',
 			priority: 'group',
@@ -1327,6 +1402,157 @@ describe(createOutboxStep, () => {
 		log.mockRestore();
 	});
 
+	it('retries a resend mail of a wave with the same message id, key and content, uncertain after 23 hours', async () => {
+		const { db, id } = await waveEntryOn('resend');
+		const providers = fakeProviders({ send: 500 });
+		const clock = testClock();
+		const harness = { clock, db };
+		const step = waveStep(providers.fetch, clock);
+		await runStep(harness, step);
+		clock.advance(await waitOf(harness, id));
+		await runStep(harness, step);
+		const row = await readEntry(db, id);
+		expect(row).toMatchObject({
+			attempts: 2,
+			firstAttemptAt: new Date(START),
+			lastErrorCode: 'resend.server',
+			status: 'planned',
+		});
+		expect(resendRequests(providers.calls)).toMatchObject({
+			first: expect.stringContaining(`"Message-ID":"${row.messageId}"`) as unknown,
+			keys: [id, id],
+			versions: 1,
+		});
+		expect(resendRequests(providers.calls).first).toMatch(
+			/"List-Unsubscribe":"<https:\/\/bote\.example\.org\/unsubscribe\/[\w-]+>"/u,
+		);
+		clock.advance(DAY_MS);
+		await runStep(harness, step);
+		clock.advance(DAY_MS);
+		await runStep(harness, step);
+		await expect(readEntry(db, id)).resolves.toMatchObject({
+			attempts: 2,
+			lastErrorCode: 'outbox.keyExpired',
+			status: 'uncertain',
+		});
+		expect(resendRequests(providers.calls)).toMatchObject({ keys: [id, id], versions: 1 });
+	});
+
+	it.each([
+		{
+			provider: 'resend',
+			requests: 0,
+			state: { attempts: 1, lastErrorCode: 'outbox.keyExpired', status: 'uncertain' },
+		},
+		{ provider: 'graph', requests: 1, state: { attempts: 2, status: 'sent' } },
+	] as const)(
+		'stops a retry due 30 hours after the first attempt before any request: $provider',
+		async ({ provider, requests, state }) => {
+			const { db, id } = await waveEntryOn(provider);
+			// Planned 22 hours after its first attempt, due 8 hours later.
+			await db
+				.update(outboxEntries)
+				.set({
+					attempts: 1,
+					firstAttemptAt: new Date(START),
+					lastErrorCode: 'resend.server',
+					messageId: '<retry@example.org>',
+					nextAttemptAt: new Date(START + 30 * HOUR_MS),
+				})
+				.where(eq(outboxEntries.id, id));
+			const providers = fakeProviders();
+			const clock = testClock();
+			clock.advance(30 * HOUR_MS);
+			await runStep({ clock, db }, waveStep(providers.fetch, clock));
+			await expect(readEntry(db, id)).resolves.toMatchObject(state);
+			expect(mailRequests(providers.calls)).toBe(requests);
+		},
+	);
+
+	it.each([
+		{ answer: 200, state: { attempts: 1, lastErrorCode: null, status: 'sent' } },
+		{ answer: 500, state: { attempts: 1, lastErrorCode: 'resend.server', status: 'planned' } },
+	] as const)(
+		'sends a resent entry once with its key, past its attempts and its key window: $answer',
+		async ({ answer, state }) => {
+			const { c, db, id } = await waveEntryOn('resend');
+			await db
+				.update(outboxEntries)
+				.set({
+					attempts: MAX_ATTEMPTS,
+					firstAttemptAt: new Date(START),
+					lastErrorCode: 'outbox.keyExpired',
+					messageId: '<resent@example.org>',
+					status: 'uncertain',
+				})
+				.where(eq(outboxEntries.id, id));
+			await resendUncertain(db, c.sender, id);
+			const providers = fakeProviders({ send: answer });
+			const clock = testClock();
+			clock.advance(2 * DAY_MS);
+			await runStep({ clock, db }, waveStep(providers.fetch, clock));
+			await expect(readEntry(db, id)).resolves.toMatchObject({
+				...state,
+				firstAttemptAt: clock.now(),
+				messageId: '<resent@example.org>',
+			});
+			expect(resendRequests(providers.calls)).toMatchObject({ keys: [id], versions: 1 });
+		},
+	);
+
+	it('never sends an entry planned again after its wave was stopped', async () => {
+		const { c, db, id, waveId } = await waveEntryOn('resend');
+		await expect(stopWave(db, c.sender, waveId)).resolves.toStrictEqual({ cancelled: 1 });
+		// What an outcome stored while the stop was still being made could leave behind.
+		await db.update(outboxEntries).set({ status: 'planned' }).where(eq(outboxEntries.id, id));
+		const providers = fakeProviders();
+		const clock = testClock();
+		await runStep({ clock, db }, waveStep(providers.fetch, clock));
+		await expect(readEntry(db, id)).resolves.toMatchObject({ attempts: 0, status: 'cancelled' });
+		expect(mailRequests(providers.calls)).toBe(0);
+	});
+
+	it('cancels an entry of a wave stopped while its mail was on the way instead of retrying it', async () => {
+		const { c, db, waveId } = await waveEntryOn('resend');
+		const providers = fakeProviders({ send: 500 });
+		const stops: { cancelled: number }[] = [];
+		const stopWhileSending: typeof fetch = async (input, init) => {
+			stops.push(await stopWave(db, c.sender, waveId));
+			return providers.fetch(input, init);
+		};
+		const clock = testClock();
+		await runStep({ clock, db }, waveStep(stopWhileSending, clock));
+		expect(stops).toStrictEqual([{ cancelled: 0 }]);
+		const rows = await db.select().from(outboxEntries).where(eq(outboxEntries.waveId, waveId));
+		expect(statesOf(rows)).toStrictEqual([['cancelled', 1, 'resend.server']]);
+	});
+
+	it('starts the run of a preparer once per run of the step', async () => {
+		const db = await createTestDb();
+		const { senderId } = await graphSender(db);
+		await planEntries(db, senderId, 2);
+		const clock = testClock();
+		const preparer = testPreparer();
+		const runs: number[] = [];
+		const startRun = (): EntryPreparer['prepare'] => {
+			runs.push(runs.length);
+			return preparer.prepare;
+		};
+		const transports = new Map([[senderId, testTransport().transport]]);
+		const step = outboxStep({ clock, preparer: { ...preparer, startRun }, transports });
+		await runStep({ clock, db }, step);
+		expect({ prepared: preparer.seen.length, runs: runs.length }).toStrictEqual({
+			prepared: 2,
+			runs: 1,
+		});
+		await planEntries(db, senderId, 1);
+		await runStep({ clock, db }, step);
+		expect({ prepared: preparer.seen.length, runs: runs.length }).toStrictEqual({
+			prepared: 3,
+			runs: 2,
+		});
+	});
+
 	it('fails planned entries whose sender is gone', async () => {
 		const harness = { clock: testClock(), db: await createTestDb() };
 		await setUpClub(harness.db);
@@ -1358,5 +1584,66 @@ describe(kickOutbox, () => {
 		]);
 		// Workers keep work after the response for 30 seconds only.
 		expect(KICK_BUDGET_MS).toBeLessThan(30 * SECOND_MS);
+	});
+});
+
+/**
+ * A kick run on a test database that records what its step saw and the end of the database.
+ *
+ * @param db The database the run opens.
+ * @returns The run, its step, the end of its database and its budget.
+ */
+function recordingKick(db: Db): {
+	run: () => Promise<unknown>;
+	step: ReturnType<typeof vi.fn<TickStep['run']>>;
+	end: ReturnType<typeof vi.fn<() => Promise<void>>>;
+	subrequests: SubrequestBudget;
+} {
+	const step = vi.fn<TickStep['run']>().mockResolvedValue({ moreWork: false });
+	const end = vi.fn<() => Promise<void>>().mockResolvedValue();
+	const subrequests = createSubrequestBudget(10);
+	const run = kickRun({
+		env: { ...testEnv(), heartbeatUrl: 'https://heartbeat.example.org/ping' },
+		openDb: vi.fn<() => Promise<DbHandle>>().mockResolvedValue({ db, end }),
+		steps: [{ name: 'outbox', run: step }],
+		storage: null,
+		subrequests,
+	});
+	return { end, run, step, subrequests };
+}
+
+describe(kickRun, () => {
+	it('runs the steps on a database of its own with the budget of the invocation', async () => {
+		const db = await createTestDb();
+		const kick = recordingKick(db);
+		// Nothing is opened before the run starts, after the response.
+		expect(kick.end).not.toHaveBeenCalled();
+		const before = Date.now();
+		await expect(kick.run()).resolves.toMatchObject({ status: 'completed' });
+		const seen = kick.step.mock.calls.map(([ctx]) => ({
+			db: ctx.db,
+			kickBudget: ctx.deadline - before >= KICK_BUDGET_MS,
+			subrequests: ctx.subrequests,
+		}));
+		expect(seen).toStrictEqual([{ db, kickBudget: true, subrequests: kick.subrequests }]);
+		expect(kick.end).toHaveBeenCalledOnce();
+	});
+
+	it('pings no heartbeat: only the ticks report to the monitor', async () => {
+		const kick = recordingKick(await createTestDb());
+		const pinged = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('no network'));
+		await kick.run();
+		expect(pinged).not.toHaveBeenCalled();
+		pinged.mockRestore();
+	});
+
+	it('ends its database when the run fails', async () => {
+		const db = await createTestDb();
+		// Without the table of the tick lock no run can start.
+		await db.execute(sql`drop table system_state`);
+		const kick = recordingKick(db);
+		await expect(kick.run()).rejects.toThrow();
+		expect(kick.step).not.toHaveBeenCalled();
+		expect(kick.end).toHaveBeenCalledOnce();
 	});
 });

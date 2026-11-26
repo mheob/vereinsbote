@@ -1,6 +1,7 @@
 import { setResponseHeaders } from '@tanstack/react-start/server';
 import { describe, expect, it, vi } from 'vite-plus/test';
 
+import { RESEND_WEBHOOK_PATH } from '@/paths';
 import { parseEnv } from '@/server/env';
 import { startInstance } from '@/start';
 
@@ -29,6 +30,7 @@ vi.mock(import('./context'), async (importOriginal) => ({
 }));
 
 const APP_ORIGIN = 'https://bote.example.org';
+const CONNECTION_ID = '00000000-0000-4000-8000-000000000001';
 const SERVER_FN_URL = `${APP_ORIGIN}/_serverFn/save-locale`;
 const FORBIDDEN = 403;
 const OK = 200;
@@ -171,6 +173,44 @@ describe('csrf protection of server functions', () => {
 			const expected = securityHeadersFor('page', { https: true, nonce: cspNonceFor(request) });
 			// Headers compare by their entries.
 			expect(vi.mocked(setResponseHeaders).mock.calls).toStrictEqual([[new Headers(expected)]]);
+		});
+
+		it('lets the one-click POST of an unsubscribe link through without cookies and Origin', async () => {
+			vi.mocked(setResponseHeaders).mockClear();
+			// A mail provider posts server to server (RFC 8058): no Origin, no Sec-Fetch-Site.
+			const request = new Request(`${APP_ORIGIN}/unsubscribe/abc`, {
+				body: 'List-Unsubscribe=One-Click',
+				headers: { 'content-type': 'application/x-www-form-urlencoded' },
+				method: 'POST',
+			});
+			await expect(runApp(request, 'router')).resolves.toStrictEqual({ handled: true, status: OK });
+			const expected = securityHeadersFor('unsubscribe', {
+				https: true,
+				nonce: cspNonceFor(request),
+			});
+			expect(vi.mocked(setResponseHeaders).mock.calls).toStrictEqual([[new Headers(expected)]]);
+		});
+
+		it('lets a Resend webhook through without cookies and Origin', async () => {
+			vi.mocked(setResponseHeaders).mockClear();
+			// Resend posts server to server: no Origin, no Sec-Fetch-Site; the signature protects it.
+			const request = new Request(`${APP_ORIGIN}${RESEND_WEBHOOK_PATH}/${CONNECTION_ID}`, {
+				body: '{"type":"email.bounced"}',
+				headers: { 'content-type': 'application/json', 'svix-id': 'msg_1' },
+				method: 'POST',
+			});
+			await expect(runApp(request, 'router')).resolves.toStrictEqual({ handled: true, status: OK });
+			const expected = securityHeadersFor('page', { https: true, nonce: cspNonceFor(request) });
+			expect(vi.mocked(setResponseHeaders).mock.calls).toStrictEqual([[new Headers(expected)]]);
+		});
+
+		it('still refuses a call of a server function without Origin', async () => {
+			// The form of the unsubscribe page calls server functions: they keep the check.
+			const request = post(SERVER_FN_URL, {});
+			await expect(runApp(request, 'serverFn')).resolves.toStrictEqual({
+				handled: false,
+				status: FORBIDDEN,
+			});
 		});
 
 		it('leaves routes such as Better Auth to their own origin check', async () => {

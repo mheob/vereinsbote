@@ -1,6 +1,8 @@
 /*
  * Which placeholders a template and a layout may use (Design 10.2). A template's set depends only
- * on its area and the field protection, never on a user: sending runs without one.
+ * on its area and the field protection, never on a user: sending runs without one. Every template
+ * and layout may use `unsubscribe.url` (the HTML import allows it only as a whole `href` outside
+ * text); whether a mail may have the link is the occasion's matter (`compileMail`).
  */
 import {
 	BUILTIN_PLACEHOLDERS,
@@ -27,9 +29,12 @@ interface AllowedPlaceholders {
 }
 
 /** The built-in keys of a template: all but the layout's `content`. */
-const TEMPLATE_BUILTINS = BUILTIN_PLACEHOLDERS.filter(({ group }) => group !== 'layout');
+const TEMPLATE_BUILTINS = BUILTIN_PLACEHOLDERS.filter(({ key }) => key !== CONTENT_KEY);
 
-/** Global layouts: brand values, the base fields of contacts and `content` (Design 10.2). */
+/**
+ * Global layouts: brand values, the base fields of contacts, `content` and the unsubscribe link
+ * (Design 10.2).
+ */
 const GLOBAL_LAYOUT_KEYS: ReadonlySet<string> = new Set(
 	BUILTIN_PLACEHOLDERS.filter(
 		({ base, group }) => group === 'brand' || group === 'layout' || (group === 'contact' && base),
@@ -94,7 +99,7 @@ const BUILTIN_KEYS = BUILTIN_PLACEHOLDERS.map(({ key }) => key);
 
 /**
  * The placeholders of a global layout: brand values, the base fields of contacts (the built-in
- * ones and the custom fields with protection `base`) and `content`.
+ * ones and the custom fields with protection `base`), `content` and the unsubscribe link.
  *
  * @param scope `global`.
  * @param customFields The custom fields of both kinds.

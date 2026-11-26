@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vite-plus/test';
 
 import { contactOptOuts, contacts } from '@/server/db/schema';
 import { createTestDb } from '@/server/db/test-db';
+import { insertOccasion } from '@/server/occasions/testing';
 
 import { insertContact, setUpClub } from './testing';
 
@@ -77,12 +78,11 @@ describe('contacts table', () => {
 
 	it('accepts one valid opt-out per scope', async () => {
 		const db = await createTestDb();
-		const { membersAreaId } = await setUpClub(db);
+		const { admin, membersAreaId } = await setUpClub(db);
+		const occasionId = await insertOccasion(db, admin, membersAreaId);
 		const base = { contactKey: 'nr:1', kind: 'member' as const };
 		await db.insert(contactOptOuts).values({ ...base, areaId: membersAreaId, scope: 'area' });
-		await db
-			.insert(contactOptOuts)
-			.values({ ...base, occasionId: crypto.randomUUID(), scope: 'occasion' });
+		await db.insert(contactOptOuts).values({ ...base, occasionId, scope: 'occasion' });
 		await expect(db.select().from(contactOptOuts)).resolves.toHaveLength(2);
 	});
 

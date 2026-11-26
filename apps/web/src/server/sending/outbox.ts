@@ -10,7 +10,7 @@ import type { PgUpdateSetSource } from 'drizzle-orm/pg-core';
 
 import { SUBREQUEST_LIMIT_CODE } from '@/platform/subrequests';
 import type { Db } from '@/server/db/client';
-import { mailConnections, outboxEntries, senders } from '@/server/db/schema';
+import { mailConnections, outboxEntries, senders, waves } from '@/server/db/schema';
 import type { Env } from '@/server/env';
 import type { ObjectStorage } from '@/server/storage/storage';
 
@@ -40,6 +40,8 @@ const MAX_ATTEMPTS = 5;
 const RETRY_DELAYS_MS = [FIVE_MINUTES_MS, HALF_AN_HOUR_MS, TWO_HOURS_MS, EIGHT_HOURS_MS] as const;
 /** An entry `sending` for longer than this turns `uncertain` (Design 8.5). */
 const UNCERTAIN_AFTER_MS = 600_000;
+/** The code of an entry whose idempotency key may be gone before its retry (ruling R7). */
+const KEY_EXPIRED_CODE = 'outbox.keyExpired';
 /** A provider's `Retry-After` counts up to a day; a longer one is a provider's mistake. */
 const MAX_RETRY_AFTER_MS = 86_400_000;
 /** The shortest pause of a scope after a quota refusal (ruling R5). */
@@ -56,6 +58,8 @@ interface ClaimedEntry {
 	/** The attempts before this one. */
 	readonly attempts: number;
 	readonly messageId: string;
+	/** When the first counted attempt went out; null before it (ruling R7). */
+	readonly firstAttemptAt: Date | null;
 }
 
 /**
@@ -67,13 +71,29 @@ type PreparedMail =
 	| { kind: 'skip'; reason: string }
 	| { kind: 'fail'; code: string };
 
+/** What a preparer gets besides the database and the entry. */
+interface PrepareContext {
+	readonly now: Date;
+	readonly storage: ObjectStorage | null;
+	readonly env: Env;
+}
+
+/** Prepares one entry. */
+type PrepareEntry = (
+	db: Db,
+	entry: Readonly<ClaimedEntry>,
+	ctx: Readonly<PrepareContext>,
+) => Promise<PreparedMail>;
+
 /** Builds the mail of an entry of one source (4b: the wave). */
 interface EntryPreparer {
-	readonly prepare: (
-		db: Db,
-		entry: Readonly<ClaimedEntry>,
-		ctx: Readonly<{ now: Date; storage: ObjectStorage | null; env: Env }>,
-	) => Promise<PreparedMail>;
+	readonly prepare: PrepareEntry;
+	/**
+	 * Starts a run of the outbox: the function prepares the entries of that run and may keep what
+	 * they share for its length (a wave's files, read once per run). Without it every entry goes
+	 * to `prepare`.
+	 */
+	readonly startRun?: () => PrepareEntry;
 }
 
 /** What becomes of a taken entry. `attempt`: whether it counts as an attempt. */
@@ -88,7 +108,12 @@ type EntryOutcome =
 	/** Back to `planned` without an attempt, and the scope pauses until `until` (ruling R5). */
 	| { kind: 'pause'; code: string; until: Date }
 	/** Back to `planned` without an attempt: the request never left (a Worker's subrequests). */
-	| { kind: 'requeue'; code: string };
+	| { kind: 'requeue'; code: string }
+	/**
+	 * `uncertain` without a request and without an attempt: the provider may have forgotten the
+	 * idempotency key of an earlier attempt, so a retry could send the mail twice (ruling R7).
+	 */
+	| { kind: 'expired'; code: string };
 
 /** A taken entry and the time of the take, which every later write names. */
 interface Claim {
@@ -183,6 +208,70 @@ function outcomeOf(
 	if (result.ok) return { kind: 'sent', providerId: result.providerId };
 	return refusalOutcome(result, at);
 }
+
+/**
+ * Ruling R7, before a request: an entry that went to the provider before is retried only while the
+ * provider still keeps its idempotency key (Resend: 24 hours, trusted for 23). Once its first
+ * counted attempt is older, it goes out no more by itself: it becomes `uncertain` without a request
+ * (`expired`), and a person decides. A provider without keys (Graph) is not limited so.
+ *
+ * @param entry The attempts before this one and the time of the first counted one.
+ * @param trustedMs How long the provider's key is trusted, or null for a provider without keys.
+ * @param now The instant.
+ * @returns True when the entry may not be sent again by itself.
+ */
+function keyOutlived(
+	entry: Readonly<Pick<ClaimedEntry, 'attempts' | 'firstAttemptAt'>>,
+	trustedMs: number | null,
+	now: Date,
+): boolean {
+	const { attempts, firstAttemptAt } = entry;
+	if (trustedMs === null || attempts === 0 || firstAttemptAt === null) return false;
+	return now.getTime() - firstAttemptAt.getTime() > trustedMs;
+}
+
+/**
+ * Ruling R7, after an answer: a retry that would come only after the provider's key of the entry
+ * is no longer trusted becomes `uncertain` at once, rather than waiting to be stopped before its
+ * request (`keyOutlived`).
+ *
+ * @param outcome What the answer makes of the entry (`outcomeOf`).
+ * @param key When the entry's first counted attempt went out (this one, for the first) and how
+ *   long the provider's key is trusted (null for a provider without keys).
+ * @param key.firstAttemptAt The first counted attempt.
+ * @param key.trustedMs How long the key is trusted.
+ * @returns The outcome, `uncertain` instead of a retry the key would no longer protect.
+ */
+function guardKeyLifetime(
+	outcome: Readonly<EntryOutcome>,
+	key: Readonly<{ firstAttemptAt: Date; trustedMs: number | null }>,
+): EntryOutcome {
+	const { firstAttemptAt, trustedMs } = key;
+	if (outcome.kind !== 'retry' || trustedMs === null) return outcome;
+	if (outcome.at.getTime() - firstAttemptAt.getTime() <= trustedMs) return outcome;
+	return { code: outcome.code, kind: 'uncertain' };
+}
+
+/**
+ * Whether the entry's wave was stopped. The wave's row is read with a share lock: a stop in progress
+ * (it updates the row) is waited for and then seen, so neither a take nor a stored outcome can slip
+ * between a stop's cancellation and its end. Lock order: a take (`claimEntry`) locks the entry
+ * first (`for update skip locked`), then reads its wave; `stopWave` cancels the planned entries
+ * before it marks the wave, the same order. `storeOutcome` reads the wave while PostgreSQL computes
+ * the new row, before the entry's row is locked, so it holds the wave first; but its entry is
+ * `sending`, which `stopWave` never locks (it cancels `planned` entries only), so neither waits for
+ * the other in a circle.
+ */
+const waveStopped = sql`(select ${waves.stoppedAt} from ${waves} where ${waves.id} = ${outboxEntries.waveId} for share) is not null`;
+
+/**
+ * The status of an entry that waits again: `planned`, unless its wave was stopped while its mail
+ * was on the way. Then `cancelled`, as the stop cancelled every other planned entry of the wave
+ * (Design 11.4): the send that ran finished, no further attempt follows.
+ */
+const plannedUnlessStopped = sql<
+	'cancelled' | 'planned'
+>`case when ${waveStopped} then 'cancelled' else 'planned' end`;
 
 /**
  * Planned entries whose time has come.
@@ -297,17 +386,18 @@ async function hasDueEntry(
  * first take (ruling R4). One statement: the subquery locks one planned row and skips rows other
  * runs hold, the update takes it, so no two runs get the same entry. The subquery is a scalar
  * one (`id = (…)`), which PostgreSQL runs once; within `id in (…)` it may run again for further
- * rows and take more than one.
+ * rows and take more than one. An entry of a stopped wave is cancelled instead of taken: the stop
+ * decides at the take, whatever planned the entry again while the stop ran (Design 11.4).
  *
  * @param db The database.
  * @param input The sender, a fresh Message-ID (kept only on the first take), the instant and
  *   whether only personal entries may start (decision 5).
- * @returns The take, or null when no entry is due.
+ * @returns The take; `cancelled` when the entry's wave was stopped; null when no entry is due.
  */
 async function claimEntry(
 	db: Db,
 	input: Readonly<{ senderId: string; messageId: string; now: Date; personalOnly: boolean }>,
-): Promise<Claim | null> {
+): Promise<Claim | 'cancelled' | null> {
 	const { messageId, now, senderId } = input;
 	const next = db
 		.select({ id: outboxEntries.id })
@@ -332,21 +422,25 @@ async function claimEntry(
 		.set({
 			claimedAt: now,
 			messageId: sql`coalesce(${outboxEntries.messageId}, ${messageId})`,
-			status: 'sending',
+			status: sql`case when ${waveStopped} then 'cancelled' else 'sending' end`,
 		})
 		.where(and(sql`${outboxEntries.id} = (${next})`, eq(outboxEntries.status, 'planned')))
 		.returning({
 			attempts: outboxEntries.attempts,
+			firstAttemptAt: outboxEntries.firstAttemptAt,
 			id: outboxEntries.id,
 			messageId: outboxEntries.messageId,
 			priority: outboxEntries.priority,
 			source: outboxEntries.source,
 			sourceId: outboxEntries.sourceId,
+			status: outboxEntries.status,
 		});
 	if (row === undefined) return null;
+	const { status, ...entry } = row;
+	if (status === 'cancelled') return 'cancelled';
 	return {
 		claimedAt: now,
-		entry: { ...row, messageId: row.messageId ?? messageId, senderId },
+		entry: { ...entry, messageId: entry.messageId ?? messageId, senderId },
 	};
 }
 
@@ -373,6 +467,8 @@ async function recordRecipient(
 }
 
 const nextAttempt = sql`${outboxEntries.attempts} + 1`;
+/** The first counted attempt keeps its time: the take of the entry that made it (ruling R7). */
+const firstAttempt = sql`coalesce(${outboxEntries.firstAttemptAt}, ${outboxEntries.claimedAt})`;
 
 /**
  * The columns of an outcome that counts as an attempt.
@@ -385,15 +481,16 @@ function attemptChanges(
 	outcome: Readonly<Extract<EntryOutcome, { kind: 'retry' | 'sent' | 'uncertain' }>>,
 	now: Date,
 ): PgUpdateSetSource<typeof outboxEntries> {
+	const counted = { attempts: nextAttempt, firstAttemptAt: firstAttempt };
 	if (outcome.kind === 'sent') {
 		const { providerId } = outcome;
-		return { attempts: nextAttempt, lastErrorCode: null, providerId, sentAt: now, status: 'sent' };
+		return { ...counted, lastErrorCode: null, providerId, sentAt: now, status: 'sent' };
 	}
 	if (outcome.kind === 'retry') {
 		const { at, code } = outcome;
-		return { attempts: nextAttempt, lastErrorCode: code, nextAttemptAt: at, status: 'planned' };
+		return { ...counted, lastErrorCode: code, nextAttemptAt: at, status: plannedUnlessStopped };
 	}
-	return { attempts: nextAttempt, lastErrorCode: outcome.code, status: 'uncertain' };
+	return { ...counted, lastErrorCode: outcome.code, status: 'uncertain' };
 }
 
 /**
@@ -412,18 +509,20 @@ function changesOf(
 		return attemptChanges(outcome, now);
 	}
 	if (kind === 'failed') {
-		const counted = outcome.attempt ? { attempts: nextAttempt } : {};
+		const counted = outcome.attempt ? { attempts: nextAttempt, firstAttemptAt: firstAttempt } : {};
 		return { ...counted, lastErrorCode: outcome.code, status: 'failed' };
 	}
 	if (kind === 'skipped') return { lastErrorCode: outcome.reason, status: 'skipped' };
+	if (kind === 'expired') return { lastErrorCode: outcome.code, status: 'uncertain' };
 	// `release`, `pause` and `requeue`: the entry waits for its connection, its scope or the next
 	// invocation, without an attempt.
-	return { lastErrorCode: outcome.code, status: 'planned' };
+	return { lastErrorCode: outcome.code, status: plannedUnlessStopped };
 }
 
 /**
  * Stores what became of a taken entry, unless it is no longer this run's (a person or another
- * run changed it in the meantime; their state stays).
+ * run changed it in the meantime; their state stays). An entry that would wait again is cancelled
+ * when its wave was stopped meanwhile.
  *
  * @param db The database.
  * @param claim The take.
@@ -494,19 +593,38 @@ async function disturbConnection(
 }
 
 /**
- * Ends the disturbance of a connection: the provider took its credentials again.
+ * Ends the disturbance of a connection: the provider took its credentials (or its mails) again.
+ * Only the disturbance the caller read is cleared: another run (a kick and a tick, the system
+ * mailer) may have recorded a newer one meanwhile, with another code or after this one ended, and
+ * that one stays.
  *
  * @param db The database.
  * @param connectionId The connection.
+ * @param read The disturbance as the caller read it: its code and its start.
+ * @param read.code The code of the refusal.
+ * @param read.since When the disturbance began.
  */
-async function clearDisturbance(db: Db, connectionId: string): Promise<void> {
+async function clearDisturbance(
+	db: Db,
+	connectionId: string,
+	read: Readonly<{ code: string | null; since: Date }>,
+): Promise<void> {
 	await db
 		.update(mailConnections)
 		.set({ disturbedCode: null, disturbedSince: null })
-		.where(eq(mailConnections.id, connectionId));
+		.where(
+			and(
+				eq(mailConnections.id, connectionId),
+				read.code === null
+					? isNull(mailConnections.disturbedCode)
+					: eq(mailConnections.disturbedCode, read.code),
+				eq(mailConnections.disturbedSince, read.since),
+			),
+		);
 }
 
 export {
+	KEY_EXPIRED_CODE,
 	MAX_ATTEMPTS,
 	RETRY_DELAYS_MS,
 	UNCERTAIN_AFTER_MS,
@@ -516,7 +634,9 @@ export {
 	disturbConnection,
 	dueSenders,
 	failOrphans,
+	guardKeyLifetime,
 	hasDueEntry,
+	keyOutlived,
 	markUncertain,
 	nextAttemptDelay,
 	outcomeOf,
@@ -533,5 +653,7 @@ export type {
 	EntryPreparer,
 	EntryPriority,
 	EntryStatus,
+	PrepareContext,
+	PrepareEntry,
 	PreparedMail,
 };

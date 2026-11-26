@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 
-import { LOGIN_CONFIRM_PATH } from '@/paths';
+import { LOGIN_CONFIRM_PATH, TEST_UNSUBSCRIBE_PATH, UNSUBSCRIBE_PATH } from '@/paths';
 
 import { BASE_SECURITY_HEADERS, headerRouteOf, securityHeadersFor } from './security-headers';
 import type { HeaderRoute } from './security-headers';
@@ -57,6 +57,15 @@ describe(securityHeadersFor, () => {
 		});
 	});
 
+	it('keeps the token of an unsubscribe link out of referrers and caches', () => {
+		const headers = securityHeadersFor('unsubscribe', { https: true, nonce: 'abc' });
+		expect(headers).toStrictEqual({
+			...securityHeadersFor('page', { https: true, nonce: 'abc' }),
+			'cache-control': 'no-store',
+			'referrer-policy': 'strict-origin',
+		});
+	});
+
 	it('sandboxes images', () => {
 		const headers = securityHeadersFor('media', { https: true, nonce: 'abc' });
 		expect(headers['content-security-policy']).toBe("default-src 'none'; sandbox");
@@ -75,11 +84,20 @@ describe(headerRouteOf, () => {
 		['/login/confirm', 'loginConfirm'],
 		['/login', 'page'],
 		['/login/confirmed', 'page'],
+		['/unsubscribe/abc-_9', 'unsubscribe'],
+		['/unsubscribe/test', 'unsubscribe'],
+		['/unsubscribe', 'page'],
+		['/unsubscribed/abc', 'page'],
 	])('routes %s to %s', (pathname, route) => {
 		expect(headerRouteOf(pathname)).toBe(route);
 	});
 
 	it('knows the path of the confirmation page that login links lead to', () => {
 		expect(headerRouteOf(LOGIN_CONFIRM_PATH)).toBe('loginConfirm');
+	});
+
+	it('knows the path of the unsubscribe links', () => {
+		expect(headerRouteOf(`${UNSUBSCRIBE_PATH}/abc`)).toBe('unsubscribe');
+		expect(headerRouteOf(TEST_UNSUBSCRIBE_PATH)).toBe('unsubscribe');
 	});
 });

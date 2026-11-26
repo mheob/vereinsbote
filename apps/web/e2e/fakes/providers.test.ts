@@ -45,6 +45,8 @@ const LIMIT = 50;
 const requestList = z.array(
 	z.object({ path: z.string(), savedToSentItems: z.boolean().optional() }),
 );
+const addressList = z.array(z.string());
+const resendList = z.array(z.object({ id: z.string(), to: addressList }));
 
 const closers: (() => Promise<unknown>)[] = [];
 
@@ -109,6 +111,11 @@ async function control(url: string, path: string, body: unknown): Promise<Respon
 async function recorded(url: string): Promise<z.infer<typeof requestList>> {
 	const response = await fetch(`${url}/__control/requests`);
 	return requestList.parse(await response.json());
+}
+
+async function resendMails(url: string): Promise<z.infer<typeof resendList>> {
+	const response = await fetch(`${url}/__control/resend/emails`);
+	return resendList.parse(await response.json());
 }
 
 // A stand-in for the app that keeps what it is sent and answers 204.
@@ -242,6 +249,19 @@ describe('fake providers', () => {
 		expect(delivered.map((entry) => entry.mime).join('')).toContain(`Message-ID: ${MESSAGE_ID}`);
 		await transport.send(mail({ idempotencyKey: 'key-2' }));
 		expect(delivered).toHaveLength(2);
+	});
+
+	it('lists each resend mail it accepted once, with the id it answered', async () => {
+		const { url } = await start();
+		const transport = resendTransport(url);
+		const first = await transport.send(mail());
+		await transport.send(mail());
+		const second = await transport.send(mail({ idempotencyKey: 'key-2', to: MAILBOX }));
+		const listed = await resendMails(url);
+		expect(listed.map(({ to }) => to)).toStrictEqual([[MEMBER], [MAILBOX]]);
+		expect([first, second]).toStrictEqual(listed.map(({ id }) => ({ ok: true, providerId: id })));
+		await control(url, '/reset', {});
+		await expect(resendMails(url)).resolves.toStrictEqual([]);
 	});
 
 	it('signs a webhook that verifyResendWebhook accepts', async () => {

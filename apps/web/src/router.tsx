@@ -18,6 +18,8 @@ declare module '@tanstack/react-router' {
 	interface HistoryState {
 		/** The name of the partner just deleted; the contact list announces it once. */
 		deletedContact?: string;
+		/** An occasion was just deleted or archived on its page; the list announces it once. */
+		occasionNotice?: { kind: 'archived' | 'deleted'; name: string };
 		/** A partner was just created; its page announces „Gespeichert.“ once. */
 		partnerSaved?: boolean;
 		/** What the check of a new connection's credentials found; its page shows it once. */
@@ -31,6 +33,12 @@ declare module '@tanstack/react-router' {
 		};
 		/** A template was just copied (its page announces it) or deleted (the list announces it). */
 		templateNotice?: { kind: 'copied' | 'deleted'; name: string };
+		/**
+		 * A wave was just confirmed in the send flow: its mails, its planned start (an ISO instant,
+		 * null for at once) and whether an earlier confirmation of the flow made it; the occasion's
+		 * page announces it once.
+		 */
+		waveNotice?: { mails: number; notBefore: string | null; existing: boolean };
 	}
 }
 

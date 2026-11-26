@@ -16,12 +16,22 @@
  * The step stops starting sends shortly before its deadline, so that the later steps of the tick
  * still run, and reports `moreWork` while due entries are left that hang neither on a limit, a
  * pause, a disturbance nor a spent subrequest budget.
+ *
+ * Each run starts the run of every preparer it uses (`EntryPreparer.startRun`), so what the
+ * entries of a run share (a wave's files) is read once per run. A Resend entry whose first counted
+ * attempt is older than its idempotency key is trusted goes out no more by itself: it becomes
+ * `uncertain` before any request (ruling R7). An entry of a stopped wave is cancelled at its take.
  */
 import type { Platform } from '@/platform/platform';
 import { budgetedFetch, isSubrequestLimit, SUBREQUEST_LIMIT_CODE } from '@/platform/subrequests';
+import type { SubrequestBudget } from '@/platform/subrequests';
 import { SecretDecryptError } from '@/server/crypto/secrets';
+import type { DbHandle } from '@/server/db/client';
+import type { Env } from '@/server/env';
 import { errorLabel } from '@/server/error-label';
-import type { TickContext, TickStep } from '@/server/tick/tick';
+import type { ObjectStorage } from '@/server/storage/storage';
+import { runTick } from '@/server/tick/tick';
+import type { TickContext, TickReport, TickStep } from '@/server/tick/tick';
 
 import { disturbanceReason } from './disturbance';
 import { SenderNotFoundError } from './errors';
@@ -34,7 +44,10 @@ import {
 	disturbConnection,
 	dueSenders,
 	failOrphans,
+	guardKeyLifetime,
 	hasDueEntry,
+	KEY_EXPIRED_CODE,
+	keyOutlived,
 	markUncertain,
 	outcomeOf,
 	recentSends,
@@ -48,6 +61,7 @@ import type {
 	DueSender,
 	EntryOutcome,
 	EntryPreparer,
+	PrepareEntry,
 	PreparedMail,
 } from './outbox';
 import { countSent, liftPause, mayStart, pauseScope, quotaToday, scopePause } from './quota';
@@ -104,13 +118,15 @@ interface Lane {
 
 /**
  * A connection as this run sees it. `open`: its mails go; `probing`: disturbed without a token to
- * fetch, so one entry tests it; `closed`: disturbed, its mails wait. `disturbedSince` is the start
- * of a disturbance found at the start of the run; it stays the start when a probe succeeds and
- * the next send is refused anyway (a mailbox the app may not use).
+ * fetch, so one entry tests it; `closed`: disturbed, its mails wait. `disturbedSince` and
+ * `disturbedCode` are the start and the code of a disturbance found at the start of the run; the
+ * start stays when a probe succeeds and the next send is refused anyway (a mailbox the app may not
+ * use), and a probe clears only that disturbance.
  */
 interface ConnectionState {
 	readonly mode: 'closed' | 'open' | 'probing';
 	readonly disturbedSince: Date | null;
+	readonly disturbedCode: string | null;
 }
 
 /**
@@ -140,6 +156,11 @@ interface Delivery {
 type Next = 'continue' | 'done' | 'more';
 
 const EMPTY_WINDOW: SendWindow = { sent: 0, start: Number.NEGATIVE_INFINITY };
+/** An entry the provider's key may no longer protect: `uncertain`, nothing sent (ruling R7). */
+const KEY_EXPIRED: Delivery = {
+	outcome: { code: KEY_EXPIRED_CODE, kind: 'expired' },
+	result: null,
+};
 
 /**
  * When the next mail of a scope may go.
@@ -287,6 +308,8 @@ class OutboxRun {
 	private readonly windows = new Map<QuotaScope, SendWindow>();
 	private readonly scopes = new Map<QuotaScope, ScopeMode>();
 	private readonly connections = new Map<string, ConnectionState>();
+	/** The prepare function of each source for this run (`EntryPreparer.startRun`). */
+	private readonly prepares = new Map<ClaimedEntry['source'], PrepareEntry>();
 	/** The `fetch` of the transports: it takes every request from the invocation's budget. */
 	private readonly fetch: typeof fetch;
 	/** No send starts at or after this instant, epoch milliseconds. */
@@ -522,6 +545,7 @@ class OutboxRun {
 	 */
 	private async check(due: Readonly<DueSender>, transport: Transport): Promise<ConnectionState> {
 		const state: ConnectionState = {
+			disturbedCode: due.disturbedCode,
 			disturbedSince: due.disturbedSince,
 			mode: await this.modeOf(due, transport),
 		};
@@ -547,7 +571,10 @@ class OutboxRun {
 		if (!tokenDecides(transport, disturbedCode)) return 'probing';
 		const probed = await probeSafely(transport.probe);
 		if (probed.ok) {
-			await clearDisturbance(this.ctx.db, connectionId);
+			await clearDisturbance(this.ctx.db, connectionId, {
+				code: disturbedCode,
+				since: disturbedSince,
+			});
 			return 'open';
 		}
 		if (probed.failure === 'unauthorized') {
@@ -588,7 +615,8 @@ class OutboxRun {
 
 	/**
 	 * Takes the next entry of a lane that its scope's limit allows. A lane at the limit stops with
-	 * its scope, a lane with nothing due on its own.
+	 * its scope, a lane with nothing due on its own. An entry of a stopped wave was cancelled
+	 * instead of taken; the lane goes on with its next entry in its next turn.
 	 *
 	 * @param lane The lane.
 	 * @returns The take, or null.
@@ -605,24 +633,29 @@ class OutboxRun {
 			personalOnly: admission.personalOnly,
 			senderId: lane.senderId,
 		});
+		if (claim === 'cancelled') return null;
 		if (claim === null) this.dropLane(lane);
 		return claim;
 	}
 
 	/**
-	 * Prepares the entry and, when the preparer hands a mail, sends it.
+	 * Prepares the entry and, when the preparer hands a mail, sends it. An entry whose provider may
+	 * have forgotten the key of its earlier attempt is neither prepared nor sent (ruling R7).
 	 *
 	 * @param lane The lane.
 	 * @param claim The take.
 	 * @returns What became of the entry, or null when it was no longer this run's.
 	 */
 	private async deliver(lane: Readonly<Lane>, claim: Readonly<Claim>): Promise<Delivery | null> {
+		if (keyOutlived(claim.entry, lane.transport.idempotencyTrustedMs ?? null, this.ctx.now())) {
+			return KEY_EXPIRED;
+		}
 		const { attempts, source } = claim.entry;
 		const preparer = this.deps.preparers[source];
 		if (preparer === undefined) {
 			return { outcome: { attempt: false, code: 'outbox.noSource', kind: 'failed' }, result: null };
 		}
-		const prepared = await this.prepare(preparer, claim);
+		const prepared = await this.prepare(this.preparerOfRun(source, preparer), claim);
 		if (prepared?.kind === 'send') return this.send(lane, claim, prepared);
 		const outcome = unsentOutcome(prepared, { attempts, now: this.ctx.now() });
 		return prepared === null
@@ -631,20 +664,36 @@ class OutboxRun {
 	}
 
 	/**
+	 * The prepare function of a source for this run: started once per run when the preparer keeps
+	 * what its entries share (`startRun`), its plain `prepare` otherwise.
+	 *
+	 * @param source The source.
+	 * @param preparer Its preparer.
+	 * @returns The prepare function.
+	 */
+	private preparerOfRun(source: ClaimedEntry['source'], preparer: EntryPreparer): PrepareEntry {
+		const known = this.prepares.get(source);
+		if (known !== undefined) return known;
+		const prepare = preparer.startRun?.() ?? preparer.prepare;
+		this.prepares.set(source, prepare);
+		return prepare;
+	}
+
+	/**
 	 * Runs the preparer. A preparer that throws is logged by its code or name; the entry is tried
 	 * again later.
 	 *
-	 * @param preparer The preparer of the entry's source.
+	 * @param prepare The prepare function of the entry's source for this run.
 	 * @param claim The take.
 	 * @returns The prepared mail, or null when the preparer threw.
 	 */
 	private async prepare(
-		preparer: EntryPreparer,
+		prepare: PrepareEntry,
 		claim: Readonly<Claim>,
 	): Promise<PreparedMail | null> {
 		const { db, env, storage } = this.ctx;
 		try {
-			return await preparer.prepare(db, claim.entry, { env, now: this.ctx.now(), storage });
+			return await prepare(db, claim.entry, { env, now: this.ctx.now(), storage });
 		} catch (error) {
 			// oxlint-disable-next-line no-console -- name or code only, the message may carry contact data
 			console.error('outbox entry not prepared', errorLabel(error));
@@ -655,7 +704,8 @@ class OutboxRun {
 	/**
 	 * Sends the prepared mail with the entry's Message-ID (ruling R4) and its id as idempotency key
 	 * to the prepared address, after storing that address and checking that the entry is still this
-	 * run's. Both stay the same for every attempt of the entry, whatever the preparer hands.
+	 * run's. Both stay the same for every attempt of the entry, whatever the preparer hands. A retry
+	 * that the provider's key no longer protects becomes `uncertain` (ruling R7).
 	 *
 	 * @param lane The lane.
 	 * @param claim The take.
@@ -673,14 +723,30 @@ class OutboxRun {
 		const { id, messageId } = claim.entry;
 		const mail = { ...prepared.mail, idempotencyKey: id, messageId, to: recipient };
 		const result = await sendSafely(lane.transport, mail);
+		return { outcome: await this.answered(lane, claim, result), result };
+	}
+
+	/**
+	 * What the provider's answer makes of the entry. An accepted mail counts against the daily
+	 * limit (decision 4) before the outcome is stored; a retry that would come only after the
+	 * provider's key is no longer trusted becomes `uncertain` at once (ruling R7).
+	 *
+	 * @param lane The lane.
+	 * @param claim The take: the attempts before this one, the first counted one, the time.
+	 * @param result The answer.
+	 * @returns The outcome.
+	 */
+	private async answered(
+		lane: Readonly<Lane>,
+		claim: Readonly<Claim>,
+		result: Readonly<SendResult>,
+	): Promise<EntryOutcome> {
 		const now = this.ctx.now();
-		// Counted when the provider accepts it (decision 4), before the outcome is stored.
 		if (result.ok) await countSent(this.ctx.db, lane.scope, now);
-		const { attempts } = claim.entry;
-		return {
-			outcome: outcomeOf(result, { attempts, now }),
-			result,
-		};
+		const outcome = outcomeOf(result, { attempts: claim.entry.attempts, now });
+		const firstAttemptAt = claim.entry.firstAttemptAt ?? claim.claimedAt;
+		const trustedMs = lane.transport.idempotencyTrustedMs ?? null;
+		return guardKeyLifetime(outcome, { firstAttemptAt, trustedMs });
 	}
 
 	/**
@@ -836,7 +902,13 @@ class OutboxRun {
 			this.closeConnection(lane.connectionId);
 			return false;
 		}
-		await clearDisturbance(this.ctx.db, lane.connectionId);
+		const { disturbedCode, disturbedSince } = connection;
+		if (disturbedSince !== null) {
+			await clearDisturbance(this.ctx.db, lane.connectionId, {
+				code: disturbedCode,
+				since: disturbedSince,
+			});
+		}
 		this.connections.set(lane.connectionId, { ...connection, mode: 'open' });
 		return true;
 	}
@@ -854,8 +926,12 @@ class OutboxRun {
 	}
 
 	private closeConnection(connectionId: string): void {
-		const disturbedSince = this.connections.get(connectionId)?.disturbedSince ?? null;
-		this.connections.set(connectionId, { disturbedSince, mode: 'closed' });
+		const known = this.connections.get(connectionId);
+		this.connections.set(connectionId, {
+			disturbedCode: known?.disturbedCode ?? null,
+			disturbedSince: known?.disturbedSince ?? null,
+			mode: 'closed',
+		});
 		this.lanes = this.lanes.filter((lane) => lane.connectionId !== connectionId);
 	}
 
@@ -909,16 +985,55 @@ async function started(run: () => Promise<unknown>): Promise<unknown> {
  *
  * The run must not use the request's database: on Cloudflare it ends with the response
  * (`requestDbReleaser`), and an entry the run took then would stay `sending` and later turn
- * `uncertain`. The caller passes a run that opens a database of its own and ends it afterwards,
- * as the cron handler does (`cloudflare-worker.ts`), and gives its tick the subrequest budget of
- * the request's invocation (`invocationBudget`).
+ * `uncertain`. The caller passes `kickRun`, which opens a database of its own and ends it
+ * afterwards, as the cron handler does (`cloudflare-worker.ts`), and gives its tick the subrequest
+ * budget of the request's invocation (`invocationBudget`).
  *
  * @param platform The platform.
- * @param run The run, e.g. a tick with the budget `KICK_BUDGET_MS` and a database of its own.
+ * @param run The run: `kickRun` with the outbox step.
  */
 function kickOutbox(platform: Platform, run: () => Promise<unknown>): void {
 	platform.waitUntil(started(run));
 }
 
-export { KICK_BUDGET_MS, createOutboxStep, kickOutbox };
-export type { OutboxDeps };
+/** What a run of `kickOutbox` needs: its steps, and a database and a budget of its own. */
+interface KickRunDeps {
+	readonly env: Env;
+	readonly storage: ObjectStorage | null;
+	/** The steps to run: the outbox step. */
+	readonly steps: readonly TickStep[];
+	/** Opens a database that only the run uses; the run ends it when it is done. */
+	readonly openDb: () => Promise<DbHandle>;
+	/** The provider requests the invocation may still make (`invocationBudget`). */
+	readonly subrequests: SubrequestBudget | null;
+}
+
+/**
+ * The run that `kickOutbox` keeps alive after the response: a tick with the budget
+ * `KICK_BUDGET_MS` on a database it opens when it starts and ends when it is done, never the
+ * request's. It takes the tick lock like every tick, so a tick that runs already sends instead. It
+ * does not ping the heartbeat: the monitor watches the scheduler, and a kick is none of its runs.
+ *
+ * @param deps The environment, the storage, the steps, the database and the budget.
+ * @returns The run.
+ */
+function kickRun(deps: KickRunDeps): () => Promise<TickReport> {
+	return async () => {
+		const { db, end } = await deps.openDb();
+		try {
+			return await runTick({
+				budgetMs: KICK_BUDGET_MS,
+				db,
+				env: { ...deps.env, heartbeatUrl: null },
+				steps: deps.steps,
+				storage: deps.storage,
+				subrequests: deps.subrequests,
+			});
+		} finally {
+			await end();
+		}
+	};
+}
+
+export { KICK_BUDGET_MS, createOutboxStep, kickOutbox, kickRun };
+export type { KickRunDeps, OutboxDeps };
