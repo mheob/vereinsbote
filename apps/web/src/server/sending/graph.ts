@@ -102,7 +102,6 @@ const DEFAULT_TOKEN_SECONDS = 300;
 const BASE64_CHUNK = 0x60_00;
 
 const encoder = new TextEncoder();
-const TRAILING_SLASHES = /\/+$/u;
 const RECIPIENT_CODE = /recipient|address/iu;
 const STATUS_LINE = /^Status:[ \t]*(?<class>[45])\.\d{1,3}\.\d{1,3}\b/imu;
 const SMTP_REPLY = /\b[45]\d{2}[ \t]+(?<class>[45])\.\d{1,3}\.\d{1,3}\b/u;
@@ -126,6 +125,12 @@ const tokenSchema = z.object({
 });
 const receivedSchema = z.object({ receivedDateTime: z.string() });
 
+function withoutTrailingSlashes(text: string): string {
+	let end = text.length;
+	while (end > 0 && text[end - 1] === '/') end -= 1;
+	return text.slice(0, end);
+}
+
 function fail(failure: Failure['failure'], code: string, wait: number | null = null): Failure {
 	return { code, failure, ok: false, retryAfterMs: wait };
 }
@@ -138,7 +143,7 @@ function fail(failure: Failure['failure'], code: string, wait: number | null = n
  */
 function graphEndpoints(env: Pick<Env, 'devProvidersUrl'>): GraphEndpoints {
 	if (env.devProvidersUrl === null) return DEFAULT_ENDPOINTS;
-	const base = env.devProvidersUrl.href.replace(TRAILING_SLASHES, '');
+	const base = withoutTrailingSlashes(env.devProvidersUrl.href);
 	return { graph: `${base}/graph/v1.0`, login: `${base}/login` };
 }
 
