@@ -7,6 +7,7 @@ describe('the steps of a tick', () => {
 		expect(tickSteps.map((step) => step.name)).toStrictEqual([
 			'prune-auth-records',
 			'outbox',
+			'attachment-cleanup',
 			'stale-import-warning',
 			'sending-warnings',
 		]);

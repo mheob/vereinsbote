@@ -1,3 +1,4 @@
+import { attachmentCleanup } from '@/server/attachments/cleanup';
 import { pruneAuthRecords } from '@/server/auth/prune';
 import { staleImportWarning } from '@/server/contacts/stale-import';
 import { createOutboxStep } from '@/server/sending/outbox-step';
@@ -23,6 +24,7 @@ const outbox = createOutboxStep({
 const tickSteps: readonly TickStep[] = [
 	pruneAuthRecords,
 	outbox,
+	attachmentCleanup,
 	staleImportWarning,
 	sendingWarnings,
 ];
