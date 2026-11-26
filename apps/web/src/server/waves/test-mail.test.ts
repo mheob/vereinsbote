@@ -9,7 +9,7 @@ import { pdfBytes } from '@/server/attachments/testing';
 import { ContactNotFoundError } from '@/server/contacts/errors';
 import { insertContact } from '@/server/contacts/testing';
 import type { Db } from '@/server/db/client';
-import { auditLog, mailConnections, sendQuotaDays, user } from '@/server/db/schema';
+import { auditLog, mailConnections, sendQuotaDays, testMailClaims, user } from '@/server/db/schema';
 import { OccasionInvalidError } from '@/server/occasions/errors';
 import { removeOccasion } from '@/server/occasions/occasions';
 import { ForbiddenError } from '@/server/permissions/principal';
@@ -122,6 +122,21 @@ async function testSentEntries(
 }
 
 /**
+ * The test mail claims of a user.
+ *
+ * @param db The database.
+ * @param userId The user.
+ * @returns How many the user holds.
+ */
+async function claimsOf(db: Db, userId: string): Promise<number> {
+	const [row] = await db
+		.select({ n: count() })
+		.from(testMailClaims)
+		.where(eq(testMailClaims.userId, userId));
+	return row?.n ?? 0;
+}
+
+/**
  * Today's count of a quota scope.
  *
  * @param db The database.
@@ -197,7 +212,25 @@ describe('the test mail of the send flow', () => {
 				target: `occasion:${c.occasionId}`,
 			},
 		]);
+		await expect(claimsOf(c.db, c.sender.userId)).resolves.toBe(1);
 		await expect(quotaCount(c.db, `connection:${c.connectionId}`)).resolves.toBe(1);
+	});
+
+	it('counts the claims of the hour, not the entries of the activity log', async () => {
+		const c = await setUpWaveClub({ provider: 'resend' });
+		const contactId = await insertContact(c.db, { email: 'a@example.org', kind: 'member' });
+		const fake = fakeProviders();
+		// Old entries of the log, written before the claims had a table of their own, take no slot.
+		await c.db.insert(auditLog).values(
+			Array.from({ length: TEST_MAILS_PER_HOUR }, () => ({
+				action: 'wave.test_sent',
+				actorUserId: c.sender.userId,
+				at: NOW,
+				target: `occasion:${c.occasionId}`,
+			})),
+		);
+		await expect(testMail(c, fake.fetch, { contactId })).resolves.toStrictEqual({ ok: true });
+		await expect(claimsOf(c.db, c.sender.userId)).resolves.toBe(1);
 	});
 
 	it('limits test mails to twenty per user and hour', async () => {
@@ -242,6 +275,7 @@ describe('the test mail of the send flow', () => {
 		).resolves.toStrictEqual({ refused: 'graphTooLarge' });
 		expect(sends(fake.calls)).toHaveLength(0);
 		await expect(testSentEntries(c.db)).resolves.toHaveLength(0);
+		await expect(claimsOf(c.db, c.sender.userId)).resolves.toBe(0);
 		await expect(quotaCount(c.db, `sender:${c.senderId}`)).resolves.toBe(0);
 	});
 
@@ -334,6 +368,8 @@ describe('the test mail of the send flow', () => {
 		const contactId = await insertContact(c.db, { email: 'a@example.org', kind: 'member' });
 		const fake = fakeProviders({ send: HTTP_UNAUTHORIZED });
 		await expect(testMail(c, fake.fetch, { contactId })).rejects.toThrow(TestMailNotSentError);
+		// Nothing went out: the claim is deleted, and the activity log never got an entry.
+		await expect(claimsOf(c.db, c.sender.userId)).resolves.toBe(0);
 		await expect(testSentEntries(c.db)).resolves.toHaveLength(0);
 		await expect(quotaCount(c.db, `connection:${c.connectionId}`)).resolves.toBe(0);
 		const [connection] = await c.db
@@ -350,7 +386,14 @@ describe('the test mail of the send flow', () => {
 		const error = await testMail(c, fake.fetch, { contactId }).catch((error_: unknown) => error_);
 		expect(error).toBeInstanceOf(TestMailNotSentError);
 		expect(error).toHaveProperty('uncertain', true);
-		await expect(testSentEntries(c.db)).resolves.toHaveLength(1);
+		await expect(claimsOf(c.db, c.sender.userId)).resolves.toBe(1);
+		await expect(testSentEntries(c.db)).resolves.toStrictEqual([
+			{
+				actorUserId: c.sender.userId,
+				details: { attachments: 0, outcome: 'uncertain' },
+				target: `occasion:${c.occasionId}`,
+			},
+		]);
 		await expect(quotaCount(c.db, `sender:${c.senderId}`)).resolves.toBe(1);
 	});
 
@@ -358,15 +401,15 @@ describe('the test mail of the send flow', () => {
 		const c = await setUpWaveClub({ provider: 'resend' });
 		const contactId = await insertContact(c.db, { email: 'a@example.org', kind: 'member' });
 		const fake = fakeProviders();
-		await c.db.insert(auditLog).values(
+		await c.db.insert(testMailClaims).values(
 			Array.from({ length: TEST_MAILS_PER_HOUR }, () => ({
-				action: 'wave.test_sent',
-				actorUserId: c.editor.userId,
 				at: NOW,
-				target: `occasion:${c.occasionId}`,
+				occasionId: c.occasionId,
+				userId: c.editor.userId,
 			})),
 		);
 		await expect(testMail(c, fake.fetch, { contactId })).resolves.toStrictEqual({ ok: true });
+		await expect(claimsOf(c.db, c.sender.userId)).resolves.toBe(1);
 		const [own] = await c.db
 			.select({ n: count() })
 			.from(auditLog)

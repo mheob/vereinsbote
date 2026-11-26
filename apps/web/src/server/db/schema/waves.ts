@@ -100,3 +100,23 @@ export const waveContacts = pgTable(
 		check('wave_contacts_kind_check', sql`${table.kind} in ('member', 'partner')`),
 	],
 );
+
+/**
+ * The test mails a user claimed (Design 10.4): at most `TEST_MAILS_PER_HOUR` in a rolling hour
+ * count by these rows (ruling R20), never by the activity log, which is only ever appended to. A
+ * claim is made before the mail goes out and deleted again when the provider refused it; the log
+ * gets `wave.test_sent` only for a mail the provider took or whose answer was unclear.
+ * `occasion_id` only records what was tested; it is null once the occasion is gone.
+ */
+export const testMailClaims = pgTable(
+	'test_mail_claims',
+	{
+		at: timestamp('at', { withTimezone: true }).notNull(),
+		id: uuid('id').primaryKey().defaultRandom(),
+		occasionId: uuid('occasion_id').references(() => occasions.id, { onDelete: 'set null' }),
+		userId: text('user_id')
+			.notNull()
+			.references(() => user.id, { onDelete: 'cascade' }),
+	},
+	(table) => [index('test_mail_claims_user_idx').on(table.userId, table.at)],
+);

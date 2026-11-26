@@ -4,11 +4,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
 import type { Db, DbHandle } from '@/server/db/client';
 import { runMigrations } from '@/server/db/migrate';
 import { openPgDb } from '@/server/db/pg-client';
-import { auditLog } from '@/server/db/schema';
-import { insertUser } from '@/server/users/repo';
+import { auditLog, testMailClaims } from '@/server/db/schema';
 
 import { TEST_MAILS_PER_HOUR } from './test-mail-limit';
 import { claimTestMail } from './test-mail-rate';
+import { setUpWaveClubOn } from './testing';
 
 /*
  * The hourly limit of test mails under real concurrency: PGlite runs one statement at a time, so
@@ -57,24 +57,24 @@ describe.skipIf(serverUrl === '')(
 
 		it('never claims more than the hour allows when test mails of one user come at once', async () => {
 			const db = testDb();
-			const { id: userId } = await insertUser(db, {
-				email: `tester-${crypto.randomUUID()}@example.org`,
-				name: 'Test User',
-				status: 'active',
-			});
+			const { occasionId, sender } = await setUpWaveClubOn(db);
+			const { userId } = sender;
 			const now = new Date('2026-11-26T09:00:00Z');
-			const occasionId = crypto.randomUUID();
 			const claims = await Promise.all(
-				Array.from({ length: CLAIMS }, async () =>
-					claimTestMail(db, { attachments: 0, now, occasionId, userId }),
-				),
+				Array.from({ length: CLAIMS }, async () => claimTestMail(db, { now, occasionId, userId })),
 			);
 			expect(claims.filter((claim) => claim !== null)).toHaveLength(TEST_MAILS_PER_HOUR);
+			const [claimed] = await db
+				.select({ claims: count() })
+				.from(testMailClaims)
+				.where(eq(testMailClaims.userId, userId));
+			expect(claimed?.claims).toBe(TEST_MAILS_PER_HOUR);
+			// The claims are no entries of the activity log: it is written only once a mail went out.
 			const [logged] = await db
 				.select({ entries: count() })
 				.from(auditLog)
-				.where(eq(auditLog.actorUserId, userId));
-			expect(logged?.entries).toBe(TEST_MAILS_PER_HOUR);
+				.where(eq(auditLog.action, 'wave.test_sent'));
+			expect(logged?.entries).toBe(0);
 		});
 	},
 );

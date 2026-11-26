@@ -4,7 +4,8 @@
  * (`test-mail-content.ts`). It goes out at once through the occasion's sender, not through the
  * outbox, within the request, and counts against the sender's daily limit like every mail
  * (Design 8.3). A Graph sender refuses it above the size of a request (Design 6.4); a user sends at
- * most `TEST_MAILS_PER_HOUR` an hour (`test-mail-rate.ts`).
+ * most `TEST_MAILS_PER_HOUR` an hour (`test-mail-rate.ts`, claims of their own, ruling R20). The
+ * activity log gets `wave.test_sent` only for a mail the provider took or whose answer was unclear.
  */
 import { SecretDecryptError } from '@/server/crypto/secrets';
 import type { Db } from '@/server/db/client';
@@ -21,7 +22,7 @@ import type { ObjectStorage } from '@/server/storage/storage';
 import { TestMailNotSentError } from './errors';
 import { buildTestMail } from './test-mail-content';
 import type { BuiltTestMail, RefusedTestMail } from './test-mail-content';
-import { claimTestMail, giveBackTestMail, hasTestMailLeft } from './test-mail-rate';
+import { claimTestMail, giveBackTestMail, hasTestMailLeft, logTestMail } from './test-mail-rate';
 import { sendableOccasion } from './waves';
 
 /** What the test mail needs besides the user and the input. */
@@ -46,6 +47,13 @@ type TestMailResult = { ok: true } | RefusedTestMail;
 interface HandedOver {
 	readonly sent: SendResult;
 	readonly scope: QuotaScope;
+}
+
+/** A claimed test mail: the claim, who tests and the occasion. */
+interface Claimed {
+	readonly id: string;
+	readonly userId: string;
+	readonly occasionId: string;
 }
 
 /** The code of a connection whose secret does not decrypt, as the outbox records it. */
@@ -77,14 +85,14 @@ async function handOver(deps: TestMailDeps, built: BuiltTestMail): Promise<Hande
  *
  * @param deps The database, the environment, `fetch` and the clock.
  * @param built The mail and its sender.
- * @param claimId The activity log entry of the claim.
+ * @param claimId The claim.
  * @returns The provider's answer and the scope.
  * @throws {TestMailNotSentError} When the secret of the connection does not decrypt.
  */
 async function handOverClaimed(
 	deps: TestMailDeps,
 	built: BuiltTestMail,
-	claimId: number,
+	claimId: string,
 ): Promise<HandedOver> {
 	try {
 		return await handOver(deps, built);
@@ -95,32 +103,51 @@ async function handOverClaimed(
 }
 
 /**
- * Records a mail the provider did not take: an unclear answer counts it and keeps its claim (it
- * may still arrive); a refusal gives the claim back, and a refused access disturbs the connection,
- * as in the outbox (Design 8.6).
+ * Records a mail that went out, or may have (an unclear answer): it counts against the daily limit,
+ * keeps its claim and goes into the activity log.
+ *
+ * @param deps The database and the clock.
+ * @param built The mail.
+ * @param claimed The claim, the user and the occasion.
+ * @param handed The scope and whether the answer was unclear.
+ * @param handed.scope The scope the mail counts against.
+ * @param handed.uncertain Whether the answer was unclear.
+ */
+// oxlint-disable-next-line max-params -- the dependencies, the mail, the claim and the outcome
+async function recordSent(
+	deps: TestMailDeps,
+	built: BuiltTestMail,
+	claimed: Claimed,
+	handed: Readonly<{ scope: QuotaScope; uncertain: boolean }>,
+): Promise<void> {
+	const now = deps.now();
+	await countSent(deps.db, handed.scope, now);
+	await logTestMail(deps.db, {
+		attachments: built.mail.attachments.length,
+		now,
+		occasionId: claimed.occasionId,
+		uncertain: handed.uncertain,
+		userId: claimed.userId,
+	});
+}
+
+/**
+ * Records a mail the provider refused: the claim goes back, nothing is logged, and a refused
+ * access disturbs the connection, as in the outbox (Design 8.6).
  *
  * @param deps The database and the clock.
  * @param built The mail and its sender.
- * @param refused The claim, the scope and the provider's answer.
- * @param refused.claimId The activity log entry of the claim.
- * @param refused.scope The scope the mail counts against.
- * @param refused.sent The answer.
+ * @param claimId The claim.
+ * @param sent The answer.
  */
+// oxlint-disable-next-line max-params -- the dependencies, the mail, the claim and the answer
 async function recordRefusal(
 	deps: TestMailDeps,
 	built: BuiltTestMail,
-	refused: Readonly<{
-		claimId: number;
-		scope: QuotaScope;
-		sent: Readonly<Extract<SendResult, { ok: false }>>;
-	}>,
+	claimId: string,
+	sent: Readonly<Extract<SendResult, { ok: false }>>,
 ): Promise<void> {
 	const { db } = deps;
-	const { claimId, scope, sent } = refused;
-	if (sent.failure === 'uncertain') {
-		await countSent(db, scope, deps.now());
-		return;
-	}
 	await giveBackTestMail(db, claimId);
 	if (sent.failure === 'unauthorized') {
 		await disturbConnection(db, built.sender.connectionId, sent.code, deps.now());
@@ -128,21 +155,25 @@ async function recordRefusal(
 }
 
 /**
- * Sends a claimed test mail; a mail the provider took counts against the daily limit.
+ * Sends a claimed test mail. A mail the provider took counts against the daily limit and is logged;
+ * an unclear answer too (it may still arrive), a refusal gives the claim back.
  *
  * @param deps The database, the environment, `fetch` and the clock.
  * @param built The mail and its sender.
- * @param claimId The activity log entry of the claim.
+ * @param claimed The claim, the user and the occasion.
  * @throws {TestMailNotSentError} When the provider did not take the mail, or its answer is unclear.
  */
-async function deliver(deps: TestMailDeps, built: BuiltTestMail, claimId: number): Promise<void> {
-	const { scope, sent } = await handOverClaimed(deps, built, claimId);
+async function deliver(deps: TestMailDeps, built: BuiltTestMail, claimed: Claimed): Promise<void> {
+	const { scope, sent } = await handOverClaimed(deps, built, claimed.id);
 	if (sent.ok) {
-		await countSent(deps.db, scope, deps.now());
+		await recordSent(deps, built, claimed, { scope, uncertain: false });
 		return;
 	}
-	await recordRefusal(deps, built, { claimId, scope, sent });
-	throw new TestMailNotSentError(sent.failure === 'uncertain');
+	const uncertain = sent.failure === 'uncertain';
+	await (uncertain
+		? recordSent(deps, built, claimed, { scope, uncertain })
+		: recordRefusal(deps, built, claimed.id, sent));
+	throw new TestMailNotSentError(uncertain);
 }
 
 /**
@@ -160,27 +191,21 @@ function tooLargeForGraph(built: BuiltTestMail, now: Date): boolean {
 }
 
 /**
- * Claims one of the user's test mails of the hour for a built mail.
+ * Claims one of the user's test mails of the hour.
  *
  * @param deps The database and the clock.
  * @param actor Who tests.
  * @param occasionId The occasion.
- * @param built The mail.
- * @returns The activity log entry of the claim, or null when the hour is used up.
+ * @returns The claim, or null when the hour is used up.
  */
-// oxlint-disable-next-line max-params -- the dependencies, the user, the occasion and the mail
 async function claimFor(
 	deps: TestMailDeps,
 	actor: Principal,
 	occasionId: string,
-	built: BuiltTestMail,
-): Promise<number | null> {
-	return claimTestMail(deps.db, {
-		attachments: built.mail.attachments.length,
-		now: deps.now(),
-		occasionId,
-		userId: actor.userId,
-	});
+): Promise<Claimed | null> {
+	const { userId } = actor;
+	const id = await claimTestMail(deps.db, { now: deps.now(), occasionId, userId });
+	return id === null ? null : { id, occasionId, userId };
 }
 
 /**
@@ -213,9 +238,9 @@ async function sendTestMail(
 	);
 	if ('refused' in built) return built;
 	if (tooLargeForGraph(built, deps.now())) return { refused: 'graphTooLarge' };
-	const claimId = await claimFor(deps, actor, occasion.id, built);
-	if (claimId === null) return { refused: 'rate' };
-	await deliver(deps, built, claimId);
+	const claimed = await claimFor(deps, actor, occasion.id);
+	if (claimed === null) return { refused: 'rate' };
+	await deliver(deps, built, claimed);
 	return { ok: true };
 }
 
