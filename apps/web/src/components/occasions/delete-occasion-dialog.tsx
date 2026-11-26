@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router';
 import { useServerFn } from '@tanstack/react-start';
 import { useCallback, useState, useTransition } from 'react';
 import type { ReactNode } from 'react';
@@ -5,7 +6,7 @@ import { Button, Dialog, DialogTrigger, Heading, Modal, ModalOverlay } from 'rea
 
 import type { Announce } from '@/components/announcements';
 import { FAILED, settle } from '@/components/settle';
-import { dangerButtonClass, secondaryButtonClass } from '@/components/styles';
+import { dangerButtonClass, linkClass, secondaryButtonClass } from '@/components/styles';
 import { useHydrated } from '@/components/use-hydrated';
 import { submitRemoveOccasion } from '@/functions/occasions';
 import { useT } from '@/i18n/use-t';
@@ -17,9 +18,10 @@ type RemovedOccasion = 'archived' | 'deleted' | 'gone';
  * The button „Löschen“ of an occasion without waves and its dialog „{name} löschen?“, or
  * „Archivieren“ and „{name} archivieren?“ for one with waves: an occasion with waves is archived,
  * not deleted. Should a wave be made after the page loaded, the occasion is archived and the list
- * says so. React Aria's modal keeps the focus inside the dialog and returns it to the button when
- * it closes. An occasion saved since the page loaded it is not removed; the dialog says so and the
- * page loads it anew.
+ * says so. Archiving stops no wave: when waves of the occasion are planned or running, the dialog
+ * says that they go on and links to the sending overview, where they can be stopped. React Aria's
+ * modal keeps the focus inside the dialog and returns it to the button when it closes. An occasion
+ * saved since the page loaded it is not removed; the dialog says so and the page loads it anew.
  *
  * @param props The props.
  * @param props.announce Announces a failure in the page's live region.
@@ -28,6 +30,7 @@ type RemovedOccasion = 'archived' | 'deleted' | 'gone';
  * @param props.occasion The occasion: id, name, its waves and the version the page loaded.
  * @param props.occasion.id The occasion.
  * @param props.occasion.name Its name as the page shows it.
+ * @param props.occasion.openWaves How many of its waves were planned or running then.
  * @param props.occasion.version The version the page loaded.
  * @param props.occasion.waves How many waves it had when the page loaded it.
  * @param props.onRemoved Called when the occasion is gone or archived.
@@ -41,7 +44,13 @@ export function DeleteOccasionDialog({
 }: Readonly<{
 	announce: Announce;
 	label: string;
-	occasion: Readonly<{ id: string; name: string; version: number; waves: number }>;
+	occasion: Readonly<{
+		id: string;
+		name: string;
+		openWaves: number;
+		version: number;
+		waves: number;
+	}>;
 	onRemoved: (result: RemovedOccasion) => void;
 }>): ReactNode {
 	const t = useT();
@@ -89,6 +98,14 @@ export function DeleteOccasionDialog({
 							})}
 						</Heading>
 						<p>{t(archives ? 'occasions.archiveText' : 'occasions.deleteText')}</p>
+						{archives && occasion.openWaves > 0 ? (
+							<p>
+								{t('occasions.archiveOpenWaves', { count: occasion.openWaves })}{' '}
+								<Link className={linkClass} to="/sending">
+									{t('occasions.archiveOpenWavesLink')}
+								</Link>
+							</p>
+						) : null}
 						<div className="flex justify-end gap-3">
 							<Button className={secondaryButtonClass} isDisabled={isPending} slot="close">
 								{t('occasions.cancel')}

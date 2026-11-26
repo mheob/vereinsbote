@@ -92,7 +92,7 @@ describe(loadSendFlowPage, () => {
 		const page = await pageOf(db, c.sender, c.occasionId);
 		expect(page).toMatchObject({
 			appOrigin: APP_ORIGIN,
-			attachments: [{ id: flyer.id, name: 'flyer.pdf', waveId: null }],
+			attachments: [{ id: flyer.id, name: 'flyer.pdf', own: true, waveId: null }],
 			groups: ['Jugend'],
 			occasion: { id: c.occasionId, kind: 'circular', name: 'Einladungen', unsubscribe: true },
 			ownAddress: own?.email,
@@ -112,6 +112,29 @@ describe(loadSendFlowPage, () => {
 		await insertWave(c.db, c.occasionId);
 		await removeOccasion(c.db, c.editor, c.occasionId, 1);
 		await expect(pageOf(c.db, c.sender, c.occasionId)).rejects.toThrow(OccasionInvalidError);
+	});
+
+	it('tells the own free files from those of other users', async () => {
+		const c = await setUpWaveClubOn(await createTestDb());
+		const colleague = await userWith(c.db, { [c.membersAreaId]: 'send' });
+		const storage = createMemoryStorage();
+		const mine = await storeAttachment(c.db, storage, c.sender, c.occasionId, {
+			bytes: pdfBytes(),
+			name: 'mine.pdf',
+		});
+		const theirs = await storeAttachment(c.db, storage, colleague, c.occasionId, {
+			bytes: pdfBytes(),
+			name: 'theirs.pdf',
+		});
+		const page = await pageOf(c.db, c.sender, c.occasionId);
+		expect(page.attachments.map(({ id, own }) => ({ id, own }))).toStrictEqual([
+			{ id: mine.id, own: true },
+			{ id: theirs.id, own: false },
+		]);
+		// The colleague sees it the other way round; the page names no user.
+		const theirPage = await pageOf(c.db, colleague, c.occasionId);
+		expect(theirPage.attachments.map(({ own }) => own)).toStrictEqual([false, true]);
+		expect(JSON.stringify(theirPage.attachments)).not.toContain(c.sender.userId);
 	});
 
 	it('derives the key of the flow from the user, the occasion and its newest wave', async () => {

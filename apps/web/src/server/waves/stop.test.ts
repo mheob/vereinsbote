@@ -173,11 +173,13 @@ describe(resendUncertain, () => {
 		});
 		await resendUncertain(c.db, c.sender, id);
 		const [row] = await c.db.select().from(outboxEntries).where(eq(outboxEntries.id, id));
+		// The overview shows no reason of the earlier attempt; the activity log keeps the history.
 		expect(row).toMatchObject({
 			attempts: 0,
 			digestedAt: null,
 			firstAttemptAt: null,
 			id,
+			lastErrorCode: null,
 			messageId: '<unklar@example.org>',
 			nextAttemptAt: null,
 			status: 'planned',

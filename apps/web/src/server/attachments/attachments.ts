@@ -2,6 +2,7 @@ import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 
 import type { Db } from '@/server/db/client';
 import { attachments, occasions } from '@/server/db/schema';
+import { errorLabel } from '@/server/error-label';
 import { newMediaId } from '@/server/media/ids';
 import { OccasionInvalidError, OccasionNotFoundError } from '@/server/occasions/errors';
 import { getOccasion } from '@/server/occasions/occasions';
@@ -29,6 +30,12 @@ interface AttachmentRecord {
 	size: number;
 }
 
+/** A file an occasion holds for its next wave, as the send flow lists it to one user. */
+interface FreeAttachment extends AttachmentRecord {
+	/** Whether that user uploaded it: the flow chooses only such files at first. */
+	own: boolean;
+}
+
 /**
  * The key of an attachment in the object storage.
  *
@@ -45,19 +52,25 @@ function toRecord(row: Readonly<typeof attachments.$inferSelect>): AttachmentRec
 }
 
 /**
- * The files an occasion holds for its next wave.
+ * The files an occasion holds for its next wave, each marked whether a user uploaded it; a file of
+ * a flow left unconfirmed or of a colleague's flow is not that user's (M-2). Names no user.
  *
  * @param db The database.
  * @param occasionId The occasion.
+ * @param userId The user who looks.
  * @returns The files, oldest first.
  */
-async function freeAttachmentsOf(db: Db, occasionId: string): Promise<AttachmentRecord[]> {
+async function freeAttachmentsOf(
+	db: Db,
+	occasionId: string,
+	userId: string,
+): Promise<FreeAttachment[]> {
 	const rows = await db
 		.select()
 		.from(attachments)
 		.where(and(eq(attachments.occasionId, occasionId), isNull(attachments.waveId)))
 		.orderBy(asc(attachments.createdAt), asc(attachments.id));
-	return rows.map((row) => toRecord(row));
+	return rows.map((row) => Object.assign(toRecord(row), { own: row.createdByUserId === userId }));
 }
 
 /**
@@ -136,9 +149,25 @@ async function sendingArea(db: Db, actor: Principal, occasionId: string): Promis
 }
 
 /**
+ * Deletes the object of a file whose row was never written. A failure is logged by its label and
+ * swallowed, so the caller's own error goes on.
+ *
+ * @param storage The object storage.
+ * @param id The attachment.
+ */
+async function deleteStoredObject(storage: ObjectStorage, id: string): Promise<void> {
+	try {
+		await storage.delete(attachmentStorageKey(id));
+	} catch (cleanupError) {
+		// oxlint-disable-next-line no-console -- the label only: the message may name the key
+		console.error('attachment object not deleted', errorLabel(cleanupError));
+	}
+}
+
+/**
  * Stores a file for the next wave of an occasion. Type and size come from the file itself, never
  * from its name. The object is written first, then the row; when that fails the object is deleted
- * again. Attachments without a wave count against the limits (5 files, 20 MiB together).
+ * again (should that fail too, the refusal goes on and the failed deletion is logged). Attachments without a wave count against the limits (5 files, 20 MiB together).
  *
  * @param db The database.
  * @param storage The object storage.
@@ -186,7 +215,7 @@ async function storeAttachment(
 			return toRecord(row);
 		});
 	} catch (error) {
-		await storage.delete(attachmentStorageKey(id));
+		await deleteStoredObject(storage, id);
 		throw error;
 	}
 }
@@ -295,4 +324,4 @@ export {
 	MAX_ATTACHMENTS,
 	MAX_ATTACHMENTS_TOTAL,
 } from './limits';
-export type { AttachmentRecord };
+export type { AttachmentRecord, FreeAttachment };

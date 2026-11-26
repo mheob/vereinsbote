@@ -11,7 +11,7 @@ import type { MediaInfo } from '@/mail/render/compile';
 import type { LayoutHtml } from '@/mail/templates/mail-source';
 import type { TemplateInput } from '@/mail/templates/template-schema';
 import { freeAttachmentsOf } from '@/server/attachments/attachments';
-import type { AttachmentRecord } from '@/server/attachments/attachments';
+import type { FreeAttachment } from '@/server/attachments/attachments';
 import { assertCanList, loadContactAccess } from '@/server/contacts/access';
 import { listGroups } from '@/server/contacts/contacts';
 import { listTags } from '@/server/contacts/partners';
@@ -53,8 +53,11 @@ interface SendFlowPage {
 	/** The groups of the members and the tags of the partners, for the filters. */
 	readonly groups: readonly string[];
 	readonly tags: readonly string[];
-	/** The files the occasion holds for its next wave, oldest first. */
-	readonly attachments: readonly Readonly<AttachmentRecord>[];
+	/**
+	 * The files the occasion holds for its next wave, oldest first; `own` for those the user
+	 * uploaded, which the flow chooses at first.
+	 */
+	readonly attachments: readonly Readonly<FreeAttachment>[];
 	/** Where the test mail goes: the user's own address. */
 	readonly ownAddress: string;
 	/** The origin of the app, for the preview's image addresses. */
@@ -104,7 +107,7 @@ async function loadSendFlowPage(
 		body.kind === 'blocks' && body.layout.kind === 'shared' ? body.layout.layoutId : '';
 	return {
 		appOrigin,
-		attachments: await freeAttachmentsOf(db, occasion.id),
+		attachments: await freeAttachmentsOf(db, occasion.id, actor.userId),
 		brand: editor.brand,
 		groups: await listGroups(db, 'member'),
 		occasion: {

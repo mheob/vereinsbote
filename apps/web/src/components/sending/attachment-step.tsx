@@ -5,6 +5,7 @@ import { Button, FileTrigger } from 'react-aria-components';
 import type { FileTriggerProps } from 'react-aria-components';
 
 import type { Announce } from '@/components/announcements';
+import { LabelledCheckbox } from '@/components/contacts/import/labelled-checkbox';
 import { CloseIcon } from '@/components/icons';
 import { formatBytes } from '@/components/images/image-size';
 import { FAILED, settle } from '@/components/settle';
@@ -12,7 +13,7 @@ import { primaryButtonClass, secondaryButtonClass } from '@/components/styles';
 import { useHydrated } from '@/components/use-hydrated';
 import { removeAttachment, uploadAttachment } from '@/functions/waves';
 import { useLocale, useT } from '@/i18n/use-t';
-import type { AttachmentRecord } from '@/server/attachments/attachments';
+import type { AttachmentRecord, FreeAttachment } from '@/server/attachments/attachments';
 import { ATTACHMENT_TYPES } from '@/server/attachments/limits';
 
 import { attachmentFailureMessage } from './send-messages';
@@ -39,21 +40,28 @@ function uploadForm(file: File, occasionId: string): FormData {
 }
 
 /**
- * One file of the mail with its button that removes it.
+ * One file of the occasion: ticked when the mail carries it, with its button that removes it. A
+ * file someone else uploaded says so.
  *
  * @param props The props.
  * @param props.attachment The file.
+ * @param props.isChosen Whether the mail carries it.
  * @param props.isPending Whether a removal is running.
+ * @param props.onChosen Called when it is ticked or unticked.
  * @param props.onRemove Called when it is removed.
  * @returns The list item.
  */
 function AttachmentItem({
 	attachment,
+	isChosen,
 	isPending,
+	onChosen,
 	onRemove,
 }: Readonly<{
-	attachment: Readonly<AttachmentRecord>;
+	attachment: Readonly<FreeAttachment>;
+	isChosen: boolean;
 	isPending: boolean;
+	onChosen: (id: string, isChosen: boolean) => void;
 	onRemove: (attachment: Readonly<AttachmentRecord>) => void;
 }>): ReactNode {
 	const t = useT();
@@ -61,14 +69,20 @@ function AttachmentItem({
 	const remove = useCallback(() => {
 		onRemove(attachment);
 	}, [attachment, onRemove]);
+	const change = useCallback(
+		(isSelected: boolean) => {
+			onChosen(attachment.id, isSelected);
+		},
+		[attachment.id, onChosen],
+	);
+	const values = { name: attachment.name, size: formatBytes(attachment.size, locale) };
 	return (
 		<li className="flex items-center justify-between gap-4">
-			<span>
-				{t('send.attachmentItem', {
-					name: attachment.name,
-					size: formatBytes(attachment.size, locale),
-				})}
-			</span>
+			<LabelledCheckbox
+				isSelected={isChosen}
+				label={t(attachment.own ? 'send.attachmentItem' : 'send.attachmentItemOthers', values)}
+				onChange={change}
+			/>
 			<Button
 				aria-label={t('send.attachmentRemove', { name: attachment.name })}
 				className={secondaryButtonClass}
@@ -84,15 +98,18 @@ function AttachmentItem({
 /**
  * The second step of the send flow (Design 10.2): the files every mail of the wave carries. Each
  * file is uploaded when chosen and checked by its content on the server; a refusal shows at the
- * button. With a Graph sender the step says how little fits and warns as soon as the files are too
- * large for a Graph request (Design 6.4).
+ * button. The occasion's files are listed with a tick each: the user's own uploads are ticked, a
+ * file someone else uploaded is not until the user ticks it. With a Graph sender the step says how
+ * little fits and warns as soon as the files are too large for a Graph request (Design 6.4).
  *
  * @param props The props.
  * @param props.announce Announces in the page's live region.
- * @param props.attachments The files of the mail.
+ * @param props.attachments The files of the occasion's next wave.
+ * @param props.chosen The ids of the files the mail carries.
  * @param props.graph Whether the sender sends through Microsoft Graph.
  * @param props.occasionId The occasion.
  * @param props.onAdded Called with a stored file.
+ * @param props.onChosen Called when a file is ticked or unticked.
  * @param props.onRemoved Called with the id of a removed (or gone) file.
  * @param props.summary The numbers of the wave, which say whether Graph takes the files.
  * @returns The step.
@@ -100,17 +117,21 @@ function AttachmentItem({
 export function AttachmentStep({
 	announce,
 	attachments,
+	chosen,
 	graph,
 	occasionId,
 	onAdded,
+	onChosen,
 	onRemoved,
 	summary,
 }: Readonly<{
 	announce: Announce;
-	attachments: readonly Readonly<AttachmentRecord>[];
+	attachments: readonly Readonly<FreeAttachment>[];
+	chosen: ReadonlySet<string>;
 	graph: boolean;
 	occasionId: string;
 	onAdded: (attachment: Readonly<AttachmentRecord>) => void;
+	onChosen: (id: string, isChosen: boolean) => void;
 	onRemoved: (id: string) => void;
 	summary: SummaryState;
 }>): ReactNode {
@@ -141,11 +162,11 @@ export function AttachmentStep({
 	);
 	const onSelect = useCallback<NonNullable<FileTriggerProps['onSelect']>>(
 		(files) => {
-			const chosen = [...(files ?? [])];
-			if (chosen.length === 0) return;
+			const picked = [...(files ?? [])];
+			if (picked.length === 0) return;
 			setError(null);
 			startPending(async () => {
-				for (const file of chosen) {
+				for (const file of picked) {
 					// oxlint-disable-next-line no-await-in-loop -- one upload at a time: the server counts the room
 					await store(file);
 				}
@@ -174,6 +195,7 @@ export function AttachmentStep({
 		[announce, onRemoved, remove, t],
 	);
 	const tooLarge = summary.status === 'ready' && summary.summary.graphTooLarge;
+	const othersListed = attachments.some(({ own }) => !own);
 	return (
 		<div className="flex flex-col gap-6">
 			<div className="flex flex-col items-start gap-2">
@@ -200,6 +222,9 @@ export function AttachmentStep({
 				<h3 className="font-semibold outline-none" id="send-files" ref={headingRef} tabIndex={-1}>
 					{t('send.attachmentsLabel')}
 				</h3>
+				{othersListed ? (
+					<p className="max-w-2xl text-sm text-gray-700">{t('send.attachmentsOthersHelp')}</p>
+				) : null}
 				{attachments.length === 0 ? (
 					<p>{t('send.attachmentsEmpty')}</p>
 				) : (
@@ -207,8 +232,10 @@ export function AttachmentStep({
 						{attachments.map((attachment) => (
 							<AttachmentItem
 								attachment={attachment}
+								isChosen={chosen.has(attachment.id)}
 								isPending={isPending}
 								key={attachment.id}
+								onChosen={onChosen}
 								onRemove={onRemove}
 							/>
 						))}

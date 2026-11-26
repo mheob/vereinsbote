@@ -218,6 +218,17 @@ describe(handleOneClick, () => {
 		expect(tracked.opened()).toBe(0);
 	});
 
+	it('answers 400 to a body that breaks off while it is read', async () => {
+		const tracked = services(null);
+		const request = oneClick('anything');
+		// The size check counts a copy; the body itself fails when it is read.
+		vi.spyOn(request, 'arrayBuffer').mockRejectedValue(new TypeError('The stream broke off.'));
+		const response = await handleOneClick(request, 'anything', tracked.services);
+		expect(response.status).toBe(400);
+		await expect(response.text()).resolves.toBe('');
+		expect(tracked.opened()).toBe(0);
+	});
+
 	it('answers 404 to a token that does not open, before any database work', async () => {
 		const tracked = services(null);
 		const response = await handleOneClick(oneClick('not-a-token'), 'not-a-token', tracked.services);

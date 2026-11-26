@@ -903,6 +903,9 @@ export const de = {
 	'occasions.archive': 'Archivieren',
 	'occasions.archiveAria': '{name} archivieren',
 	'occasions.archiveConfirm': 'Archivieren',
+	'occasions.archiveOpenWaves':
+		'Wellen, die noch versendet werden: {count}. Archivieren stoppt sie nicht; stoppen kannst du sie in der Versandübersicht.',
+	'occasions.archiveOpenWavesLink': 'Zur Versandübersicht',
 	'occasions.archiveText':
 		'Der Anlass hat schon Wellen und wird deshalb archiviert: Er lässt sich dann nicht mehr wählen oder ändern, Verlauf und Widersprüche bleiben.',
 	'occasions.archiveTitle': '„{name}“ archivieren?',
@@ -1155,6 +1158,7 @@ export const de = {
 	'send.attachmentAdd': 'Datei hinzufügen',
 	'send.attachmentFailed': 'Die Datei konnte nicht hochgeladen werden.',
 	'send.attachmentItem': '{name} ({size})',
+	'send.attachmentItemOthers': '{name} ({size}) – von jemand anderem hochgeladen',
 	'send.attachmentRemove': '{name} entfernen',
 	'send.attachmentRemoved': '{name} ist entfernt.',
 	'send.attachmentUploaded': '{name} ist angehängt.',
@@ -1169,6 +1173,8 @@ export const de = {
 	'send.attachmentsHelp':
 		'PDF, JPEG oder PNG; höchstens 5 Dateien mit je höchstens 4 MB. Die Anhänge gehen an jeden Empfänger dieser Welle.',
 	'send.attachmentsLabel': 'Anhänge',
+	'send.attachmentsOthersHelp':
+		'Angehakte Dateien gehen mit der Mail. Was jemand anderes hochgeladen hat, geht nur mit, wenn du es anhakst.',
 	'send.back': 'Zurück zum Anlass',
 	'send.cancel': 'Abbrechen',
 	'send.changed':

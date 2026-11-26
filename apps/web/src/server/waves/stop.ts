@@ -66,8 +66,8 @@ async function stopWave(db: Db, actor: Principal, waveId: string): Promise<{ can
 /**
  * Sends an uncertain entry of a wave again (Design 8.5): it goes back to `planned` and the next run
  * of the outbox takes it, with the same id, Message-ID and idempotency key. The person's decision
- * starts the entry anew: no attempts and no first attempt, so it gets the attempts of a new mail
- * and a new key window (ruling R7) and goes out at least once. The admins' digest reports it again
+ * starts the entry anew: no attempts, no first attempt and no error code, so it gets the attempts
+ * of a new mail and a new key window (ruling R7) and goes out at least once. The admins' digest reports it again
  * if it fails again. A stopped wave sends nothing more.
  *
  * @param db The database.
@@ -102,6 +102,8 @@ async function resendUncertain(db: Db, actor: Principal, entryId: string): Promi
 				claimedAt: null,
 				digestedAt: null,
 				firstAttemptAt: null,
+				// The reason of the earlier attempt no longer holds; the activity log keeps the history.
+				lastErrorCode: null,
 				nextAttemptAt: null,
 				status: 'planned',
 			})

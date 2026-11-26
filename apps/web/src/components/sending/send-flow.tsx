@@ -15,7 +15,7 @@ import type { RecipientChoice } from '@/server/waves/recipient-search';
 import { AttachmentStep } from './attachment-step';
 import { ConfirmDialog } from './confirm-dialog';
 import type { ConfirmedWave } from './confirm-dialog';
-import { useFlowAttachments } from './flow-attachments';
+import { chosenIdsOf, useFlowAttachments } from './flow-attachments';
 import { stepHeading, useSteps } from './flow-steps';
 import { PreviewStep } from './preview-step';
 import { RecipientStep } from './recipient-step';
@@ -62,10 +62,11 @@ export function SendFlow({
 	// page's data after a failure keeps it, so the flow cannot make a second wave.
 	// oxlint-disable-next-line react/hook-use-state -- kept from the first render, never set
 	const [requestId] = useState(() => page.requestId);
-	const { add, attachments, remove } = useFlowAttachments(page.attachments);
+	const { add, attachments, choose, chosen, remove } = useFlowAttachments(page.attachments);
 	const selection = useMemo(() => selectionOf(draft), [draft]);
 	const counted = useDebouncedValue(selection, COUNT_DELAY_MS);
-	const attachmentIds = useMemo(() => attachments.map(({ id }) => id), [attachments]);
+	// The files the mail carries: at first the user's own uploads only.
+	const attachmentIds = useMemo(() => chosenIdsOf(attachments, chosen), [attachments, chosen]);
 	const request = useMemo(
 		() => ({ attachmentIds, recount, selection: counted }),
 		[attachmentIds, counted, recount],
@@ -121,9 +122,11 @@ export function SendFlow({
 				<AttachmentStep
 					announce={announce}
 					attachments={attachments}
+					chosen={chosen}
 					graph={page.sender.provider === 'graph'}
 					occasionId={occasionId}
 					onAdded={add}
+					onChosen={choose}
 					onRemoved={remove}
 					summary={summary}
 				/>
@@ -147,7 +150,7 @@ export function SendFlow({
 				)}
 				{step === 'preview' ? (
 					<ConfirmDialog
-						attachments={attachments.length}
+						attachments={attachmentIds.length}
 						input={confirmInput}
 						name={page.occasion.name}
 						onConfirmed={onConfirmed}

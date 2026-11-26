@@ -5,7 +5,14 @@ import { emptyTemplate } from '@/mail/starters/starters';
 import { createArea } from '@/server/areas/areas';
 import { UnknownAreaError } from '@/server/contacts/errors';
 import { setUpClub, userWith } from '@/server/contacts/testing';
-import { areas, auditLog, contactOptOuts, occasions } from '@/server/db/schema';
+import {
+	areas,
+	auditLog,
+	contactOptOuts,
+	occasions,
+	outboxEntries,
+	waves as waveRows,
+} from '@/server/db/schema';
 import { createTestDb } from '@/server/db/test-db';
 import { ForbiddenError } from '@/server/permissions/principal';
 import type { Principal } from '@/server/permissions/principal';
@@ -221,6 +228,7 @@ describe('occasion rights', () => {
 			kind: 'circular',
 			lastWaveAt: null,
 			name: 'Einladungen',
+			openWaves: 0,
 			senderId: c.senderId,
 			templateId: c.templateId,
 			trigger: 'manual',
@@ -473,6 +481,49 @@ describe('removing an occasion', () => {
 			{ lastWaveAt: null, waves: 0 },
 		]);
 		expect(listed.map((occasion) => occasion.id)).toStrictEqual([id, other.id]);
+	});
+
+	it('counts the waves that still send: planned or running, not stopped or done', async () => {
+		const c = await club();
+		const { id } = await createOccasion(c.db, c.editor, c.membersAreaId, inputFor(c));
+		const other = await createOccasion(
+			c.db,
+			c.editor,
+			c.membersAreaId,
+			inputFor(c, { name: 'Rundbrief' }),
+		);
+		const entriesOf = async (
+			statuses: readonly (typeof outboxEntries.$inferInsert)['status'][],
+		): Promise<string> => {
+			const waveId = await insertWave(c.db, id);
+			await c.db.insert(outboxEntries).values(
+				statuses.map((status) => ({
+					priority: 'group' as const,
+					source: 'wave' as const,
+					sourceId: waveId,
+					status,
+					waveId,
+				})),
+			);
+			return waveId;
+		};
+		await entriesOf(['planned']);
+		await entriesOf(['sending', 'sent']);
+		// Done: every entry has a final status; an uncertain one waits for a person.
+		await entriesOf(['sent', 'failed', 'uncertain']);
+		// Stopped: its planned entries were cancelled.
+		const stopped = await entriesOf(['cancelled', 'sent']);
+		await c.db.update(waveRows).set({ stoppedAt: new Date() }).where(eq(waveRows.id, stopped));
+		await insertWave(c.db, other.id);
+		await expect(getOccasion(c.db, c.editor, id)).resolves.toMatchObject({
+			openWaves: 2,
+			waves: 4,
+		});
+		const listed = await listOccasions(c.db, c.editor);
+		expect(listed.map(({ openWaves, waves }) => ({ openWaves, waves }))).toStrictEqual([
+			{ openWaves: 2, waves: 4 },
+			{ openWaves: 0, waves: 1 },
+		]);
 	});
 
 	it('cannot change or remove an archived occasion', async () => {

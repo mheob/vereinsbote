@@ -883,6 +883,9 @@ export const en: Record<keyof typeof de, string> = {
 	'occasions.archive': 'Archive',
 	'occasions.archiveAria': 'Archive {name}',
 	'occasions.archiveConfirm': 'Archive',
+	'occasions.archiveOpenWaves':
+		'Waves still being sent: {count}. Archiving does not stop them; you can stop them in the sending overview.',
+	'occasions.archiveOpenWavesLink': 'Go to the sending overview',
 	'occasions.archiveText':
 		'The occasion already has waves, so it is archived: it can then no longer be chosen or changed, its history and opt-outs stay.',
 	'occasions.archiveTitle': 'Archive “{name}”?',
@@ -1129,6 +1132,7 @@ export const en: Record<keyof typeof de, string> = {
 	'send.attachmentAdd': 'Add a file',
 	'send.attachmentFailed': 'The file could not be uploaded.',
 	'send.attachmentItem': '{name} ({size})',
+	'send.attachmentItemOthers': '{name} ({size}) – uploaded by someone else',
 	'send.attachmentRemove': 'Remove {name}',
 	'send.attachmentRemoved': '{name} is removed.',
 	'send.attachmentUploaded': '{name} is attached.',
@@ -1143,6 +1147,8 @@ export const en: Record<keyof typeof de, string> = {
 	'send.attachmentsHelp':
 		'PDF, JPEG or PNG; at most 5 files of 4 MB each. The attachments go to every recipient of this wave.',
 	'send.attachmentsLabel': 'Attachments',
+	'send.attachmentsOthersHelp':
+		'Ticked files go with the mail. What someone else uploaded goes along only when you tick it.',
 	'send.back': 'Back to the occasion',
 	'send.cancel': 'Cancel',
 	'send.changed':

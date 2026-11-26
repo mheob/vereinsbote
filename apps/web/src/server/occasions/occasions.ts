@@ -20,6 +20,7 @@ import {
 	OCCASION_SENDER_FK,
 	OCCASION_TEMPLATE_FK,
 	occasions,
+	outboxEntries,
 	senderAreas,
 	senders,
 	templates,
@@ -57,15 +58,24 @@ interface OccasionRecord extends OccasionInput {
 	readonly waves: number;
 	/** When the latest wave was made; null without waves. */
 	readonly lastWaveAt: Date | null;
+	/**
+	 * How many of its waves still send (planned or running: not stopped, with entries `planned` or
+	 * `sending`); archiving the occasion does not stop them.
+	 */
+	readonly openWaves: number;
 	/** Sent back with a change or a removal; a newer one refuses both. */
 	readonly version: number;
 }
 
-/** How many waves an occasion has and when the latest was made. */
+/** How many waves an occasion has, how many of them still send, and when the latest was made. */
 interface WaveStats {
 	readonly waves: number;
+	readonly openWaves: number;
 	readonly lastWaveAt: Date | null;
 }
+
+/** A wave that still sends: not stopped, and an entry waits for the outbox or is on its way. */
+const waveSends = sql`${waves.stoppedAt} is null and exists (select 1 from ${outboxEntries} where ${outboxEntries.waveId} = ${waves.id} and ${outboxEntries.status} in ('planned', 'sending'))`;
 
 /**
  * The count of waves of an occasion.
@@ -83,7 +93,8 @@ async function countWaves(db: Db, occasionId: string): Promise<number> {
 }
 
 /**
- * The waves of occasions: how many and when the latest was made, in one query.
+ * The waves of occasions: how many, how many still send and when the latest was made, in one
+ * query.
  *
  * @param db The database.
  * @param occasionIds The occasions.
@@ -95,15 +106,16 @@ async function waveStats(db: Db, occasionIds: readonly string[]): Promise<Map<st
 		.select({
 			lastWaveAt: max(waves.createdAt),
 			occasionId: waves.occasionId,
+			openWaves: sql<number>`(count(*) filter (where ${waveSends}))::int`,
 			waves: count(),
 		})
 		.from(waves)
 		.where(inArray(waves.occasionId, [...occasionIds]))
 		.groupBy(waves.occasionId);
 	return new Map(
-		rows.map(({ lastWaveAt, occasionId, waves: made }) => [
+		rows.map(({ lastWaveAt, occasionId, openWaves, waves: made }) => [
 			occasionId,
-			{ lastWaveAt, waves: made },
+			{ lastWaveAt, openWaves, waves: made },
 		]),
 	);
 }
@@ -126,6 +138,7 @@ function toRecord(
 		kind: row.kind,
 		lastWaveAt: stats?.lastWaveAt ?? null,
 		name: row.name,
+		openWaves: stats?.openWaves ?? 0,
 		senderId: row.senderId,
 		templateId: row.templateId,
 		trigger: row.trigger,

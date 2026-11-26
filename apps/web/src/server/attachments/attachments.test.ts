@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { eq } from 'drizzle-orm';
-import { describe, expect, it } from 'vite-plus/test';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import { userWith } from '@/server/contacts/testing';
 import { attachments, occasions } from '@/server/db/schema';
@@ -162,6 +162,38 @@ describe(storeAttachment, () => {
 		).rejects.toBeInstanceOf(OccasionNotFoundError);
 		expect(deleted).toHaveLength(1);
 		await expect(storage.get(deleted.join(''))).resolves.toBeNull();
+	});
+
+	describe('when the cleanup fails too', () => {
+		afterEach(() => {
+			vi.restoreAllMocks();
+		});
+
+		it('keeps the refusal and logs the cleanup by its label only', async () => {
+			const { db, occasionId, sender, storage } = await setUpAttachments();
+			const logged = vi.spyOn(console, 'error').mockReturnValue();
+			for (let stored = 0; stored < MAX_ATTACHMENTS; stored += 1) {
+				// oxlint-disable-next-line no-await-in-loop -- one file after another
+				await storeAttachment(db, storage, sender, occasionId, {
+					bytes: pdfBytes(),
+					name: `${stored}.pdf`,
+				});
+			}
+			const failing: ObjectStorage = {
+				...storage,
+				async delete(key: string): Promise<void> {
+					await Promise.reject(new Error(`storage down at ${key}`));
+				},
+			};
+			const refused = storeAttachment(db, failing, sender, occasionId, {
+				bytes: pdfBytes(),
+				name: 'sixth.pdf',
+			});
+			await expect(refused).rejects.toBeInstanceOf(AttachmentInvalidError);
+			await expect(refused).rejects.toMatchObject({ reason: 'count' });
+			expect(logged).toHaveBeenCalledOnce();
+			expect(JSON.stringify(logged.mock.calls)).not.toContain('attachments/');
+		});
 	});
 });
 

@@ -60,18 +60,20 @@ function empty(status: number): Response {
  * parsed only once its size is known to be within the bound.
  *
  * @param request The request.
- * @returns The form, or null for another type, a larger body or one that does not parse.
+ * @returns The form, or null for another type, a larger body, one that breaks off or one that does
+ *   not parse.
  */
 async function readForm(request: Request): Promise<FormData | null> {
 	const contentType = request.headers.get('content-type') ?? '';
 	const [type = ''] = contentType.split(';');
 	if (!FORM_TYPES.has(type.trim().toLowerCase())) return null;
 	if ((await checkBodySize(request, MAX_BODY_BYTES)) !== 'within') return null;
-	const bytes = await request.arrayBuffer();
 	try {
+		const bytes = await request.arrayBuffer();
 		// The request's own type, with the boundary of a multipart body.
 		return await new Response(bytes, { headers: { 'content-type': contentType } }).formData();
 	} catch {
+		// A body that breaks off while it is read, or one that does not parse.
 		return null;
 	}
 }

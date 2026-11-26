@@ -41,7 +41,7 @@ const MAX_TOKEN_INPUT = 10_000;
 /** The longest undo value the server looks at; that of 180 contacts has about 11,000. */
 const MAX_UNDO_INPUT = 100_000;
 
-const pageRequest = z.object({ token: z.string() });
+const pageRequest = z.object({ token: z.string().max(MAX_TOKEN_INPUT) });
 const submitRequest = z.object({
 	scope: z.enum(['occasion', 'area']),
 	token: z.string().max(MAX_TOKEN_INPUT),

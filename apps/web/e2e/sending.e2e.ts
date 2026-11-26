@@ -1109,6 +1109,18 @@ test('personal mails go first under a small daily limit', async () => {
 	await expect(waves.getByRole('row', { name: new RegExp(`^${greeting},`, 'u') })).toContainText(
 		'Gesendet: 2',
 	);
+
+	// Archiving would not stop the circular: the dialog says so and leads to the overview.
+	await eva.goto(`/occasions/${newsId}`);
+	const archive = eva.getByRole('button', { name: `${news} archivieren` });
+	await expect(archive).toBeEnabled();
+	await archive.click();
+	const archiveDialog = eva.getByRole('dialog', { name: `„${news}“ archivieren?` });
+	await expect(archiveDialog).toContainText('Wellen, die noch versendet werden: 1.');
+	await expect(archiveDialog.getByRole('link', { name: 'Zur Versandübersicht' })).toBeVisible();
+	await expectNoA11yViolations(eva);
+	await archiveDialog.getByRole('button', { name: 'Abbrechen' }).click();
+	await expect(archiveDialog).toBeHidden();
 });
 
 /**
@@ -1263,6 +1275,9 @@ test('a wave can be stopped', async () => {
 	);
 	await nextStep(eva, 'Schritt 2 von 3: Anhänge');
 	await nextStep(eva, 'Schritt 3 von 3: Vorschau und Testmail');
+	// A second tab, opened before the confirmation, belongs to the same flow (ruling R19).
+	const secondTab = await eva.context().newPage();
+	await openSendFlow(secondTab, shared.circularId);
 	const dialog = await openConfirmation(eva, CIRCULAR);
 	await dialog
 		.getByRole('radiogroup', { name: 'Wann?' })
@@ -1293,8 +1308,21 @@ test('a wave can be stopped', async () => {
 	await plan.click();
 	await expect(eva.getByRole('heading', { level: 1, name: CIRCULAR })).toBeFocused();
 	await expect(
-		eva.getByText(/^Die Welle ist angelegt \(Mails: 6\); der Versand beginnt am /u),
+		eva.getByText(/^Diese Welle wurde bereits angelegt\. Mails: 6; der Versand beginnt am /u),
 	).toBeVisible();
+
+	// The second tab confirms „Sofort“ with another selection: it gets the planned wave, no second
+	// one, and announces the wave's real start.
+	await nextStep(secondTab, 'Schritt 2 von 3: Anhänge');
+	await nextStep(secondTab, 'Schritt 3 von 3: Vorschau und Testmail');
+	const secondDialog = await openConfirmation(secondTab, CIRCULAR);
+	await secondDialog.getByRole('button', { name: 'Jetzt versenden' }).click();
+	await expect(secondTab.getByRole('heading', { level: 1, name: CIRCULAR })).toBeFocused();
+	await expect(
+		secondTab.getByText(/^Diese Welle wurde bereits angelegt\. Mails: 6; der Versand beginnt am /u),
+	).toBeVisible();
+	await expectNoA11yViolations(secondTab);
+	await secondTab.close();
 
 	const waves = await openEventsOverview(eva);
 	const planned = waves.getByRole('row', { name: new RegExp(`^${CIRCULAR},`, 'u') }).filter({
