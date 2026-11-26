@@ -1,0 +1,270 @@
+import { describe, expect, it, vi } from 'vite-plus/test';
+import { z } from 'zod';
+
+import { setUpClub } from '@/server/contacts/testing';
+import type { Db } from '@/server/db/client';
+import { createTestDb } from '@/server/db/test-db';
+import { parseEnv } from '@/server/env';
+import { errorLabel } from '@/server/error-label';
+import type { SmtpMail } from '@/server/mail/smtp-transport';
+
+import { quotaToday } from './quota';
+import { createSender, setSystemSender } from './senders';
+import {
+	createSystemMailer,
+	hasSystemSender,
+	MailerNotConfiguredError,
+	SystemMailNotSentError,
+} from './system-mailer';
+import type { SystemMail } from './system-mailer';
+import { fakeProviders, graphConnection, resendConnection, senderOn, testEnv } from './testing';
+
+/** What the SMTP double was handed. */
+const smtp = vi.hoisted(() => ({ sent: [] as SmtpMail[] }));
+
+vi.mock(import('@/server/mail/smtp-transport'), async (importOriginal) => ({
+	...(await importOriginal()),
+	openSmtpTransport: () => ({
+		// oxlint-disable-next-line typescript/require-await, typescript/prefer-readonly-parameter-types -- the double records, it does not send; nodemailer's mail holds a mutable list
+		async sendMail(mail: SmtpMail) {
+			smtp.sent.push({ ...mail });
+		},
+	}),
+}));
+
+const NOW = new Date('2026-11-25T10:00:00Z');
+const HTTP_FORBIDDEN = 403;
+const LINK = 'https://bote.example.org/login';
+
+/** The part of Graph's JSON body a test reads. */
+const graphBody = z.object({ content: z.string() });
+const graphMessage = z.object({ message: z.object({ body: graphBody }) });
+
+const MAIL: SystemMail = {
+	content: {
+		button: { label: 'Zur Anmeldung', url: LINK },
+		heading: 'Willkommen',
+		paragraphs: ['Hallo Kim,', 'du wurdest eingeladen.'],
+	},
+	locale: 'de',
+	subject: 'Einladung zum Vereinsbote',
+	to: 'kim@example.org',
+};
+
+/**
+ * A database whose use fails once `end` was called, like the database of a request on Cloudflare
+ * after the response.
+ *
+ * @param db The test database.
+ * @returns The database and the function that ends it.
+ */
+function endable(db: Db): { db: Db; end: () => void } {
+	const state = { ended: false };
+	const guarded = new Proxy(db, {
+		get(target, property): unknown {
+			if (state.ended) throw new Error('The request has ended, its database is closed.');
+			const value: unknown = Reflect.get(target, property);
+			return typeof value === 'function' ? value.bind(target) : value;
+		},
+	});
+	return {
+		db: guarded,
+		end: () => {
+			state.ended = true;
+		},
+	};
+}
+
+/**
+ * A club with a Graph sender that sends the system mails.
+ *
+ * @returns The database and the sender's id.
+ */
+async function graphSystemSender(): Promise<{ db: Db; senderId: string }> {
+	const db = await createTestDb();
+	const { admin } = await setUpClub(db);
+	const connectionId = await graphConnection(db, admin);
+	const senderId = await senderOn(db, admin, connectionId, 'verein@example.org');
+	await setSystemSender(db, admin, senderId);
+	return { db, senderId };
+}
+
+/**
+ * The JSON body of the one request that sent a mail.
+ *
+ * @param calls The requests the fake providers saw.
+ * @param path The end of the send address.
+ * @returns The parsed body.
+ */
+function sentBody(
+	calls: readonly Readonly<{ url: string; body: string }>[],
+	path: string,
+): unknown {
+	const sends = calls.filter((call) => call.url.endsWith(path));
+	expect(sends).toHaveLength(1);
+	return JSON.parse(sends[0]?.body ?? '');
+}
+
+describe(createSystemMailer, () => {
+	it('sends through the system sender as json without saving and counts it', async () => {
+		const { db, senderId } = await graphSystemSender();
+		const providers = fakeProviders();
+		const mailer = createSystemMailer({
+			db,
+			env: testEnv(),
+			fetch: providers.fetch,
+			now: () => NOW,
+		});
+
+		await mailer.send(MAIL);
+
+		expect(sentBody(providers.calls, '/sendMail')).toMatchObject({
+			message: {
+				body: { contentType: 'HTML' },
+				subject: 'Einladung zum Vereinsbote',
+				toRecipients: [{ emailAddress: { address: 'kim@example.org' } }],
+			},
+			saveToSentItems: false,
+		});
+		const { message } = graphMessage.parse(sentBody(providers.calls, '/sendMail'));
+		expect(
+			['Willkommen', 'lang="de"', `href="${LINK}"`].filter(
+				(fragment) => !message.body.content.includes(fragment),
+			),
+		).toStrictEqual([]);
+		await expect(quotaToday(db, `sender:${senderId}`, NOW)).resolves.toMatchObject({ used: 1 });
+	});
+
+	it('sends through resend without the archive copy and counts the connection', async () => {
+		const db = await createTestDb();
+		const { admin } = await setUpClub(db);
+		const connectionId = await resendConnection(db, admin);
+		const { id } = await createSender(db, admin, {
+			archiveBcc: 'archiv@example.org',
+			areaIds: [],
+			connectionId,
+			dailyLimit: null,
+			displayName: 'Verein',
+			email: 'verein@example.org',
+			perMinute: null,
+			replyTo: 'vorstand@example.org',
+		});
+		await setSystemSender(db, admin, id);
+		const providers = fakeProviders();
+		const mailer = createSystemMailer({
+			db,
+			env: testEnv(),
+			fetch: providers.fetch,
+			now: () => NOW,
+		});
+
+		await mailer.send(MAIL);
+
+		const body = sentBody(providers.calls, '/emails');
+		expect(body).toMatchObject({ reply_to: 'vorstand@example.org', to: ['kim@example.org'] });
+		expect(JSON.stringify(body)).not.toContain('archiv@example.org');
+		await expect(quotaToday(db, `connection:${connectionId}`, NOW)).resolves.toMatchObject({
+			used: 1,
+		});
+	});
+
+	it('does the database work first and delivers after the database has ended', async () => {
+		const { db, senderId } = await graphSystemSender();
+		const request = endable(db);
+		const providers = fakeProviders();
+		const mailer = createSystemMailer({
+			db: request.db,
+			env: testEnv(),
+			fetch: providers.fetch,
+			now: () => NOW,
+		});
+
+		const delivery = await mailer.prepare(MAIL);
+		request.end();
+		await delivery?.();
+
+		expect(providers.calls.filter((call) => call.url.endsWith('/sendMail'))).toHaveLength(1);
+		await expect(quotaToday(db, `sender:${senderId}`, NOW)).resolves.toMatchObject({ used: 1 });
+	});
+
+	it('runs the same statements without a mail and counts nothing', async () => {
+		const { db, senderId } = await graphSystemSender();
+		const providers = fakeProviders();
+		const mailer = createSystemMailer({
+			db,
+			env: testEnv(),
+			fetch: providers.fetch,
+			now: () => NOW,
+		});
+
+		await expect(mailer.prepare(null)).resolves.toBeNull();
+
+		expect(providers.calls).toStrictEqual([]);
+		await expect(quotaToday(db, `sender:${senderId}`, NOW)).resolves.toMatchObject({ used: 0 });
+	});
+
+	it('throws with the code of the provider when it refuses the mail', async () => {
+		const { db } = await graphSystemSender();
+		const providers = fakeProviders({ send: HTTP_FORBIDDEN });
+		const mailer = createSystemMailer({
+			db,
+			env: testEnv(),
+			fetch: providers.fetch,
+			now: () => NOW,
+		});
+
+		const failure: unknown = await mailer.send(MAIL).catch((error: unknown) => error);
+
+		expect(failure).toBeInstanceOf(SystemMailNotSentError);
+		expect(errorLabel(failure)).toMatch(/^graph\./u);
+	});
+
+	it('uses DEV_SMTP_URL when no system sender exists', async () => {
+		const db = await createTestDb();
+		smtp.sent.length = 0;
+		const env = parseEnv({
+			APP_SECRET: Buffer.alloc(32, 3).toString('base64'),
+			APP_URL: 'https://bote.example.org',
+			CRON_SECRET: 'c'.repeat(32),
+			DATABASE_URL: 'postgres://x@localhost/x',
+			DEV_SMTP_URL: 'smtp://localhost:1025',
+		});
+		const providers = fakeProviders();
+		const mailer = createSystemMailer({ db, env, fetch: providers.fetch, now: () => NOW });
+
+		await mailer.send(MAIL);
+		await mailer.send({ ...MAIL, to: 'anna@example.org' });
+
+		expect(providers.calls).toStrictEqual([]);
+		expect(smtp.sent).toHaveLength(2);
+		expect(smtp.sent[0]).toMatchObject({
+			from: 'Vereinsbote <noreply@bote.example.org>',
+			subject: 'Einladung zum Vereinsbote',
+			to: 'kim@example.org',
+		});
+		expect(smtp.sent[0]?.html).toContain('Willkommen');
+		expect(smtp.sent[0]?.text).toContain('du wurdest eingeladen.');
+	});
+
+	it('throws MailerNotConfiguredError without system sender and smtp', async () => {
+		const db = await createTestDb();
+		const mailer = createSystemMailer({ db, env: testEnv(), now: () => NOW });
+		await expect(mailer.send(MAIL)).rejects.toBeInstanceOf(MailerNotConfiguredError);
+		await expect(mailer.prepare(null)).resolves.toBeNull();
+	});
+});
+
+describe(hasSystemSender, () => {
+	it('tells whether a sender sends the system mails', async () => {
+		const db = await createTestDb();
+		const { admin } = await setUpClub(db);
+		await expect(hasSystemSender(db)).resolves.toBe(false);
+		const connectionId = await graphConnection(db, admin);
+		const senderId = await senderOn(db, admin, connectionId, 'verein@example.org');
+		await expect(hasSystemSender(db)).resolves.toBe(false);
+		await setSystemSender(db, admin, senderId);
+		await expect(hasSystemSender(db)).resolves.toBe(true);
+		await setSystemSender(db, admin, null);
+		await expect(hasSystemSender(db)).resolves.toBe(false);
+	});
+});

@@ -90,8 +90,16 @@ async function sendInvitation(
 	const link = new URL(LOGIN_PATH, appUrl).href;
 	try {
 		await mailer.send({
-			subject: translate(locale, 'mail.invite.subject'),
-			text: translate(locale, 'mail.invite.text', { link, name }),
+			content: {
+				button: { label: translate(locale, 'mail.system.invite.button'), url: link },
+				heading: translate(locale, 'mail.system.invite.heading'),
+				paragraphs: [
+					translate(locale, 'mail.system.greeting', { name }),
+					translate(locale, 'mail.system.invite.text'),
+				],
+			},
+			locale,
+			subject: translate(locale, 'mail.system.invite.subject'),
 			to,
 		});
 		return true;

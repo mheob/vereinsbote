@@ -182,6 +182,28 @@ function mayStart(state: Readonly<QuotaState>, priority: EntryPriority): boolean
 }
 
 /**
+ * Adds mails to today's count of a scope, in one statement whatever the number.
+ *
+ * @param db The database.
+ * @param day The scope, the instant (its club day counts) and how many mails to add.
+ * @param day.scope The scope.
+ * @param day.now The instant.
+ * @param day.mails How many mails.
+ */
+async function addToDay(
+	db: Db,
+	{ mails, now, scope }: Readonly<{ scope: QuotaScope; now: Date; mails: 0 | 1 }>,
+): Promise<void> {
+	await db
+		.insert(sendQuotaDays)
+		.values({ count: mails, day: todayInClubZone(now), scope })
+		.onConflictDoUpdate({
+			set: { count: sql`${sendQuotaDays.count} + excluded.count` },
+			target: [sendQuotaDays.scope, sendQuotaDays.day],
+		});
+}
+
+/**
  * Counts a mail the provider accepted, against today's club day.
  *
  * @param db The database.
@@ -189,13 +211,19 @@ function mayStart(state: Readonly<QuotaState>, priority: EntryPriority): boolean
  * @param now The instant.
  */
 async function countSent(db: Db, scope: QuotaScope, now: Date): Promise<void> {
-	await db
-		.insert(sendQuotaDays)
-		.values({ count: 1, day: todayInClubZone(now), scope })
-		.onConflictDoUpdate({
-			set: { count: sql`${sendQuotaDays.count} + 1` },
-			target: [sendQuotaDays.scope, sendQuotaDays.day],
-		});
+	await addToDay(db, { mails: 1, now, scope });
+}
+
+/**
+ * Runs the statement of `countSent` and counts nothing: a login link request that sends no mail
+ * runs the same statements as one that sends (`createLinkSender`), so its time tells nothing.
+ *
+ * @param db The database.
+ * @param scope The scope.
+ * @param now The instant.
+ */
+async function countNothing(db: Db, scope: QuotaScope, now: Date): Promise<void> {
+	await addToDay(db, { mails: 0, now, scope });
 }
 
 /**
@@ -277,6 +305,7 @@ function estimateDays(
 }
 
 export {
+	countNothing,
 	countSent,
 	estimateDays,
 	inScope,

@@ -23,7 +23,7 @@ interface AppContext {
 	db: Db;
 	/** Bound to `db`, so on Cloudflare it lives as long as the request's database. */
 	auth: Auth;
-	/** Stateless, shared by all requests of an isolate. */
+	/** Bound to `db` like `auth`: it reads the system sender per mail (plan decision 12). */
 	mailer: SystemMailer;
 	/** Private storage for images, shared by all requests of an isolate; null when not set up. */
 	storage: ObjectStorage | null;
@@ -32,20 +32,20 @@ interface AppContext {
 }
 
 /**
- * What all requests of an isolate share: the environment, the stateless mailer, the storage, the
- * platform. The R2 binding belongs to the isolate's `env`, not to a request, so it may live here.
+ * What all requests of an isolate share: the environment, the storage, the platform. The R2
+ * binding belongs to the isolate's `env`, not to a request, so it may live here.
  */
 interface IsolateServices {
 	env: Env;
-	mailer: SystemMailer;
 	storage: ObjectStorage | null;
 	platform: Platform;
 }
 
-/** A database and the auth instance bound to it; on Cloudflare, what one request owns. */
+/** A database and the auth instance and mailer bound to it; on Cloudflare, what one request owns. */
 interface DbServices {
 	db: Db;
 	auth: Auth;
+	mailer: SystemMailer;
 }
 
 type EnvSource = Readonly<Record<string, string | undefined>>;
@@ -123,25 +123,25 @@ function requestWaitUntil(): Platform['waitUntil'] | null {
 const runAfterResponse = createBackgroundRunner(platformName(), requestWaitUntil);
 
 /**
- * Creates the auth instance for an opened database. Ends the database when that fails, so a
- * failed attempt leaves no pool behind.
+ * Creates the mailer and the auth instance for an opened database. Ends the database when that
+ * fails, so a failed attempt leaves no pool behind.
  *
- * @param isolate The environment, the mailer and the platform.
+ * @param isolate The environment and the platform.
  * @param isolate.env The environment.
- * @param isolate.mailer The mailer.
- * @param isolate.platform Keeps the sending of login links alive after the response.
+ * @param isolate.platform Keeps the delivery of login links alive after the response.
  * @param handle The opened database.
  * @param handle.db The database client.
  * @param handle.end Closes the database.
- * @returns The database and its auth instance.
+ * @returns The database, its mailer and its auth instance.
  */
 async function bindAuth(
-	{ env, mailer, platform }: IsolateServices,
+	{ env, platform }: Pick<IsolateServices, 'env' | 'platform'>,
 	{ db, end }: Readonly<DbHandle>,
 ): Promise<DbServices> {
 	try {
+		const mailer = createSystemMailer({ db, env });
 		const runInBackground = platform.waitUntil;
-		return { auth: await createAuth({ db, env, mailer, runInBackground }), db };
+		return { auth: await createAuth({ db, env, mailer, runInBackground }), db, mailer };
 	} catch (error) {
 		await end();
 		throw error;
@@ -165,14 +165,10 @@ const cache: { promise?: Promise<AppContext> } = {};
 async function createSharedContext(): Promise<AppContext> {
 	try {
 		const env = parseEnv({ ...readProcessEnv() });
-		const mailer = createSystemMailer(env);
 		const storage = await openStorage(env, null);
 		const platform: Platform = { name: platformName(), waitUntil: runAfterResponse };
 		const driver = import.meta.env.VITE_VB_PLATFORM === 'vercel' ? 'neon' : 'pg';
-		const { auth, db } = await bindAuth(
-			{ env, mailer, platform, storage },
-			await openAppDb(env, driver),
-		);
+		const { auth, db, mailer } = await bindAuth({ env, platform }, await openAppDb(env, driver));
 		return { auth, db, env, mailer, platform, storage };
 	} catch (error) {
 		// Do not keep a failed attempt, the next call retries.
@@ -182,10 +178,11 @@ async function createSharedContext(): Promise<AppContext> {
 }
 
 /*
- * Cloudflare: env, mailer and the `waitUntil` runner are cached per isolate, the database is
+ * Cloudflare: env, storage and the `waitUntil` runner are cached per isolate, the database is
  * not. A Neon pool holds WebSockets, which belong to the request that opened them, so each
  * request gets its own pool, which `requestDbReleaser` ends via `waitUntil` once the response is
- * done. The auth instance holds that pool, so it is created per request as well.
+ * done. The auth instance and the mailer hold that pool, so they are created per request as well;
+ * work after the response (the delivery of a login link) must not use it.
  */
 const cloudflare: { isolate?: Promise<IsolateServices> } = {};
 
@@ -197,7 +194,6 @@ async function createIsolateServices(): Promise<IsolateServices> {
 		const waitUntil = createBackgroundRunner('cloudflare', () => workers.waitUntil ?? null);
 		return {
 			env,
-			mailer: createSystemMailer(env),
 			platform: { name: 'cloudflare', waitUntil },
 			storage: await openStorage(env, workers.env),
 		};
@@ -223,7 +219,7 @@ const requestServices = createRequestScope<DbServices>({
 
 async function getCloudflareContext(): Promise<AppContext> {
 	cloudflare.isolate ??= createIsolateServices();
-	const [{ env, mailer, platform, storage }, { auth, db }] = await Promise.all([
+	const [{ env, platform, storage }, { auth, db, mailer }] = await Promise.all([
 		cloudflare.isolate,
 		requestServices.get(getRequest()),
 	]);

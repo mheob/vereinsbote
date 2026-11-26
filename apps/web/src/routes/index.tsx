@@ -1,5 +1,6 @@
 import { createFileRoute, Link, useLoaderData } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
+import { useId } from 'react';
 import type { ReactNode } from 'react';
 
 import { linkClass } from '@/components/styles';
@@ -40,9 +41,26 @@ export const Route = createFileRoute('/')({
 		// admins (design 11), with the link to the import for those who may import. The notice
 		// comes with the page frame (`loadFrameInfo`).
 		const notice = useLoaderData({ from: '__root__', select: (root) => root.frame?.notice });
+		// Admins learn that login links and invitations do not go out yet (design 14).
+		const noSystemSender = useLoaderData({
+			from: '__root__',
+			select: (root) => root.frame?.noSystemSender === true,
+		});
+		const systemSenderId = useId();
 		return (
 			<div className="mx-auto flex max-w-2xl flex-col gap-6 p-6">
 				<h1 className="text-2xl font-bold">{t('home.title')}</h1>
+				{noSystemSender ? (
+					<section
+						aria-labelledby={systemSenderId}
+						className="flex flex-col gap-2 border-l-4 border-amber-600 bg-amber-50 px-4 py-3"
+					>
+						<p id={systemSenderId}>{t('home.noSystemSender')}</p>
+						<Link className={`self-start ${linkClass}`} to="/admin/sending">
+							{t('home.noSystemSenderLink')}
+						</Link>
+					</section>
+				) : null}
 				{areas.length === 0 ? (
 					<p>{t('home.noAreas')}</p>
 				) : (

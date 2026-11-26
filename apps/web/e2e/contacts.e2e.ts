@@ -120,6 +120,13 @@ test('prepares access and shows the empty contact list', async () => {
 	await expect(nav.getByRole('link', { name: 'Mitglieder importieren' })).toBeVisible();
 	await expect(nav.getByRole('link', { name: 'Partner importieren' })).toBeVisible();
 	await expect(admin.getByText('Es wurden noch keine Mitglieder importiert.')).toBeVisible();
+	// No sender sends the system mails yet: the start page tells the admin (design 14).
+	await expect(
+		admin.getByRole('region', { name: /^Noch kein Absender für Systemmails/u }),
+	).toBeVisible();
+	await expect(
+		admin.getByRole('link', { name: 'Absender für Systemmails festlegen' }),
+	).toHaveAttribute('href', '/admin/sending');
 	await expectNoA11yViolations(admin);
 	await nav.getByRole('link', { name: 'Kontakte' }).click();
 	await expect(admin).toHaveTitle('Kontakte – Vereinsbote');

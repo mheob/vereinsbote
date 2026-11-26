@@ -7,6 +7,7 @@ import { outboxEntries, senders } from '@/server/db/schema';
 import { createTestDb } from '@/server/db/test-db';
 
 import {
+	countNothing,
 	countSent,
 	estimateDays,
 	liftPause,
@@ -75,6 +76,16 @@ describe(quotaToday, () => {
 			reserved: 0,
 			used: 1,
 		});
+	});
+
+	it('adds nothing for countNothing, before and after a count', async () => {
+		const db = await createTestDb();
+		const scope = await limitedGraphSender(db, 50);
+		await countNothing(db, scope, NOW);
+		await expect(quotaToday(db, scope, NOW)).resolves.toMatchObject({ used: 0 });
+		await countSent(db, scope, NOW);
+		await countNothing(db, scope, NOW);
+		await expect(quotaToday(db, scope, NOW)).resolves.toMatchObject({ used: 1 });
 	});
 
 	it.each([

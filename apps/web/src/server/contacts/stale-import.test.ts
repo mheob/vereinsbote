@@ -5,7 +5,6 @@ import type { Db } from '@/server/db/client';
 import { auditLog } from '@/server/db/schema';
 import { createTestDb } from '@/server/db/test-db';
 import { parseEnv } from '@/server/env';
-import { createSystemMailer } from '@/server/mail/system-mailer';
 import { CapturingMailer } from '@/server/mail/testing';
 import { runTick } from '@/server/tick/tick';
 import { insertUser } from '@/server/users/repo';
@@ -103,11 +102,25 @@ describe(createStaleImportWarningStep, () => {
 			'The member data in Vereinsbote is out of date',
 		]);
 		for (const mail of mailer.sent) {
-			expect(mail.text).toContain('https://bote.example.org/contacts/import/members');
+			expect(mail.content.button?.url).toBe('https://bote.example.org/contacts/import/members');
 		}
 		const german = mailer.sent.find((mail) => mail.to === 'admin@example.org');
-		expect(german?.text).toContain('Hallo Test Admin');
-		expect(german?.text).toContain('der letzte Mitglieder-Import war am 22. September 2026');
+		expect(german).toMatchObject({
+			content: {
+				button: { label: 'Mitglieder importieren' },
+				heading: 'Die Mitgliederdaten sind veraltet',
+				paragraphs: [
+					'Hallo Test Admin,',
+					'der letzte Mitglieder-Import war am 22. September 2026. Bitte lade einen aktuellen Export hoch.',
+				],
+			},
+			locale: 'de',
+		});
+		const english = mailer.sent.find((mail) => mail.to === 'en-admin@example.org');
+		expect(english).toMatchObject({
+			content: { heading: 'The member data is out of date' },
+			locale: 'en',
+		});
 	});
 
 	it('warns again only after seven days', async () => {
@@ -132,7 +145,8 @@ describe(createStaleImportWarningStep, () => {
 			status: 'active',
 		});
 		await lastImportedWeeksAgo(db, 9);
-		const step = createStaleImportWarningStep(createSystemMailer);
+		// The real mailer: no system sender and no SMTP in the tests.
+		const step = createStaleImportWarningStep();
 		const report = await runTick({ db, env, now: () => NOW, steps: [step], storage: null });
 		expect(report).toMatchObject({ steps: [{ name: 'stale-import-warning', outcome: 'done' }] });
 		const [entry] = await warningEntries(db);

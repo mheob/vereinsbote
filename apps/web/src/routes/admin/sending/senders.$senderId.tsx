@@ -45,14 +45,17 @@ export const Route = createFileRoute('/admin/sending/senders/$senderId')({
 			}
 			clearHistoryNotice(globalThis.history, 'sendingSelfTest');
 		}, [announce, notice, t]);
+		const wasSystem = data?.sender?.isSystem === true;
 		const onDeleted = useCallback(() => {
 			startTransition(async () => {
 				await router.navigate({
 					state: { sendingNotice: { kind: 'senderDeleted', name: email } },
 					to: '/admin/sending',
 				});
+				// The page frame tells admins when no system sender is left (`loadFrameInfo`).
+				if (wasSystem) await router.invalidate();
 			});
-		}, [email, router]);
+		}, [email, router, wasSystem]);
 		const onRefused = useCallback(() => {
 			startTransition(async () => router.invalidate());
 		}, [router]);

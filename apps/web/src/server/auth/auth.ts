@@ -25,7 +25,7 @@ import {
 } from '@/server/db/schema';
 import type { Env } from '@/server/env';
 import { errorLabel, errorLabelWithCause } from '@/server/error-label';
-import type { SystemMailer } from '@/server/mail/system-mailer';
+import type { SystemMail, SystemMailDelivery, SystemMailer } from '@/server/mail/system-mailer';
 import { closeSetupRecoveryFor } from '@/server/setup/setup';
 import { findUserByEmail, findUserById, recordSignIn } from '@/server/users/repo';
 
@@ -98,7 +98,7 @@ interface AuthDeps {
 	db: Db;
 	env: Env;
 	mailer: SystemMailer;
-	/** Runs the sending of login links after the response. Defaults to `runDetached`. */
+	/** Runs the delivery of login links after the response. Defaults to `runDetached`. */
 	runInBackground?: BackgroundRunner;
 }
 
@@ -153,25 +153,64 @@ function runDetached(promise: Promise<unknown>): void {
 }
 
 /**
- * Sends a login link in the recipient's language. Never rejects: a failure is logged, since
- * nobody waits for it.
+ * The login link mail in the recipient's language; the link is the button.
  *
- * @param mailer The mailer.
  * @param mail The mail.
  * @param mail.to The normalized address.
  * @param mail.link The login link.
  * @param mail.locale The recipient's stored language (`user.locale`).
+ * @returns The mail.
  */
-async function sendLoginLink(
+function loginLinkMail({
+	to,
+	link,
+	locale,
+}: Readonly<{ to: string; link: string; locale: Locale }>): SystemMail {
+	return {
+		content: {
+			button: { label: translate(locale, 'mail.system.login.button'), url: link },
+			heading: translate(locale, 'mail.system.login.heading'),
+			paragraphs: [
+				translate(locale, 'mail.system.greetingWithoutName'),
+				translate(locale, 'mail.system.login.text'),
+				translate(locale, 'mail.system.login.validity'),
+				translate(locale, 'mail.system.login.ignore'),
+			],
+		},
+		locale,
+		subject: translate(locale, 'mail.system.login.subject'),
+		to,
+	};
+}
+
+/**
+ * Does the database work of a login link, or the same work without a mail. Never rejects: a
+ * failure is logged by code when a mail was meant, and nothing is delivered.
+ *
+ * @param mailer The mailer.
+ * @param mail The login link mail, or null when none goes out.
+ * @returns The delivery, or null.
+ */
+async function prepareLoginLink(
 	mailer: Readonly<SystemMailer>,
-	{ to, link, locale }: Readonly<{ to: string; link: string; locale: Locale }>,
-): Promise<void> {
+	mail: Readonly<SystemMail> | null,
+): Promise<SystemMailDelivery | null> {
 	try {
-		await mailer.send({
-			subject: translate(locale, 'mail.login.subject'),
-			text: translate(locale, 'mail.login.text', { link }),
-			to,
-		});
+		return await mailer.prepare(mail);
+	} catch (error) {
+		if (mail !== null) logSendFailure(error);
+		return null;
+	}
+}
+
+/**
+ * Delivers a prepared login link. Never rejects: a failure is logged, since nobody waits for it.
+ *
+ * @param delivery The delivery of the prepared mail.
+ */
+async function deliverLoginLink(delivery: SystemMailDelivery): Promise<void> {
+	try {
+		await delivery();
 	} catch (error) {
 		logSendFailure(error);
 	}
@@ -202,14 +241,17 @@ async function openLoginLinkWindow(db: Db, emailHash: string): Promise<boolean> 
 /**
  * Builds the `sendMagicLink` callback. It sends only when the request opened the login link
  * window of the address and the user exists and is not disabled, in the user's stored language.
- * Every request runs the same two statements (window upsert, user lookup), whether the address
- * is invited or not, and the mail goes out after the response, so neither the result nor the
- * response time tells which addresses are invited.
+ * Every request runs the same statements, whether the address is invited or not: the window
+ * upsert, the user lookup and the mailer's preparation (the system sender, its credentials, the
+ * brand and the count, which adds nothing without a mail). The mail is rendered and sent after the
+ * response. So neither the result nor the response time tells which addresses are invited. The
+ * preparation needs the database, which on Cloudflare ends with the response, so it runs first;
+ * the delivery needs none.
  *
  * @param deps The dependencies of the auth instance.
  * @param deps.db The database.
  * @param deps.mailer The mailer for login links.
- * @param deps.runInBackground Runs the sending after the response.
+ * @param deps.runInBackground Runs the delivery after the response.
  * @param windowKey The HMAC key for the login link windows.
  * @returns The callback for the magic link plugin.
  */
@@ -224,9 +266,12 @@ function createLinkSender(
 			openLoginLinkWindow(db, emailHash),
 			findUserByEmail(db, to),
 		]);
-		if (!openedWindow || found === null || found.status === 'disabled') return;
-		// The mail touches no database, so it may outlive the request's pool (Cloudflare).
-		runInBackground(sendLoginLink(mailer, { link: url, locale: found.locale, to }));
+		const mail =
+			openedWindow && found !== null && found.status !== 'disabled'
+				? loginLinkMail({ link: url, locale: found.locale, to })
+				: null;
+		const delivery = await prepareLoginLink(mailer, mail);
+		if (delivery !== null) runInBackground(deliverLoginLink(delivery));
 	};
 }
 

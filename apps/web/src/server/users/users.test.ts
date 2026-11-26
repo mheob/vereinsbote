@@ -130,10 +130,19 @@ describe(inviteUser, () => {
 		const mailer = new CapturingMailer();
 		const a = await admin(db);
 		await inviteUser(deps(db, mailer), a, kimInvite);
-		expect(mailer.sent[0]).toMatchObject({ subject: 'Einladung zum Vereinsbote', to: 'kim@v.de' });
-		expect(mailer.sent[0]?.text).toBe(
-			'Hallo Kim,\n\ndu wurdest zum Vereinsbote eingeladen. Melde dich hier an:\nhttps://b.example.org/login',
-		);
+		expect(mailer.sent[0]).toMatchObject({
+			content: {
+				button: { label: 'Zur Anmeldung', url: 'https://b.example.org/login' },
+				heading: 'Willkommen beim Vereinsbote',
+				paragraphs: [
+					'Hallo Kim,',
+					expect.stringContaining('du wurdest zum Vereinsbote eingeladen.'),
+				],
+			},
+			locale: 'de',
+			subject: 'Einladung zum Vereinsbote',
+			to: 'kim@v.de',
+		});
 	});
 
 	it('stores an invited user with the trimmed name, the role and the language', async () => {
@@ -162,8 +171,16 @@ describe(inviteUser, () => {
 		await inviteUser(deps(db, mailer), a, { ...kimInvite, locale: 'en' });
 		expect(mailer.sent).toStrictEqual([
 			{
+				content: {
+					button: { label: 'Go to sign-in', url: 'https://b.example.org/login' },
+					heading: 'Welcome to Vereinsbote',
+					paragraphs: [
+						'Hello Kim,',
+						'you have been invited to Vereinsbote. On the sign-in page, request a sign-in link with your e-mail address.',
+					],
+				},
+				locale: 'en',
 				subject: 'Invitation to Vereinsbote',
-				text: 'Hello Kim,\n\nyou have been invited to Vereinsbote. Sign in here:\nhttps://b.example.org/login',
 				to: 'kim@v.de',
 			},
 		]);
@@ -199,6 +216,7 @@ describe(inviteUser, () => {
 		const db = await createTestDb();
 		const a = await admin(db);
 		const failing: SystemMailer = {
+			prepare: vi.fn<SystemMailer['prepare']>().mockRejectedValue(new MailerNotConfiguredError()),
 			send: vi.fn<SystemMailer['send']>().mockRejectedValue(new MailerNotConfiguredError()),
 		};
 		const log = vi.spyOn(console, 'error').mockReturnValue();

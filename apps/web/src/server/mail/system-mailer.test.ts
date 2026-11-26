@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vite-plus/test';
 
+import { createTestDb } from '@/server/db/test-db';
 import { parseEnv } from '@/server/env';
 
 import { createSystemMailer, MailerNotConfiguredError } from './system-mailer';
+import type { SystemMail } from './system-mailer';
 import { CapturingMailer } from './testing';
 
 const env = parseEnv({
@@ -12,11 +14,17 @@ const env = parseEnv({
 	DATABASE_URL: 'postgres://x@localhost/x',
 });
 
-const mail = { subject: 'Betreff', text: 'Text', to: 'anna@verein.de' };
+const mail: SystemMail = {
+	content: { button: null, heading: 'Überschrift', paragraphs: ['Text'] },
+	locale: 'de',
+	subject: 'Betreff',
+	to: 'anna@verein.de',
+};
 
 describe(createSystemMailer, () => {
 	it('refuses to send when no transport is configured', async () => {
-		await expect(createSystemMailer(env).send(mail)).rejects.toBeInstanceOf(
+		const db = await createTestDb();
+		await expect(createSystemMailer({ db, env }).send(mail)).rejects.toBeInstanceOf(
 			MailerNotConfiguredError,
 		);
 	});
@@ -26,6 +34,15 @@ describe(CapturingMailer, () => {
 	it('records every mail', async () => {
 		const mailer = new CapturingMailer();
 		await mailer.send(mail);
+		expect(mailer.sent).toStrictEqual([mail]);
+	});
+
+	it('records a prepared mail once it is delivered', async () => {
+		const mailer = new CapturingMailer();
+		await expect(mailer.prepare(null)).resolves.toBeNull();
+		const delivery = await mailer.prepare(mail);
+		expect(mailer.sent).toStrictEqual([]);
+		await delivery?.();
 		expect(mailer.sent).toStrictEqual([mail]);
 	});
 });

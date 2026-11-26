@@ -5,11 +5,10 @@ import { translate } from '@/i18n/translate';
 import { writeAudit } from '@/server/audit/audit';
 import type { Db } from '@/server/db/client';
 import { systemState, user } from '@/server/db/schema';
-import type { Env } from '@/server/env';
 import { errorLabel } from '@/server/error-label';
 import { createSystemMailer } from '@/server/mail/system-mailer';
 import type { SystemMailer } from '@/server/mail/system-mailer';
-import type { TickStep } from '@/server/tick/tick';
+import type { TickContext, TickStep } from '@/server/tick/tick';
 
 import { formatClubDate } from './calendar';
 import { getImportState } from './import-state';
@@ -107,14 +106,19 @@ async function sendWarning(
 	shared: WarningContext,
 	recipient: Readonly<Recipient>,
 ): Promise<void> {
-	const params = {
-		date: formatClubDate(shared.lastImportAt, recipient.locale),
-		link: shared.link,
-		name: recipient.name,
-	};
+	const { locale } = recipient;
+	const date = formatClubDate(shared.lastImportAt, locale);
 	await shared.mailer.send({
-		subject: translate(recipient.locale, 'mail.staleImport.subject'),
-		text: translate(recipient.locale, 'mail.staleImport.text', params),
+		content: {
+			button: { label: translate(locale, 'mail.system.staleImport.button'), url: shared.link },
+			heading: translate(locale, 'mail.system.staleImport.heading'),
+			paragraphs: [
+				translate(locale, 'mail.system.greeting', { name: recipient.name }),
+				translate(locale, 'mail.system.staleImport.text', { date }),
+			],
+		},
+		locale,
+		subject: translate(locale, 'mail.system.staleImport.subject'),
 		to: recipient.email,
 	});
 }
@@ -148,14 +152,24 @@ async function sendWarnings(
 }
 
 /**
+ * The system mailer of a tick: the tick's database, environment and clock.
+ *
+ * @param ctx The context of the tick.
+ * @returns The mailer.
+ */
+function tickMailer(ctx: TickContext): SystemMailer {
+	return createSystemMailer({ db: ctx.db, env: ctx.env, now: ctx.now });
+}
+
+/**
  * Builds the tick step that warns the active admins once a week while the member data is old.
  * The week is claimed before sending: a failed mail is not retried before the next week.
  *
- * @param createMailer Makes the mailer; tests pass a capturing one.
+ * @param createMailer Makes the mailer from the tick's context; tests pass a capturing one.
  * @returns The `stale-import-warning` step.
  */
 function createStaleImportWarningStep(
-	createMailer: (env: Env) => SystemMailer = createSystemMailer,
+	createMailer: (ctx: TickContext) => SystemMailer = tickMailer,
 ): TickStep {
 	return {
 		name: 'stale-import-warning',
@@ -169,7 +183,7 @@ function createStaleImportWarningStep(
 				{
 					lastImportAt: freshness.lastImportAt,
 					link: new URL('/contacts/import/members', ctx.env.appUrl).toString(),
-					mailer: createMailer(ctx.env),
+					mailer: createMailer(ctx),
 				},
 				recipients,
 			);

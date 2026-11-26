@@ -30,6 +30,60 @@ import { getSessionUser } from './session';
 const FIFTEEN_MINUTES = 15 * 60_000;
 const APP_URL = 'https://bote.example.org';
 
+/** The `send` of a fake mailer that only prepares: login links never use it. */
+// oxlint-disable-next-line typescript/require-await -- the fake rejects immediately
+async function unused(): Promise<void> {
+	throw new Error('The login link is prepared, never sent directly.');
+}
+
+/** A delivery that sends nothing. */
+async function noDelivery(): Promise<void> {
+	// Nothing to deliver.
+}
+
+/** A delivery of a mailer without a transport. */
+// oxlint-disable-next-line typescript/require-await -- the fake rejects immediately
+async function notConfigured(): Promise<void> {
+	throw new MailerNotConfiguredError();
+}
+
+/** A delivery to a mail server that never answers: the promise never settles. */
+async function neverAnswers(): Promise<void> {
+	await Promise.withResolvers<never>().promise;
+}
+
+interface FakeMailer {
+	readonly mailer: SystemMailer;
+	/** The address of each prepared mail, null for a preparation without a mail. */
+	readonly prepared: (string | null)[];
+	/** The mails whose delivery started. */
+	readonly delivered: SystemMail[];
+}
+
+/**
+ * A mailer that records what each request prepared and runs `deliver` for a prepared mail.
+ *
+ * @param deliver What the delivery of a mail does.
+ * @returns The mailer and its records.
+ */
+function fakeMailer(deliver: () => Promise<void>): FakeMailer {
+	const prepared: (string | null)[] = [];
+	const delivered: SystemMail[] = [];
+	const mailer: SystemMailer = {
+		// oxlint-disable-next-line typescript/require-await -- the fake prepares at once
+		async prepare(mail) {
+			prepared.push(mail?.to ?? null);
+			if (mail === null) return null;
+			return async () => {
+				delivered.push({ ...mail });
+				await deliver();
+			};
+		},
+		send: unused,
+	};
+	return { delivered, mailer, prepared };
+}
+
 const baseEnv = {
 	APP_SECRET: Buffer.alloc(32, 3).toString('base64'),
 	APP_URL,
@@ -96,7 +150,17 @@ function tokenFrom(text: string): string {
 function lastToken(sent: readonly Readonly<SystemMail>[]): string {
 	const mail = sent.at(-1);
 	if (mail === undefined) throw new Error('No mail was sent.');
-	return tokenFrom(mail.text);
+	return tokenFrom(mail.content.button?.url ?? '');
+}
+
+/**
+ * The texts of a mail, one below the other.
+ *
+ * @param mail The mail.
+ * @returns The heading and the paragraphs.
+ */
+function textOf(mail: Readonly<SystemMail> | undefined): string {
+	return [mail?.content.heading ?? '', ...(mail?.content.paragraphs ?? [])].join('\n');
 }
 
 /**
@@ -197,11 +261,15 @@ describe('passwordless sign-in', () => {
 			await requestLoginLink(auth, ' Anna@Verein.DE');
 			expect(mailer.sent).toHaveLength(1);
 			expect(mailer.sent[0]).toMatchObject({
-				subject: translate('de', 'mail.login.subject'),
+				content: { button: { label: 'Anmelden' }, heading: 'Dein Anmeldelink' },
+				locale: 'de',
+				subject: translate('de', 'mail.system.login.subject'),
 				to: 'anna@verein.de',
 			});
-			expect(mailer.sent[0]?.text).toContain(`${APP_URL}/`);
-			expect(mailer.sent[0]?.text).toContain(
+			expect(mailer.sent[0]?.content.button?.url).toMatch(
+				/^https:\/\/bote\.example\.org\/api\/auth\/magic-link\/verify\?token=/u,
+			);
+			expect(textOf(mailer.sent[0])).toContain(
 				'Der Link ist 15 Minuten gültig und funktioniert einmal.',
 			);
 		});
@@ -211,9 +279,13 @@ describe('passwordless sign-in', () => {
 			await insertUser(db, { email: 'kim@verein.de', locale: 'en', name: 'Kim' });
 			await requestLoginLink(auth, 'kim@verein.de');
 			expect(mailer.sent).toHaveLength(1);
-			expect(mailer.sent[0]?.subject).toBe('Your sign-in link for Vereinsbote');
-			expect(mailer.sent[0]?.text).toContain('The link is valid for 15 minutes and works once.');
-			expect(mailer.sent[0]?.text).toContain(`${APP_URL}/`);
+			expect(mailer.sent[0]).toMatchObject({
+				content: { button: { label: 'Sign in' }, heading: 'Your sign-in link' },
+				locale: 'en',
+				subject: 'Your sign-in link for Vereinsbote',
+			});
+			expect(textOf(mailer.sent[0])).toContain('The link is valid for 15 minutes and works once.');
+			expect(mailer.sent[0]?.content.button?.url).toContain(`${APP_URL}/`);
 		});
 
 		it('sends the sign-in link in German by default', async () => {
@@ -251,14 +323,7 @@ describe('passwordless sign-in', () => {
 		});
 
 		it('resolves when the mailer fails and logs no link', async () => {
-			const attempted: SystemMail[] = [];
-			const failingMailer: SystemMailer = {
-				// oxlint-disable-next-line typescript/require-await -- the fake rejects immediately
-				async send(mail) {
-					attempted.push({ ...mail });
-					throw new MailerNotConfiguredError();
-				},
-			};
+			const { delivered: attempted, mailer: failingMailer } = fakeMailer(notConfigured);
 			const background: Readonly<Promise<unknown>>[] = [];
 			const { auth, db } = await setup({
 				mailer: failingMailer,
@@ -279,18 +344,53 @@ describe('passwordless sign-in', () => {
 		});
 
 		it('does not wait for the mail to be sent', async () => {
-			const attempted: SystemMail[] = [];
-			const stuckMailer: SystemMailer = {
-				async send(mail) {
-					attempted.push({ ...mail });
-					// A mail server that never answers: this promise never settles.
-					await Promise.withResolvers<never>().promise;
-				},
-			};
+			const { delivered: attempted, mailer: stuckMailer } = fakeMailer(neverAnswers);
 			const { auth, db } = await setup({ mailer: stuckMailer });
 			await insertUser(db, { email: 'anna@verein.de', name: 'Anna' });
 			await expect(requestLoginLink(auth, 'anna@verein.de')).resolves.toBeUndefined();
 			expect(attempted).toHaveLength(1);
+		});
+
+		it('prepares the mailer for every request, with a mail only for an invited address', async () => {
+			const { mailer: recording, prepared } = fakeMailer(noDelivery);
+			const { auth, db } = await setup({ mailer: recording });
+			await insertUser(db, { email: 'anna@verein.de', name: 'Anna' });
+			await insertUser(db, { email: 'kim@verein.de', name: 'Kim', status: 'disabled' });
+
+			await requestLoginLink(auth, 'anna@verein.de');
+			// Inside the window of the address, unknown, disabled: the same work, no mail.
+			await requestLoginLink(auth, 'anna@verein.de');
+			await requestLoginLink(auth, 'fremd@example.org');
+			await requestLoginLink(auth, 'kim@verein.de');
+
+			expect(prepared).toStrictEqual(['anna@verein.de', null, null, null]);
+		});
+
+		it('resolves and logs by code when the mailer cannot prepare the mail', async () => {
+			const broken: SystemMailer = {
+				// oxlint-disable-next-line typescript/require-await -- the fake rejects immediately
+				async prepare() {
+					throw new MailerNotConfiguredError();
+				},
+				send: unused,
+			};
+			const background: Readonly<Promise<unknown>>[] = [];
+			const { auth, db } = await setup({
+				mailer: broken,
+				runInBackground(promise) {
+					background.push(promise);
+				},
+			});
+			const logged = vi.spyOn(console, 'error').mockReturnValue();
+			await insertUser(db, { email: 'anna@verein.de', name: 'Anna' });
+
+			await expect(requestLoginLink(auth, 'anna@verein.de')).resolves.toBeUndefined();
+			await expect(requestLoginLink(auth, 'fremd@example.org')).resolves.toBeUndefined();
+
+			expect(background).toHaveLength(0);
+			expect(logged.mock.calls).toStrictEqual([
+				['login link not sent', 'MailerNotConfiguredError'],
+			]);
 		});
 
 		it('answers 429 once one client exceeds the link request limit', async () => {

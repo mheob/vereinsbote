@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vite-plus/test';
 import { recordConfirmedImport } from '@/server/contacts/import-state';
 import { setUpClub, userWith } from '@/server/contacts/testing';
 import { createTestDb } from '@/server/db/test-db';
+import { setSystemSender } from '@/server/sending/senders';
+import { graphConnection, senderOn } from '@/server/sending/testing';
 
 import { loadFrameInfo } from './frame';
 
@@ -32,6 +34,7 @@ describe(loadFrameInfo, () => {
 				importPartners: false,
 				templates: false,
 			},
+			noSystemSender: false,
 			notice: null,
 		});
 		// The setup gave the admin `edit` in the members area.
@@ -80,9 +83,22 @@ describe(loadFrameInfo, () => {
 				importPartners: false,
 				templates: true,
 			},
+			noSystemSender: false,
 			notice: { canImport: false, kind: 'stale', lastImportAt: at.toISOString(), weeks: 8 },
 		});
 		const fresh = await loadFrameInfo(db, reader, new Date(at.getTime() + DAY_MS));
 		expect(fresh.notice).toBeNull();
+	});
+
+	it('tells admins that no system sender is set', async () => {
+		const db = await createTestDb();
+		const { admin, membersAreaId } = await setUpClub(db);
+		const reader = await userWith(db, { [membersAreaId]: 'read' });
+		await expect(loadFrameInfo(db, admin, NOW)).resolves.toMatchObject({ noSystemSender: true });
+		await expect(loadFrameInfo(db, reader, NOW)).resolves.toMatchObject({ noSystemSender: false });
+		const connectionId = await graphConnection(db, admin);
+		const senderId = await senderOn(db, admin, connectionId, 'verein@example.org');
+		await setSystemSender(db, admin, senderId);
+		await expect(loadFrameInfo(db, admin, NOW)).resolves.toMatchObject({ noSystemSender: false });
 	});
 });
