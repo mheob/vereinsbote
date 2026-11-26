@@ -971,6 +971,9 @@ export const de = {
 		'Vorbelegt nach Art: bei Rundschreiben an, bei persönlichen Anlässen aus.',
 	'occasions.unsubscribeLabel': 'Abmeldelink in jeder Mail',
 	'occasions.waveCreated': 'Die Welle ist angelegt (Mails: {mails}); die ersten gehen gleich raus.',
+	'occasions.waveExisted': 'Diese Welle wurde bereits angelegt. Mails: {mails}.',
+	'occasions.waveExistedScheduled':
+		'Diese Welle wurde bereits angelegt. Mails: {mails}; der Versand beginnt am {at}.',
 	'occasions.waveScheduled':
 		'Die Welle ist angelegt (Mails: {mails}); der Versand beginnt am {at}.',
 	'occasions.yes': 'Ja',

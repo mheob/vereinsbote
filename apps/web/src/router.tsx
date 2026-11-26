@@ -34,10 +34,11 @@ declare module '@tanstack/react-router' {
 		/** A template was just copied (its page announces it) or deleted (the list announces it). */
 		templateNotice?: { kind: 'copied' | 'deleted'; name: string };
 		/**
-		 * A wave was just confirmed in the send flow: its mails and its planned start (an ISO
-		 * instant, null for at once); the occasion's page announces it once.
+		 * A wave was just confirmed in the send flow: its mails, its planned start (an ISO instant,
+		 * null for at once) and whether an earlier confirmation of the flow made it; the occasion's
+		 * page announces it once.
 		 */
-		waveNotice?: { mails: number; notBefore: string | null };
+		waveNotice?: { mails: number; notBefore: string | null; existing: boolean };
 	}
 }
 

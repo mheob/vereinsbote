@@ -26,7 +26,8 @@ import type { ConfirmedWave } from './waves';
 
 /*
  * Waves on PostgreSQL. PGlite runs one statement at a time, so it cannot show two confirmations
- * of the same flow (a double click, a second tab) racing each other. It needs `TEST_POSTGRES_URL`,
+ * of the same flow (a double click, a retry, a second tab opened before the first confirmation:
+ * the server gives them the same key, ruling R19) racing each other. It needs `TEST_POSTGRES_URL`,
  * a connection whose user may create databases (CI and `docker/compose.dev.yml` provide one), and
  * is skipped without it. It works in a database of its own, which it drops at the end.
  */

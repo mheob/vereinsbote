@@ -89,7 +89,7 @@ const resendRequest = z.object({ entryId: z.uuid() });
 const confirmRequest = summaryRequest.extend({
 	/** Null: at once. */
 	notBefore: z.date().nullable(),
-	/** The key of the flow, made by the browser when it opened (plan decision 18). */
+	/** The key of the flow, which the flow's page got from the server (ruling R19). */
 	requestId: z.uuid(),
 });
 
@@ -103,11 +103,13 @@ const loadSendFlow = createServerFn({ method: 'GET' })
 		const [
 			{ requireRequestPrincipal },
 			{ loadSendFlowPage },
+			{ deriveFlowKey },
 			{ ForbiddenError },
 			{ OccasionInvalidError, OccasionNotFoundError },
 		] = await Promise.all([
 			import('@/platform/request-principal'),
 			import('@/server/waves/send-flow-page'),
+			import('@/server/waves/flow-key'),
 			import('@/server/permissions/principal'),
 			import('@/server/occasions/errors'),
 		]);
@@ -115,7 +117,10 @@ const loadSendFlow = createServerFn({ method: 'GET' })
 		// oxlint-disable-next-line typescript/only-throw-error -- the router shows its not-found page
 		if (!z.uuid().safeParse(data.id).success) throw notFound();
 		try {
-			return await loadSendFlowPage(context.db, principal, data.id, context.env.appUrl.origin);
+			return await loadSendFlowPage(context.db, principal, data.id, {
+				appOrigin: context.env.appUrl.origin,
+				flowKey: await deriveFlowKey(context.env.appSecret),
+			});
 		} catch (error) {
 			const hidden =
 				error instanceof OccasionNotFoundError ||
@@ -269,8 +274,9 @@ async function kickAfterConfirmation(
 }
 
 /**
- * Confirms a wave. A second confirmation of the same flow gets the same wave. A wave sent at once
- * starts its first mails right after the response.
+ * Confirms a wave. A second confirmation of the same flow gets the same wave, marked as existing,
+ * with the start the first one gave it. A wave sent at once starts its first mails right after the
+ * response.
  */
 const confirmWave = createServerFn({ method: 'POST' })
 	.validator(confirmRequest)
@@ -287,7 +293,7 @@ const confirmWave = createServerFn({ method: 'POST' })
 			context.env.appUrl.origin,
 			new Date(),
 		);
-		if (result.ok && data.notBefore === null) await kickAfterConfirmation(context);
+		if (result.ok && result.notBefore === null) await kickAfterConfirmation(context);
 		return result;
 	});
 

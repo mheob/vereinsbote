@@ -43,14 +43,17 @@ export const Route = createFileRoute('/occasions/$occasionId')({
 		useEffect(() => {
 			if (waveNotice === undefined) return;
 			headingRef.current?.focus();
-			const { mails, notBefore } = waveNotice;
-			const text =
-				notBefore === null
-					? t('occasions.waveCreated', { mails })
-					: t('occasions.waveScheduled', {
-							at: formatClubDateTime(new Date(notBefore), locale),
-							mails,
-						});
+			const { existing, mails, notBefore } = waveNotice;
+			const at = notBefore === null ? '' : formatClubDateTime(new Date(notBefore), locale);
+			let text = t('occasions.waveScheduled', { at, mails });
+			if (existing) {
+				text =
+					notBefore === null
+						? t('occasions.waveExisted', { mails })
+						: t('occasions.waveExistedScheduled', { at, mails });
+			} else if (notBefore === null) {
+				text = t('occasions.waveCreated', { mails });
+			}
 			announce(text, 'status');
 			clearHistoryNotice(globalThis.history, 'waveNotice');
 		}, [announce, locale, t, waveNotice]);

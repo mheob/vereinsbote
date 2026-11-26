@@ -3,7 +3,8 @@
  * confirmation makes in one transaction: the template compiled at that moment, one outbox entry
  * per mail with its contacts, the attachments and the activity log. A problem of the template or
  * the selection refuses the wave before any entry exists. A second confirmation of the same flow
- * (`requestId`, plan decision 18) gets the wave of the first.
+ * (`requestId`, derived by the server per flow, ruling R19) gets the wave of the first, marked as
+ * existing, with the start the first confirmation gave it.
  */
 import { and, count, eq, inArray, isNull, lte } from 'drizzle-orm';
 
@@ -73,13 +74,22 @@ interface WaveSummary {
 type WaveRefusal = WaveProblem | 'graphTooLarge' | 'scheduleOutOfRange';
 
 interface WaveConfirmation extends WaveSummaryInput {
-	/** The key of the flow, made by the browser when it opened (plan decision 18). */
+	/** The key of the flow, which the page of the flow got from the server (ruling R19). */
 	requestId: string;
 	/** When the mails may go; null: at once. */
 	notBefore: Date | null;
 }
 
-type ConfirmedWave = { waveId: string; mails: number } | { refused: WaveRefusal };
+/** A wave of a flow: its mails, its start (null: at once) and whether an earlier confirmation made it. */
+interface FlowWave {
+	readonly waveId: string;
+	readonly mails: number;
+	readonly notBefore: Date | null;
+	/** True when an earlier confirmation of the same flow made the wave. */
+	readonly existing: boolean;
+}
+
+type ConfirmedWave = FlowWave | { refused: WaveRefusal };
 
 /** The sender of an occasion as the summary needs it. */
 interface WaveSender {
@@ -463,20 +473,20 @@ function inSchedule(notBefore: Date | null, now: Date): boolean {
 }
 
 /**
- * The wave a flow made already, with its number of mails.
+ * The wave a flow made already, with its number of mails and its start.
  *
  * @param db The database or transaction.
  * @param requestId The key of the flow.
  * @param occasionId The occasion; a key of another occasion's flow finds nothing.
- * @returns The wave, or null.
+ * @returns The wave, marked as existing, or null.
  */
 async function waveOfRequest(
 	db: Db,
 	requestId: string,
 	occasionId: string,
-): Promise<{ waveId: string; mails: number } | null> {
+): Promise<FlowWave | null> {
 	const [wave] = await db
-		.select({ id: waves.id })
+		.select({ id: waves.id, notBefore: waves.notBefore })
 		.from(waves)
 		.where(and(eq(waves.requestId, requestId), eq(waves.occasionId, occasionId)));
 	if (wave === undefined) return null;
@@ -484,7 +494,7 @@ async function waveOfRequest(
 		.select({ mails: count() })
 		.from(outboxEntries)
 		.where(eq(outboxEntries.waveId, wave.id));
-	return { mails: entries?.mails ?? 0, waveId: wave.id };
+	return { existing: true, mails: entries?.mails ?? 0, notBefore: wave.notBefore, waveId: wave.id };
 }
 
 /**
@@ -638,14 +648,10 @@ async function insertWaveRow(
  * @param tx The transaction.
  * @param requestId The key of the flow.
  * @param occasionId The occasion.
- * @returns The wave and its number of mails.
+ * @returns The wave, its number of mails and its start.
  * @throws {Error} When the key belongs to the wave of another occasion: a forged confirmation.
  */
-async function madeWave(
-	tx: Db,
-	requestId: string,
-	occasionId: string,
-): Promise<{ waveId: string; mails: number }> {
+async function madeWave(tx: Db, requestId: string, occasionId: string): Promise<FlowWave> {
 	const made = await waveOfRequest(tx, requestId, occasionId);
 	if (made === null) throw new Error('The request id belongs to the wave of another occasion.');
 	return made;
@@ -660,7 +666,7 @@ async function madeWave(
  * @param plan The plan.
  * @param input The confirmation.
  * @param now The instant.
- * @returns The wave and its number of mails.
+ * @returns The wave, its number of mails and its start.
  */
 // oxlint-disable-next-line max-params -- the transaction, the actor, the plan, the input and the clock
 async function createWave(
@@ -669,7 +675,7 @@ async function createWave(
 	plan: WavePlan,
 	input: Readonly<WaveConfirmation>,
 	now: Date,
-): Promise<{ waveId: string; mails: number }> {
+): Promise<FlowWave> {
 	await holdOccasion(tx, plan.occasion);
 	const waveId = await insertWaveRow(tx, actor, plan, input);
 	if (waveId === null) return madeWave(tx, input.requestId, plan.occasion.id);
@@ -682,7 +688,7 @@ async function createWave(
 		details: { mails, occasionId: plan.occasion.id },
 		target: `wave:${waveId}`,
 	});
-	return { mails, waveId };
+	return { existing: false, mails, notBefore: input.notBefore, waveId };
 }
 
 /**
@@ -703,7 +709,7 @@ async function planOrMade(
 	input: Readonly<WaveConfirmation>,
 	appOrigin: string,
 	now: Date,
-): Promise<WavePlan | { waveId: string; mails: number }> {
+): Promise<WavePlan | FlowWave> {
 	try {
 		return await planWave(db, actor, input, appOrigin, now);
 	} catch (error) {
@@ -717,20 +723,45 @@ async function planOrMade(
 }
 
 /**
+ * The wave an earlier confirmation of the flow made. A retry gets it also after the occasion was
+ * archived; without such a wave an archived occasion refuses the confirmation.
+ *
+ * @param db The database.
+ * @param actor Who confirms; needs `send` in the occasion's area.
+ * @param input The confirmation.
+ * @returns The wave, or null when the flow made none yet.
+ * @throws {OccasionNotFoundError} When no occasion has the id.
+ * @throws {ForbiddenError} Without `send` in the occasion's area.
+ * @throws {OccasionInvalidError} When the occasion is archived and the flow made no wave.
+ */
+async function earlierWave(
+	db: Db,
+	actor: Principal,
+	input: Readonly<WaveConfirmation>,
+): Promise<FlowWave | null> {
+	const occasion = await getOccasion(db, actor, input.occasionId);
+	assertArea(actor, occasion.areaId, 'send');
+	const made = await waveOfRequest(db, input.requestId, occasion.id);
+	if (made === null && occasion.archivedAt !== null) throw new OccasionInvalidError('archived');
+	return made;
+}
+
+/**
  * Confirms a wave (Design 10.5, 11.1): compiles the template, plans the mails and makes the wave
  * with its entries in one transaction. A problem of the template or the selection, attachments
  * too large for Graph or a start out of range refuse it before any entry exists. A confirmation
- * of a flow that made its wave already gets that wave.
+ * of a flow that made its wave already gets that wave (`existing`, with its own start), also when
+ * the occasion was archived since.
  *
  * @param db The database.
  * @param actor Who sends; needs `send` in the occasion's area.
  * @param input The occasion, the selection, the attachments, the flow's key and the start.
  * @param appOrigin The origin of the app (`APP_URL`).
  * @param now The instant.
- * @returns The wave and its number of mails, or why it was refused.
+ * @returns The wave, its number of mails and its start, or why it was refused.
  * @throws {OccasionNotFoundError} When no occasion has the id.
  * @throws {ForbiddenError} Without `send` in the occasion's area.
- * @throws {OccasionInvalidError} When the occasion is archived (`archived`).
+ * @throws {OccasionInvalidError} When the occasion is archived (`archived`) and the flow made no wave.
  * @throws {OccasionChangedError} When the occasion changed while the wave was made.
  * @throws {WaveAttachmentsGoneError} When a chosen file is no free attachment of the occasion.
  */
@@ -742,8 +773,7 @@ async function confirmWave(
 	appOrigin: string,
 	now: Date,
 ): Promise<ConfirmedWave> {
-	const occasion = await sendableOccasion(db, actor, input.occasionId);
-	const made = await waveOfRequest(db, input.requestId, occasion.id);
+	const made = await earlierWave(db, actor, input);
 	if (made !== null) return made;
 	if (!inSchedule(input.notBefore, now)) return { refused: 'scheduleOutOfRange' };
 	const plan = await planOrMade(db, actor, input, appOrigin, now);
@@ -757,6 +787,7 @@ export { compileFor, confirmWave, freeAttachments, sendableOccasion, summarizeWa
 export type {
 	CompiledTemplate,
 	ConfirmedWave,
+	FlowWave,
 	WaveConfirmation,
 	WaveProblem,
 	WaveRefusal,

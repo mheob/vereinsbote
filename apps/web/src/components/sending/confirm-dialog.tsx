@@ -23,10 +23,14 @@ import { blockOf, confirmRefusalMessage, flowFailureOf } from './send-messages';
 import type { SummaryState } from './summary-state';
 import { WaveSummaryView } from './wave-summary';
 
-/** A wave the confirmation made: its mails and when they start (null: at once). */
+/**
+ * A wave the confirmation made, or an earlier confirmation of the flow (`existing`): its mails and
+ * when they start (null: at once), as the server has them.
+ */
 interface ConfirmedWave {
 	readonly mails: number;
 	readonly notBefore: Date | null;
+	readonly existing: boolean;
 }
 
 /** What the confirmation sends besides the start. */
@@ -109,7 +113,9 @@ function ConfirmForm({
 				if (result === FAILED) {
 					setFailedCall((previous) => (previous ?? 0) + 1);
 				} else if (result.ok) {
-					onConfirmed({ mails: result.mails, notBefore });
+					// The server's start: an earlier confirmation of the flow may have set another.
+					const { existing, mails } = result;
+					onConfirmed({ existing, mails, notBefore: result.notBefore });
 				} else if (result.failure === 'refused') {
 					setRefusal(result.reason);
 				} else {
@@ -159,8 +165,8 @@ function ConfirmForm({
 /**
  * The button „Versand bestätigen …“ and its dialog (Design 10.5): all numbers of the wave, „Sofort“
  * or „Geplant“, and the confirmation, which makes the wave. The flow's key goes with it, so a
- * double click or a retry after a lost answer gets the same wave. Opening the dialog counts the
- * wave anew. React Aria's modal keeps the focus inside and returns it to the button.
+ * double click, a retry after a lost answer or a second tab gets the same wave. Opening the dialog
+ * counts the wave anew. React Aria's modal keeps the focus inside and returns it to the button.
  *
  * @param props The props.
  * @param props.attachments How many files the mail carries.

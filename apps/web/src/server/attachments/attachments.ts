@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 
 import type { Db } from '@/server/db/client';
 import { attachments, occasions } from '@/server/db/schema';
@@ -42,6 +42,22 @@ function attachmentStorageKey(id: string): string {
 function toRecord(row: Readonly<typeof attachments.$inferSelect>): AttachmentRecord {
 	const { areaId, id, name, size, type, waveId } = row;
 	return { areaId, id, name, size, type, waveId };
+}
+
+/**
+ * The files an occasion holds for its next wave.
+ *
+ * @param db The database.
+ * @param occasionId The occasion.
+ * @returns The files, oldest first.
+ */
+async function freeAttachmentsOf(db: Db, occasionId: string): Promise<AttachmentRecord[]> {
+	const rows = await db
+		.select()
+		.from(attachments)
+		.where(and(eq(attachments.occasionId, occasionId), isNull(attachments.waveId)))
+		.orderBy(asc(attachments.createdAt), asc(attachments.id));
+	return rows.map((row) => toRecord(row));
 }
 
 /**
@@ -261,6 +277,7 @@ export {
 	attachmentStorageKey,
 	checkRoom,
 	deleteFreeAttachment,
+	freeAttachmentsOf,
 	readAttachments,
 	removeAttachment,
 	storeAttachment,

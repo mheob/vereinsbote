@@ -949,6 +949,9 @@ export const en: Record<keyof typeof de, string> = {
 	'occasions.unsubscribeLabel': 'Unsubscribe link in every mail',
 	'occasions.waveCreated':
 		'The wave is created (mails: {mails}); the first ones go out right away.',
+	'occasions.waveExisted': 'This wave was already created. Mails: {mails}.',
+	'occasions.waveExistedScheduled':
+		'This wave was already created. Mails: {mails}; sending starts on {at}.',
 	'occasions.waveScheduled': 'The wave is created (mails: {mails}); sending starts on {at}.',
 	'occasions.yes': 'Yes',
 	'outbox.code.addressChanged': 'The address changed since the confirmation.',

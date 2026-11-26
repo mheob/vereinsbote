@@ -5,18 +5,38 @@ import { emptyTemplate } from '@/mail/starters/starters';
 import type { TemplateInput } from '@/mail/templates/template-schema';
 import { storeAttachment } from '@/server/attachments/attachments';
 import { pdfBytes } from '@/server/attachments/testing';
-import { insertContact } from '@/server/contacts/testing';
+import { insertContact, userWith } from '@/server/contacts/testing';
 import type { Db } from '@/server/db/client';
 import { attachments, layouts, user } from '@/server/db/schema';
 import { createTestDb } from '@/server/db/test-db';
 import { OccasionInvalidError } from '@/server/occasions/errors';
 import { removeOccasion } from '@/server/occasions/occasions';
 import { ForbiddenError } from '@/server/permissions/principal';
+import { testEnv } from '@/server/sending/testing';
 import { createMemoryStorage } from '@/server/storage/memory';
 import { APP_ORIGIN } from '@/server/templates/testing';
 
+import { deriveFlowKey, flowRequestId } from './flow-key';
 import { loadSendFlowPage } from './send-flow-page';
+import type { SendFlowPage } from './send-flow-page';
 import { insertWave, setUpWaveClubOn } from './testing';
+
+/**
+ * Loads the page of the send flow with the test environment's secret.
+ *
+ * @param db The database.
+ * @param actor Who sends.
+ * @param occasionId The occasion.
+ * @returns The page.
+ */
+async function pageOf(
+	db: Db,
+	actor: Parameters<typeof loadSendFlowPage>[1],
+	occasionId: string,
+): Promise<SendFlowPage> {
+	const flowKey = await deriveFlowKey(testEnv().appSecret);
+	return loadSendFlowPage(db, actor, occasionId, { appOrigin: APP_ORIGIN, flowKey });
+}
 
 /**
  * A global layout.
@@ -69,7 +89,7 @@ describe(loadSendFlowPage, () => {
 			.select({ email: user.email })
 			.from(user)
 			.where(eq(user.id, c.sender.userId));
-		const page = await loadSendFlowPage(db, c.sender, c.occasionId, APP_ORIGIN);
+		const page = await pageOf(db, c.sender, c.occasionId);
 		expect(page).toMatchObject({
 			appOrigin: APP_ORIGIN,
 			attachments: [{ id: flyer.id, name: 'flyer.pdf', waveId: null }],
@@ -88,13 +108,43 @@ describe(loadSendFlowPage, () => {
 
 	it('needs send in the area and an occasion that is not archived', async () => {
 		const c = await setUpWaveClubOn(await createTestDb());
-		await expect(loadSendFlowPage(c.db, c.editor, c.occasionId, APP_ORIGIN)).rejects.toThrow(
-			ForbiddenError,
-		);
+		await expect(pageOf(c.db, c.editor, c.occasionId)).rejects.toThrow(ForbiddenError);
 		await insertWave(c.db, c.occasionId);
 		await removeOccasion(c.db, c.editor, c.occasionId, 1);
-		await expect(loadSendFlowPage(c.db, c.sender, c.occasionId, APP_ORIGIN)).rejects.toThrow(
-			OccasionInvalidError,
-		);
+		await expect(pageOf(c.db, c.sender, c.occasionId)).rejects.toThrow(OccasionInvalidError);
+	});
+
+	it('derives the key of the flow from the user, the occasion and its newest wave', async () => {
+		const c = await setUpWaveClubOn(await createTestDb());
+		const colleague = await userWith(c.db, { [c.membersAreaId]: 'send' });
+		const flowKey = await deriveFlowKey(testEnv().appSecret);
+		// Two tabs before a confirmation share the key.
+		const first = await pageOf(c.db, c.sender, c.occasionId);
+		const secondTab = await pageOf(c.db, c.sender, c.occasionId);
+		expect(secondTab.requestId).toBe(first.requestId);
+		await expect(
+			flowRequestId(flowKey, {
+				newestWaveId: null,
+				occasionId: c.occasionId,
+				userId: c.sender.userId,
+			}),
+		).resolves.toBe(first.requestId);
+		// Another user has a flow of its own.
+		const theirs = await pageOf(c.db, colleague, c.occasionId);
+		expect(theirs.requestId).not.toBe(first.requestId);
+		// After a wave the next flow gets a new key, from the newest wave.
+		await insertWave(c.db, c.occasionId, { createdAt: new Date('2026-11-01T10:00:00Z') });
+		const newest = await insertWave(c.db, c.occasionId, {
+			createdAt: new Date('2026-11-02T10:00:00Z'),
+		});
+		const afterWave = await pageOf(c.db, c.sender, c.occasionId);
+		expect(afterWave.requestId).not.toBe(first.requestId);
+		await expect(
+			flowRequestId(flowKey, {
+				newestWaveId: newest,
+				occasionId: c.occasionId,
+				userId: c.sender.userId,
+			}),
+		).resolves.toBe(afterWave.requestId);
 	});
 });

@@ -44,8 +44,18 @@ type WaveFailure = Readonly<{
 
 type SummarizeWaveResult = Readonly<{ ok: true; summary: WaveSummary }> | WaveFailure;
 
+/**
+ * A confirmation: the wave with its mails and its start (null: at once), `existing` when an
+ * earlier confirmation of the same flow made it; or why there is none.
+ */
 type ConfirmWaveResult =
-	| Readonly<{ ok: true; waveId: string; mails: number }>
+	| Readonly<{
+			ok: true;
+			waveId: string;
+			mails: number;
+			notBefore: Date | null;
+			existing: boolean;
+	  }>
 	| Readonly<{ ok: false; failure: 'refused'; reason: WaveRefusal }>
 	| WaveFailure;
 
@@ -148,7 +158,8 @@ async function confirmWaveResult(
 	try {
 		const confirmed = await confirmWave(db, actor, input, appOrigin, now);
 		if ('refused' in confirmed) return { failure: 'refused', ok: false, reason: confirmed.refused };
-		return { mails: confirmed.mails, ok: true, waveId: confirmed.waveId };
+		const { existing, mails, notBefore, waveId } = confirmed;
+		return { existing, mails, notBefore, ok: true, waveId };
 	} catch (error) {
 		const failure = waveFailure(error);
 		if (failure === null) throw error;

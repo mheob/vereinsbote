@@ -318,10 +318,46 @@ describe('creating a wave', () => {
 		await member(c.db, '2');
 		const confirmation = confirmationOf(c);
 		const first = await confirmWave(c.db, c.sender, confirmation, APP_ORIGIN, NOW);
+		expect(first).toMatchObject({ existing: false, mails: 2, notBefore: null });
 		await member(c.db, '3');
 		const again = await confirmWave(c.db, c.sender, confirmation, APP_ORIGIN, NOW);
-		expect(again).toStrictEqual(first);
+		expect(again).toStrictEqual({ ...first, existing: true });
 		await expect(countsOf(c.db)).resolves.toStrictEqual({ entries: 2, waves: 1 });
+	});
+
+	it('answers a second confirmation of the flow with the start of the first', async () => {
+		const c = await setUpWaveClub();
+		await member(c.db, '1');
+		const later = new Date(NOW.getTime() + DAY_MS);
+		const requestId = randomUUID();
+		const planned = await confirmWave(
+			c.db,
+			c.sender,
+			confirmationOf(c, { notBefore: later, requestId }),
+			APP_ORIGIN,
+			NOW,
+		);
+		expect(planned).toMatchObject({ existing: false, notBefore: later });
+		// The other tab chose „Sofort“: the wave starts when the first confirmation said.
+		await expect(
+			confirmWave(c.db, c.sender, confirmationOf(c, { requestId }), APP_ORIGIN, NOW),
+		).resolves.toStrictEqual({ ...planned, existing: true, notBefore: later });
+		await expect(countsOf(c.db)).resolves.toStrictEqual({ entries: 1, waves: 1 });
+	});
+
+	it('returns the wave of a retried confirmation after the occasion was archived', async () => {
+		const c = await setUpWaveClub();
+		await member(c.db, '1');
+		const confirmation = confirmationOf(c);
+		const first = await confirmWave(c.db, c.sender, confirmation, APP_ORIGIN, NOW);
+		await expect(removeOccasion(c.db, c.editor, c.occasionId, 1)).resolves.toBe('archived');
+		await expect(confirmWave(c.db, c.sender, confirmation, APP_ORIGIN, NOW)).resolves.toStrictEqual(
+			{ ...first, existing: true },
+		);
+		// Still only for whoever may send there.
+		await expect(confirmWave(c.db, c.editor, confirmation, APP_ORIGIN, NOW)).rejects.toThrow(
+			ForbiddenError,
+		);
 	});
 
 	it('schedules a wave from now to one year ahead', async () => {

@@ -31,7 +31,8 @@ const COUNT_DELAY_MS = 300;
  * The manual send flow of an occasion (Design 10): recipients, attachments, preview with the test
  * mail, and the confirmation in a dialog. The numbers of the wave are counted by the server as the
  * selection changes. Each step change moves the focus to the step's heading and announces it. The
- * flow's key is made once, when the flow opens: a second confirmation gets the same wave.
+ * flow's key comes from the server with the page (ruling R19) and is kept from the first load: a
+ * second confirmation, also in another tab opened before the first, gets the same wave.
  *
  * @param props The props.
  * @param props.announce Announces in the page's live region.
@@ -57,9 +58,10 @@ export function SendFlow({
 	const [draft, setDraft] = useState<SelectionDraft>(INITIAL_DRAFT);
 	const [picked, setPicked] = useState<Readonly<RecipientChoice> | null>(null);
 	const [recount, setRecount] = useState(0);
-	// The key of the flow (plan decision 18): made once, in the browser, when the flow opens.
+	// The key of the flow (ruling R19): the server's, kept from the first load; a reload of the
+	// page's data after a failure keeps it, so the flow cannot make a second wave.
 	// oxlint-disable-next-line react/hook-use-state -- kept from the first render, never set
-	const [requestId] = useState(() => crypto.randomUUID());
+	const [requestId] = useState(() => page.requestId);
 	const { add, attachments, remove } = useFlowAttachments(page.attachments);
 	const selection = useMemo(() => selectionOf(draft), [draft]);
 	const counted = useDebouncedValue(selection, COUNT_DELAY_MS);

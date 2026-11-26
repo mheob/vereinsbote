@@ -2,22 +2,20 @@
  * What the page of the send flow loads (Design 10): the occasion and its sender, the template with
  * what the browser's preview compiles it from (the same pieces as the editor's preview), the
  * groups and tags the recipients can be filtered by, the files the occasion holds for its next
- * wave, and the address the test mail goes to. Needs `send` in the occasion's area and the right
- * to list contacts; an archived occasion has no send flow.
+ * wave, the address the test mail goes to and the flow's key (ruling R19, `flow-key.ts`). Needs
+ * `send` in the occasion's area and the right to list contacts; an archived occasion has no send
+ * flow.
  */
-import { asc, and, eq, isNull } from 'drizzle-orm';
-
 import type { Brand } from '@/mail/brand/brand-schema';
 import type { MediaInfo } from '@/mail/render/compile';
 import type { LayoutHtml } from '@/mail/templates/mail-source';
 import type { TemplateInput } from '@/mail/templates/template-schema';
-import { toRecord } from '@/server/attachments/attachments';
+import { freeAttachmentsOf } from '@/server/attachments/attachments';
 import type { AttachmentRecord } from '@/server/attachments/attachments';
 import { assertCanList, loadContactAccess } from '@/server/contacts/access';
 import { listGroups } from '@/server/contacts/contacts';
 import { listTags } from '@/server/contacts/partners';
 import type { Db } from '@/server/db/client';
-import { attachments } from '@/server/db/schema';
 import type { OccasionKind } from '@/server/occasions/limits';
 import type { Principal } from '@/server/permissions/principal';
 import type { ConnectionKind } from '@/server/sending/connections';
@@ -26,6 +24,7 @@ import { loadSender } from '@/server/sending/senders';
 import { loadTemplateEditorData } from '@/server/templates/editor-data';
 import type { EditorPlaceholder } from '@/server/templates/editor-placeholders';
 
+import { currentFlowRequestId } from './flow-key';
 import { ownAddress } from './test-mail-content';
 import { sendableOccasion } from './waves';
 
@@ -60,22 +59,19 @@ interface SendFlowPage {
 	readonly ownAddress: string;
 	/** The origin of the app, for the preview's image addresses. */
 	readonly appOrigin: string;
+	/**
+	 * The key of the flow (ruling R19): the same for every page of this user and occasion until
+	 * the occasion has a new wave, so a second tab's confirmation gets the wave of the first.
+	 */
+	readonly requestId: string;
 }
 
-/**
- * The files an occasion holds for its next wave.
- *
- * @param db The database.
- * @param occasionId The occasion.
- * @returns The files, oldest first.
- */
-async function freeAttachmentsOf(db: Db, occasionId: string): Promise<AttachmentRecord[]> {
-	const rows = await db
-		.select()
-		.from(attachments)
-		.where(and(eq(attachments.occasionId, occasionId), isNull(attachments.waveId)))
-		.orderBy(asc(attachments.createdAt), asc(attachments.id));
-	return rows.map((row) => toRecord(row));
+/** What the page needs besides the database, the user and the occasion. */
+interface SendFlowContext {
+	/** The origin of the app (`APP_URL`). */
+	readonly appOrigin: string;
+	/** The key of the flow keys (`deriveFlowKey`). */
+	readonly flowKey: CryptoKey;
 }
 
 /**
@@ -84,19 +80,20 @@ async function freeAttachmentsOf(db: Db, occasionId: string): Promise<Attachment
  * @param db The database.
  * @param actor Who sends; needs `send` in the occasion's area.
  * @param occasionId The occasion.
- * @param appOrigin The origin of the app (`APP_URL`).
+ * @param context The origin of the app and the key of the flow keys.
  * @returns The page.
  * @throws {OccasionNotFoundError} When no occasion has the id.
  * @throws {ForbiddenError} Without `send` in the occasion's area or the right to list contacts.
  * @throws {OccasionInvalidError} When the occasion is archived (`archived`).
  */
-// oxlint-disable-next-line max-params -- the database, the user, the occasion and the origin
+// oxlint-disable-next-line max-params -- the database, the user, the occasion and the context
 async function loadSendFlowPage(
 	db: Db,
 	actor: Principal,
 	occasionId: string,
-	appOrigin: string,
+	context: Readonly<SendFlowContext>,
 ): Promise<SendFlowPage> {
+	const { appOrigin, flowKey } = context;
 	const occasion = await sendableOccasion(db, actor, occasionId);
 	assertCanList(await loadContactAccess(db, actor));
 	const editor = await loadTemplateEditorData(db, actor, occasion.templateId, appOrigin);
@@ -118,6 +115,10 @@ async function loadSendFlowPage(
 		},
 		ownAddress: await ownAddress(db, actor.userId),
 		placeholders: editor.placeholders,
+		requestId: await currentFlowRequestId(db, flowKey, {
+			occasionId: occasion.id,
+			userId: actor.userId,
+		}),
 		sender: { label: `${sender.displayName} <${sender.email}>`, provider: sender.connectionKind },
 		tags: await listTags(db),
 		template: {
@@ -131,4 +132,4 @@ async function loadSendFlowPage(
 }
 
 export { loadSendFlowPage };
-export type { SendFlowPage, SendFlowTemplate };
+export type { SendFlowContext, SendFlowPage, SendFlowTemplate };

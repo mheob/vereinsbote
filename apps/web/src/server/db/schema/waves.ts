@@ -34,9 +34,10 @@ import { outboxEntries, senders } from './sending';
  * One sending of an occasion (Design 11): made by a confirmation, with the template compiled at
  * that moment (`compiled`, `salutation_texts`), so later changes of the template, the brand or the
  * layout touch no wave. Its mails are the outbox entries with its `wave_id`. `request_id` is the
- * key of the flow that made it (plan decision 18): a second confirmation of the same flow finds the
- * wave instead of making another. `template_id` and `template_version` only record what was
- * compiled; the template may be gone later. `not_before` is null for a wave sent at once.
+ * key of the flow that made it (ruling R19, derived by the server): a second confirmation of the
+ * same flow finds the wave instead of making another. `template_id` and `template_version` only
+ * record what was compiled; the template may be gone later. `not_before` is null for a wave sent
+ * at once.
  */
 export const waves = pgTable(
 	'waves',

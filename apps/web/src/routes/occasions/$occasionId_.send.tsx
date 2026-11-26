@@ -14,7 +14,7 @@ import { useT } from '@/i18n/use-t';
  * The manual send flow of an occasion (Design 10), for whoever may send in its area. An occasion
  * that does not exist, one the user may not send for and an archived one are "not found". After
  * the confirmation the occasion's page announces the wave once, from the history state, never
- * from the URL. The file name ends the occasion's segment with `_`, so the flow is a page of its
+ * from the URL; a wave an earlier confirmation of the flow made is announced as such. The file name ends the occasion's segment with `_`, so the flow is a page of its
  * own and not a part of the occasion's page.
  */
 export const Route = createFileRoute('/occasions/$occasionId_/send')({
@@ -33,7 +33,11 @@ export const Route = createFileRoute('/occasions/$occasionId_/send')({
 					await router.navigate({
 						params,
 						state: {
-							waveNotice: { mails: wave.mails, notBefore: wave.notBefore?.toISOString() ?? null },
+							waveNotice: {
+								existing: wave.existing,
+								mails: wave.mails,
+								notBefore: wave.notBefore?.toISOString() ?? null,
+							},
 						},
 						to: '/occasions/$occasionId',
 					});
