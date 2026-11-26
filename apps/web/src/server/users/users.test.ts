@@ -1,4 +1,4 @@
-import { desc, eq } from 'drizzle-orm';
+import { desc, eq, sql } from 'drizzle-orm';
 import { describe, expect, it, vi } from 'vite-plus/test';
 
 import { createAuth, createSessionFor } from '@/server/auth/auth';
@@ -20,6 +20,7 @@ import {
 	inviteUser,
 	LastAdminError,
 	listUsersWithLevels,
+	resendInvitation,
 	setAdmin,
 	setAreaLevel,
 	UserExistsError,
@@ -114,6 +115,112 @@ function deps(
 
 const kimInvite = { email: ' Kim@V.de', isAdmin: false, locale: 'de', name: 'Kim' } as const;
 
+/**
+ * A mailer that cannot send.
+ *
+ * @returns The mailer.
+ */
+function failingMailer(): SystemMailer {
+	return {
+		prepare: vi.fn<SystemMailer['prepare']>().mockRejectedValue(new MailerNotConfiguredError()),
+		send: vi.fn<SystemMailer['send']>().mockRejectedValue(new MailerNotConfiguredError()),
+	};
+}
+
+/**
+ * What is stored about a user's invitation.
+ *
+ * @param db The database.
+ * @param id The user id.
+ * @returns When it last went out and whether that failed.
+ */
+async function invitationOf(
+	db: Db,
+	id: string,
+): Promise<{ sentAt: Date | null; failed: boolean } | undefined> {
+	const [row] = await db
+		.select({ failed: user.invitationFailed, sentAt: user.invitationSentAt })
+		.from(user)
+		.where(eq(user.id, id));
+	return row;
+}
+
+/**
+ * The id of a user.
+ *
+ * @param db The database.
+ * @param email The normalized address.
+ * @returns The id.
+ */
+async function idOf(db: Db, email: string): Promise<string> {
+	const found = await findUserByEmail(db, email);
+	if (found === null) throw new Error(`No user ${email}.`);
+	return found.id;
+}
+
+/**
+ * A mailer whose first mail waits until it is released; later mails go at once.
+ *
+ * @returns The mailer, a promise that the first mail has started, its release and the mails.
+ */
+function slowFirstMailer(): {
+	mailer: SystemMailer;
+	started: Promise<null>;
+	release: () => void;
+	sent: string[];
+} {
+	const started = Promise.withResolvers<null>();
+	const gate = Promise.withResolvers<null>();
+	const sent: string[] = [];
+	const mailer: SystemMailer = {
+		prepare: vi.fn<SystemMailer['prepare']>(),
+		async send(mail) {
+			sent.push(mail.to);
+			if (sent.length > 1) return;
+			started.resolve(null);
+			await gate.promise;
+		},
+	};
+	return {
+		mailer,
+		release: () => {
+			gate.resolve(null);
+		},
+		sent,
+		started: started.promise,
+	};
+}
+
+/**
+ * Invites Kim while the mail cannot be sent; the failure is logged and silenced here.
+ *
+ * @param db The database.
+ * @param actor The inviting admin.
+ * @returns Kim's id.
+ */
+async function inviteWithFailingMailer(db: Db, actor: Principal): Promise<string> {
+	const log = vi.spyOn(console, 'error').mockReturnValue();
+	try {
+		const { userId } = await inviteUser(deps(db, failingMailer()), actor, kimInvite);
+		return userId;
+	} finally {
+		log.mockRestore();
+	}
+}
+
+/**
+ * Moves every invitation back in time, as if the seconds had passed (the check uses the database
+ * clock).
+ *
+ * @param db The database.
+ * @param seconds How far to move them back.
+ */
+async function ageInvitations(db: Db, seconds: number): Promise<void> {
+	await db
+		.update(user)
+		.set({ invitationSentAt: sql`${user.invitationSentAt} - make_interval(secs => ${seconds})` });
+}
+
 describe(inviteUser, () => {
 	it('only admins can invite', async () => {
 		const db = await createTestDb();
@@ -130,10 +237,19 @@ describe(inviteUser, () => {
 		const mailer = new CapturingMailer();
 		const a = await admin(db);
 		await inviteUser(deps(db, mailer), a, kimInvite);
-		expect(mailer.sent[0]).toMatchObject({ subject: 'Einladung zum Vereinsbote', to: 'kim@v.de' });
-		expect(mailer.sent[0]?.text).toBe(
-			'Hallo Kim,\n\ndu wurdest zum Vereinsbote eingeladen. Melde dich hier an:\nhttps://b.example.org/login',
-		);
+		expect(mailer.sent[0]).toMatchObject({
+			content: {
+				button: { label: 'Zur Anmeldung', url: 'https://b.example.org/login' },
+				heading: 'Willkommen beim Vereinsbote',
+				paragraphs: [
+					'Hallo Kim,',
+					expect.stringContaining('du wurdest zum Vereinsbote eingeladen.'),
+				],
+			},
+			locale: 'de',
+			subject: 'Einladung zum Vereinsbote',
+			to: 'kim@v.de',
+		});
 	});
 
 	it('stores an invited user with the trimmed name, the role and the language', async () => {
@@ -162,8 +278,16 @@ describe(inviteUser, () => {
 		await inviteUser(deps(db, mailer), a, { ...kimInvite, locale: 'en' });
 		expect(mailer.sent).toStrictEqual([
 			{
+				content: {
+					button: { label: 'Go to sign-in', url: 'https://b.example.org/login' },
+					heading: 'Welcome to Vereinsbote',
+					paragraphs: [
+						'Hello Kim,',
+						'you have been invited to Vereinsbote. On the sign-in page, request a sign-in link with your e-mail address.',
+					],
+				},
+				locale: 'en',
 				subject: 'Invitation to Vereinsbote',
-				text: 'Hello Kim,\n\nyou have been invited to Vereinsbote. Sign in here:\nhttps://b.example.org/login',
 				to: 'kim@v.de',
 			},
 		]);
@@ -198,11 +322,8 @@ describe(inviteUser, () => {
 	it('keeps the invitation when the mail cannot be sent and says so', async () => {
 		const db = await createTestDb();
 		const a = await admin(db);
-		const failing: SystemMailer = {
-			send: vi.fn<SystemMailer['send']>().mockRejectedValue(new MailerNotConfiguredError()),
-		};
 		const log = vi.spyOn(console, 'error').mockReturnValue();
-		const result = await inviteUser(deps(db, failing), a, kimInvite);
+		const result = await inviteUser(deps(db, failingMailer()), a, kimInvite);
 		expect(result).toMatchObject({ mailSent: false });
 		await expect(findUserById(db, result.userId)).resolves.toMatchObject({ status: 'invited' });
 		expect(log).toHaveBeenCalledOnce();
@@ -214,6 +335,128 @@ describe(inviteUser, () => {
 		const db = await createTestDb();
 		const a = await admin(db);
 		await expect(inviteUser(deps(db), a, kimInvite)).resolves.toMatchObject({ mailSent: true });
+	});
+
+	it('stores when the invitation went out and that it did', async () => {
+		const db = await createTestDb();
+		const a = await admin(db);
+		const { userId } = await inviteUser(deps(db), a, kimInvite);
+		const stored = await invitationOf(db, userId);
+		expect(stored?.failed).toBe(false);
+		expect(stored?.sentAt).toBeInstanceOf(Date);
+	});
+});
+
+describe(resendInvitation, () => {
+	it('remembers a failed invitation and resends it at most once a minute', async () => {
+		const db = await createTestDb();
+		const a = await admin(db);
+		const userId = await inviteWithFailingMailer(db, a);
+		await expect(invitationOf(db, userId)).resolves.toMatchObject({ failed: true });
+
+		const mailer = new CapturingMailer();
+		await expect(resendInvitation(deps(db, mailer), a, userId)).resolves.toStrictEqual({
+			refused: 'tooSoon',
+		});
+		await ageInvitations(db, 61);
+		await expect(resendInvitation(deps(db, mailer), a, userId)).resolves.toStrictEqual({
+			mailSent: true,
+		});
+		// The minute starts again with every resend.
+		await expect(resendInvitation(deps(db, mailer), a, userId)).resolves.toStrictEqual({
+			refused: 'tooSoon',
+		});
+		expect(mailer.sent).toMatchObject([
+			{
+				content: { button: { url: 'https://b.example.org/login' } },
+				locale: 'de',
+				subject: 'Einladung zum Vereinsbote',
+				to: 'kim@v.de',
+			},
+		]);
+	});
+
+	it('shows a failed invitation in the user list until a resend goes out, and logs the resend', async () => {
+		const db = await createTestDb();
+		const a = await admin(db);
+		const userId = await inviteWithFailingMailer(db, a);
+		await expect(listUsersWithLevels(db, a)).resolves.toContainEqual(
+			expect.objectContaining({ id: userId, invitationFailed: true }),
+		);
+		await ageInvitations(db, 61);
+		await resendInvitation(deps(db), a, userId);
+		await expect(listUsersWithLevels(db, a)).resolves.toContainEqual(
+			expect.objectContaining({ id: userId, invitationFailed: false }),
+		);
+		const entry = await lastAudit(db);
+		expect(entry).toMatchObject({
+			action: 'user.invitation_resent',
+			actorUserId: a.userId,
+			details: { mailSent: true },
+			target: `user:${userId}`,
+		});
+		expect(JSON.stringify(entry)).not.toContain('@');
+	});
+
+	it('refuses a resend while the first invitation is still being sent', async () => {
+		const db = await createTestDb();
+		const a = await admin(db);
+		const slow = slowFirstMailer();
+		const invited = inviteUser(deps(db, slow.mailer), a, kimInvite);
+		await slow.started;
+
+		const resent = await resendInvitation(deps(db, slow.mailer), a, await idOf(db, 'kim@v.de'));
+		slow.release();
+		await invited;
+
+		expect(resent).toStrictEqual({ refused: 'tooSoon' });
+		expect(slow.sent).toStrictEqual(['kim@v.de']);
+	});
+
+	it('remembers a resend that failed again', async () => {
+		const db = await createTestDb();
+		const a = await admin(db);
+		const { userId } = await inviteUser(deps(db), a, kimInvite);
+		await ageInvitations(db, 61);
+		const failing = deps(db, failingMailer());
+		const log = vi.spyOn(console, 'error').mockReturnValue();
+		await expect(resendInvitation(failing, a, userId)).resolves.toStrictEqual({ mailSent: false });
+		expect(log).toHaveBeenCalledWith('invitation not sent', 'MailerNotConfiguredError');
+		log.mockRestore();
+		await expect(invitationOf(db, userId)).resolves.toMatchObject({ failed: true });
+		await expect(lastAudit(db)).resolves.toMatchObject({
+			action: 'user.invitation_resent',
+			details: { mailSent: false },
+		});
+	});
+
+	it('refuses to resend an invitation to an active user', async () => {
+		const db = await createTestDb();
+		const a = await admin(db);
+		const id = await kim(db);
+		const mailer = new CapturingMailer();
+		await expect(resendInvitation(deps(db, mailer), a, id)).resolves.toStrictEqual({
+			refused: 'notInvited',
+		});
+		await expect(resendInvitation(deps(db, mailer), a, crypto.randomUUID())).resolves.toStrictEqual(
+			{ refused: 'notInvited' },
+		);
+		expect(mailer.sent).toStrictEqual([]);
+		await expect(lastAudit(db)).resolves.toBeUndefined();
+	});
+
+	it('only admins can resend invitations', async () => {
+		const db = await createTestDb();
+		const a = await admin(db);
+		const { userId } = await inviteUser(deps(db), a, kimInvite);
+		await ageInvitations(db, 61);
+		const { id } = await insertUser(db, { email: 'eva@v.de', name: 'Eva', status: 'active' });
+		const p = await principalOf(db, id);
+		const mailer = new CapturingMailer();
+		await expect(resendInvitation(deps(db, mailer), p, userId)).rejects.toBeInstanceOf(
+			ForbiddenError,
+		);
+		expect(mailer.sent).toStrictEqual([]);
 	});
 });
 
@@ -528,6 +771,7 @@ describe(listUsersWithLevels, () => {
 			{
 				email: 'admin@v.de',
 				id: a.userId,
+				invitationFailed: false,
 				isAdmin: true,
 				levels: {},
 				name: 'Alex',
@@ -536,6 +780,7 @@ describe(listUsersWithLevels, () => {
 			{
 				email: 'kim@v.de',
 				id,
+				invitationFailed: false,
 				isAdmin: false,
 				levels: { [finance]: 'read', [members]: 'send' },
 				name: 'Kim',

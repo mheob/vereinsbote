@@ -4,6 +4,7 @@ import { E2E_SETUP_TOKEN, E2E_URL } from './env';
 import { expectNoA11yViolations } from './helpers/a11y';
 import { saveAdminSession } from './helpers/admin-session';
 import { latestLink } from './helpers/mailpit';
+import { LOGIN_LINK } from './helpers/sign-in';
 import { cspViolationsReported, expect, test } from './helpers/test';
 
 const HTTP_NOT_FOUND = 404;
@@ -69,6 +70,14 @@ test('setup, invitation, sign-in, permissions, blocking and sign-out', async ({
 	await page.getByRole('option', { name: 'Lesen' }).click();
 	await expect(page.getByRole('status')).toHaveText('Finanzen für Kim: Lesen');
 	expect(await latestLink('kim@verein.test', /\/login/u)).toMatch(/\/login$/u);
+	// The invitation went out just now, so a resend has to wait a minute.
+	await page
+		.getByRole('row', { name: /Kim/u })
+		.getByRole('button', { name: 'Einladung erneut senden' })
+		.click();
+	await expect(page.getByRole('alert')).toHaveText(
+		'Die Einladung an Kim wurde gerade erst verschickt. Bitte warte eine Minute und versuche es dann erneut.',
+	);
 
 	const kimContext = await browser.newContext();
 	const kim = await kimContext.newPage();
@@ -78,11 +87,25 @@ test('setup, invitation, sign-in, permissions, blocking and sign-out', async ({
 	await expectNoA11yViolations(kim);
 	await kim.getByLabel('E-Mail').fill(' Kim@Verein.test');
 	await kim.getByRole('button', { name: 'Anmeldelink anfordern' }).click();
-	await kim.goto(await latestLink('kim@verein.test', /magic-link/u));
+	// Opening the link (as a mail scanner would) only shows the confirmation page.
+	const kimLink = await latestLink('kim@verein.test', LOGIN_LINK);
+	await kim.goto(kimLink);
+	await expect(kim).toHaveTitle('Anmeldung bestätigen – Vereinsbote');
+	const confirm = kim.getByRole('button', { exact: true, name: 'Anmelden' });
+	await expect(confirm).toBeEnabled();
+	await expect(kim.getByRole('button', { name: 'Abmelden' })).toHaveCount(0);
+	await expectNoA11yViolations(kim);
+	await confirm.click();
 	await expect(kim.getByRole('heading', { name: 'Deine Bereiche' })).toBeVisible();
 	await expectNoA11yViolations(kim);
 	await expect(kim.getByText('Finanzen – Lesen')).toBeVisible();
 	await expect(kim.getByText(/Mitglieder/u)).toHaveCount(0);
+	// The link works once: used again, it leads back to the sign-in page with the error.
+	await kim.goto(kimLink);
+	await expect(confirm).toBeEnabled();
+	await confirm.click();
+	await expect(kim).toHaveURL(/\/login\?error=/u);
+	await expect(kim.getByRole('alert')).toContainText('Der Link ist ungültig, abgelaufen');
 	await kim.goto('/admin/users');
 	await expect(kim.getByRole('heading', { name: 'Kein Zugriff' })).toBeVisible();
 	await expectNoA11yViolations(kim);

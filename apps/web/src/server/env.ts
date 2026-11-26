@@ -1,5 +1,8 @@
 import { z } from 'zod';
 
+import { platformName } from '@/platform/platform';
+import type { PlatformName } from '@/platform/platform';
+
 import type { S3Config } from './storage/s3';
 
 const SECRET_BYTES = 32;
@@ -21,6 +24,7 @@ const VARIABLE_ORDER = [
 	'MS_LOGIN_TENANT_ID',
 	'DEV_SMTP_URL',
 	'DEV_NEON_WS_PROXY',
+	'DEV_PROVIDERS_URL',
 	'HEARTBEAT_URL',
 	'TICK_INTERVAL_MS',
 	'S3_ENDPOINT',
@@ -77,6 +81,19 @@ const toAppUrl = (value: string, ctx: z.RefinementCtx): URL => {
 	return z.NEVER;
 };
 
+const toDevProvidersUrl = (value: string, ctx: z.RefinementCtx): URL => {
+	const url = parseUrl(value);
+	if (
+		url !== null &&
+		isOriginOnly(url) &&
+		url.protocol === 'http:' &&
+		LOCAL_HOSTS.has(url.hostname)
+	)
+		return url;
+	ctx.addIssue({ code: 'custom', message: 'invalid' });
+	return z.NEVER;
+};
+
 const isHttpsUrl = (value: string): boolean => parseUrl(value)?.protocol === 'https:';
 
 // S3 traffic carries the credentials' signatures and the images: https, or http to this machine.
@@ -114,6 +131,8 @@ const schema = z.object({
 		.string()
 		.regex(/^[\w.-]+(?::\d+)?(?:\/[\w./-]*)?$/u)
 		.optional(),
+	// The local fake server of the mail providers (e2e, development): `http://localhost:<port>`.
+	DEV_PROVIDERS_URL: z.string().transform(toDevProvidersUrl).optional(),
 	DEV_SMTP_URL: z.string().startsWith('smtp://').optional(),
 	HEARTBEAT_URL: z.string().refine(isHttpsUrl).optional(),
 	MS_LOGIN_CLIENT_ID: z.string().optional(),
@@ -160,6 +179,24 @@ const misplacedNeonProxy = (
 	return local ? [] : ['DEV_NEON_WS_PROXY'];
 };
 
+/**
+ * DEV_PROVIDERS_URL: development only. Provider credentials and mails would go unencrypted to
+ * that address, so it needs a local `http://` APP_URL and is refused on Cloudflare and Vercel.
+ *
+ * @param source The trimmed values.
+ * @param platform The build's platform.
+ * @returns The variable when it is set outside local development.
+ */
+const misplacedProvidersUrl = (
+	source: Readonly<Record<string, string | undefined>>,
+	platform: PlatformName = platformName(),
+): readonly string[] => {
+	if (source.DEV_PROVIDERS_URL === undefined) return [];
+	const appUrl = parseUrl(source.APP_URL ?? '');
+	const local = appUrl?.protocol === 'http:' && LOCAL_HOSTS.has(appUrl.hostname);
+	return local && platform === 'node' ? [] : ['DEV_PROVIDERS_URL'];
+};
+
 const toS3Config = (data: z.output<typeof schema>): S3Config | null => {
 	const { S3_ACCESS_KEY_ID: accessKeyId, S3_BUCKET: bucket, S3_ENDPOINT: endpoint } = data;
 	const { S3_REGION: region, S3_SECRET_ACCESS_KEY: secretAccessKey } = data;
@@ -183,6 +220,8 @@ export interface Env {
 	databaseUrl: string;
 	/** A local Neon WebSocket proxy (`host:port/path`) for the `neon` driver, development only. */
 	devNeonWsProxy: string | null;
+	/** The local fake server of the mail providers, development and e2e only. */
+	devProvidersUrl: URL | null;
 	devSmtpUrl: string | null;
 	heartbeatUrl: string | null;
 	microsoftLogin: { clientId: string; clientSecret: string; tenantId: string } | null;
@@ -210,6 +249,7 @@ export function parseEnv(source: Readonly<Record<string, string | undefined>>): 
 		...missingFromGroup(values, MS_LOGIN_VARIABLES),
 		...missingFromGroup(values, S3_VARIABLES),
 		...misplacedNeonProxy(values),
+		...misplacedProvidersUrl(values),
 	]);
 	if (!result.success) {
 		for (const name of Object.keys(z.flattenError(result.error).fieldErrors)) offending.add(name);
@@ -227,6 +267,7 @@ export function parseEnv(source: Readonly<Record<string, string | undefined>>): 
 		cronSecret: data.CRON_SECRET,
 		databaseUrl: data.DATABASE_URL,
 		devNeonWsProxy: data.DEV_NEON_WS_PROXY ?? null,
+		devProvidersUrl: data.DEV_PROVIDERS_URL ?? null,
 		devSmtpUrl: data.DEV_SMTP_URL ?? null,
 		heartbeatUrl: data.HEARTBEAT_URL ?? null,
 		microsoftLogin:
@@ -241,3 +282,5 @@ export function parseEnv(source: Readonly<Record<string, string | undefined>>): 
 				: Number(data.TICK_INTERVAL_MS),
 	};
 }
+
+export { misplacedProvidersUrl };

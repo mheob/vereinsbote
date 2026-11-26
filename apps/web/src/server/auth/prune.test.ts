@@ -2,7 +2,14 @@ import { sql } from 'drizzle-orm';
 import { describe, expect, it } from 'vite-plus/test';
 
 import type { Db } from '@/server/db/client';
-import { loginLinkWindow, rateLimit, session, user, verification } from '@/server/db/schema';
+import {
+	loginLinkDays,
+	loginLinkWindow,
+	rateLimit,
+	session,
+	user,
+	verification,
+} from '@/server/db/schema';
 import { createTestDb } from '@/server/db/test-db';
 import { parseEnv } from '@/server/env';
 import type { TickContext } from '@/server/tick/tick';
@@ -19,7 +26,7 @@ const env = parseEnv({
 const HOUR_MS = 3_600_000;
 
 function context(db: Db, now: () => Date = () => new Date()): TickContext {
-	return { db, deadline: Date.now() + HOUR_MS, env, now };
+	return { db, deadline: Date.now() + HOUR_MS, env, now, storage: null, subrequests: null };
 }
 
 /**
@@ -161,6 +168,38 @@ describe('prune-auth-records', () => {
 		await expect(rateLimitIds(db)).resolves.toStrictEqual(['r1', 'r3']);
 	});
 
+	it('deletes the login link counters of past club days', async () => {
+		const db = await createTestDb();
+		await db.insert(loginLinkDays).values([
+			{ count: 3, day: '2026-11-24', emailHash: 'h0' },
+			{ count: 10, day: '2026-11-25', emailHash: 'h1' },
+			{ count: 1, day: '2026-11-26', emailHash: 'h1' },
+			{ count: 2, day: '2026-11-26', emailHash: 'h2' },
+		]);
+		// Half past midnight in Berlin: the 26th has begun, while it is still the 25th in UTC.
+		const now = new Date('2026-11-25T23:30:00Z');
+		const ctx = {
+			db,
+			deadline: now.getTime() + HOUR_MS,
+			env,
+			now: () => now,
+			storage: null,
+			subrequests: null,
+		};
+		await expect(createPruneAuthRecordsStep(1).run(ctx)).resolves.toStrictEqual({
+			moreWork: false,
+		});
+		await expect(
+			db
+				.select({ day: loginLinkDays.day, emailHash: loginLinkDays.emailHash })
+				.from(loginLinkDays)
+				.orderBy(loginLinkDays.emailHash),
+		).resolves.toStrictEqual([
+			{ day: '2026-11-26', emailHash: 'h1' },
+			{ day: '2026-11-26', emailHash: 'h2' },
+		]);
+	});
+
 	it('deletes in batches until nothing is left', async () => {
 		const db = await createTestDb();
 		await insertVerifications(db, [-1, -2, -3, -4, -5, 600]);
@@ -180,7 +219,14 @@ describe('prune-auth-records', () => {
 		await insertVerifications(db, [-1, -2, -3]);
 		await insertWindows(db, [61]);
 		const deadline = Date.now() + HOUR_MS;
-		const ctx = { db, deadline, env, now: clockReachingDeadlineAfterOneBatch(deadline) };
+		const ctx = {
+			db,
+			deadline,
+			env,
+			now: clockReachingDeadlineAfterOneBatch(deadline),
+			storage: null,
+			subrequests: null,
+		};
 		await expect(createPruneAuthRecordsStep(2).run(ctx)).resolves.toStrictEqual({ moreWork: true });
 		await expect(verificationIds(db)).resolves.toHaveLength(1);
 		await expect(windowHashes(db)).resolves.toHaveLength(1);
@@ -194,7 +240,14 @@ describe('prune-auth-records', () => {
 		await insertRateLimits(db, [3600]);
 		const deadline = Date.now() + HOUR_MS;
 		const step = createPruneAuthRecordsStep(2);
-		await step.run({ db, deadline, env, now: clockReachingDeadlineAfterOneBatch(deadline) });
+		await step.run({
+			db,
+			deadline,
+			env,
+			now: clockReachingDeadlineAfterOneBatch(deadline),
+			storage: null,
+			subrequests: null,
+		});
 		await expect(step.run(context(db))).resolves.toStrictEqual({ moreWork: false });
 		await expect(verificationIds(db)).resolves.toStrictEqual([]);
 		await expect(windowHashes(db)).resolves.toStrictEqual([]);

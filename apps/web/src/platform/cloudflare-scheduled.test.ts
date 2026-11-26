@@ -5,6 +5,8 @@ import { TICK_BUDGET_MS } from '@/server/tick/tick';
 import type { TickReport } from '@/server/tick/tick';
 
 import { LAST_START_MS, runScheduledTicks } from './cloudflare-scheduled';
+import { CLOUDFLARE_PROVIDER_REQUESTS } from './subrequests';
+import type { SubrequestBudget } from './subrequests';
 
 const START = Date.parse('2026-11-23T10:00:00.000Z');
 
@@ -30,6 +32,22 @@ describe(runScheduledTicks, () => {
 		// Every tick uses its whole budget: ticks start at 0, 4 and 8 minutes, not at 12.
 		const now = (): number => START + run.mock.calls.length * TICK_BUDGET_MS;
 		await expect(runScheduledTicks(run, now)).resolves.toBe(3);
+	});
+
+	it('hands every tick of the invocation the same subrequest budget', async () => {
+		const seen: number[] = [];
+		const run = vi.fn<(budget: SubrequestBudget) => Promise<TickReport>>(async (budget) => {
+			seen.push(budget.left());
+			budget.take();
+			await Promise.resolve();
+			return completed(seen.length < 3);
+		});
+		await expect(runScheduledTicks(run, () => START)).resolves.toBe(3);
+		expect(seen).toStrictEqual([
+			CLOUDFLARE_PROVIDER_REQUESTS,
+			CLOUDFLARE_PROVIDER_REQUESTS - 1,
+			CLOUDFLARE_PROVIDER_REQUESTS - 2,
+		]);
 	});
 
 	it('stops at the hop cap', async () => {

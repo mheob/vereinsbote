@@ -6,11 +6,12 @@ import { runMigrations } from '@/server/db/migrate';
 import { openPgDb } from '@/server/db/pg-client';
 import { waitForLockWaiters } from '@/server/db/postgres-testing';
 import { user } from '@/server/db/schema';
+import { CapturingMailer } from '@/server/mail/testing';
 import { loadPrincipal } from '@/server/permissions/principal';
 import type { Principal } from '@/server/permissions/principal';
 
 import { insertUser } from './repo';
-import { disableUser, LastAdminError, setAdmin } from './users';
+import { disableUser, inviteUser, LastAdminError, resendInvitation, setAdmin } from './users';
 
 /*
  * The last-admin rule under real concurrency. PGlite runs one statement at a time, so there the
@@ -102,5 +103,34 @@ describe.skipIf(serverUrl === '')('the last admin on PostgreSQL (needs TEST_POST
 			.from(user)
 			.where(and(eq(user.isAdmin, true), eq(user.status, 'active')));
 		expect(activeAdmins).toHaveLength(1);
+	});
+
+	it('sends one invitation when two admins resend it at once', async () => {
+		const db = testDb();
+		const alex = await activeAdmin(db, 'alex2@v.de');
+		const bo = await activeAdmin(db, 'bo2@v.de');
+		const mailer = new CapturingMailer();
+		const deps = { appUrl: new URL('https://b.example.org'), db, mailer };
+		const { userId } = await inviteUser(deps, alex, {
+			email: 'kim@v.de',
+			isAdmin: false,
+			locale: 'de',
+			name: 'Kim',
+		});
+		await db
+			.update(user)
+			.set({ invitationSentAt: sql`now() - interval '2 minutes'` })
+			.where(eq(user.id, userId));
+
+		const results = await Promise.all([
+			resendInvitation(deps, alex, userId),
+			resendInvitation(deps, bo, userId),
+		]);
+
+		expect(results).toStrictEqual(
+			expect.arrayContaining([{ mailSent: true }, { refused: 'tooSoon' }]),
+		);
+		// The invitation and one resend.
+		expect(mailer.sent).toHaveLength(2);
 	});
 });

@@ -7,6 +7,7 @@ import { getRequest } from '@tanstack/react-start/server';
 import { cspNonceFor } from './platform/csp-nonce';
 import { routerDefaults } from './router-defaults';
 import { routeTree } from './routeTree.gen';
+import type { SelfTestResult } from './server/sending/open-transport';
 
 declare module '@tanstack/react-router' {
 	interface Register {
@@ -19,6 +20,15 @@ declare module '@tanstack/react-router' {
 		deletedContact?: string;
 		/** A partner was just created; its page announces „Gespeichert.“ once. */
 		partnerSaved?: boolean;
+		/** What the check of a new connection's credentials found; its page shows it once. */
+		sendingCheck?: 'failed' | 'none' | 'ok' | 'unchecked';
+		/** The self test a new sender just ran; its page shows it once. */
+		sendingSelfTest?: SelfTestResult;
+		/** A connection or sender was just created or deleted; the overview of the sending announces it. */
+		sendingNotice?: {
+			kind: 'connectionCreated' | 'connectionDeleted' | 'senderCreated' | 'senderDeleted';
+			name: string;
+		};
 		/** A template was just copied (its page announces it) or deleted (the list announces it). */
 		templateNotice?: { kind: 'copied' | 'deleted'; name: string };
 	}

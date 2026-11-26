@@ -13,6 +13,7 @@
 		"db:migrate:vercel": "tsx src/server/db/migrate-vercel-cli.ts",
 		"deploy:cloudflare": "vp run build:cloudflare && vp run db:migrate && wrangler deploy",
 		"dev": "vp dev",
+		"dev:providers": "node e2e/fakes/providers.ts",
 		"e2e": "playwright test",
 		"icons:social": "tsx scripts/build-social-icons.ts",
 		"mail:sample": "tsx src/server/mail/sample-cli.ts"

@@ -114,7 +114,14 @@ async function signInWithLoginLink(
 	email: string,
 ): Promise<void> {
 	await requestLoginLink(auth, email);
-	const token = /token=(?<token>[^&\s]+)/u.exec(sent.at(-1)?.text ?? '')?.groups?.token;
+	// The delivery starts one macrotask after the request; this timer fires after it.
+	const { promise, resolve } = Promise.withResolvers<null>();
+	setTimeout(() => {
+		resolve(null);
+	}, 0);
+	await promise;
+	const link = sent.at(-1)?.content.button?.url ?? '';
+	const token = /token=(?<token>[^&\s]+)/u.exec(link)?.groups?.token;
 	if (token === undefined) throw new Error('No login link was sent.');
 	await verifyLoginLink(auth, token);
 }

@@ -2,9 +2,11 @@ import {
 	bigint,
 	boolean,
 	check,
+	date,
 	index,
 	integer,
 	pgTable,
+	primaryKey,
 	text,
 	timestamp,
 	uniqueIndex,
@@ -40,6 +42,13 @@ export const user = pgTable(
 			.primaryKey()
 			.$defaultFn(() => crypto.randomUUID()),
 		image: text('image'),
+		/** The last invitation mail could not be sent; the user list says so. */
+		invitationFailed: boolean('invitation_failed').notNull().default(false),
+		/**
+		 * When the last invitation mail went out or was tried (database clock); null for users
+		 * without one, such as the setup's admin. A resend waits a minute after it.
+		 */
+		invitationSentAt: timestamp('invitation_sent_at', { withTimezone: true }),
 		isAdmin: boolean('is_admin').notNull().default(false),
 		/** The language of the user's system mails, set by the language switcher. */
 		locale: text('locale', { enum: SUPPORTED_LOCALES }).notNull().default(DEFAULT_LOCALE),
@@ -136,6 +145,22 @@ export const loginLinkWindow = pgTable('login_link_window', {
 	emailHash: text('email_hash').primaryKey(),
 	openedAt: timestamp('opened_at', { withTimezone: true }).notNull(),
 });
+
+/**
+ * The login links per address and club day (Europe/Berlin), at most `LOGIN_LINKS_PER_DAY`
+ * (`takeLoginLinkOfDay`). Keyed by the same HMAC of the address as `login_link_window`, so no
+ * address is stored here either. Every request writes it, whether the address is invited or not;
+ * past days are pruned.
+ */
+export const loginLinkDays = pgTable(
+	'login_link_days',
+	{
+		count: integer('count').notNull().default(0),
+		day: date('day', { mode: 'string' }).notNull(),
+		emailHash: text('email_hash').notNull(),
+	},
+	(table) => [primaryKey({ columns: [table.emailHash, table.day] })],
+);
 
 // Better Auth joins users with their accounts and sessions through these relations; without
 // them it cannot find the owner of a linked Microsoft account.

@@ -16,6 +16,7 @@ export default defineConfig({
 	fullyParallel: false,
 	globalSetup: './e2e/global-setup.ts',
 	// One project per flow. `contacts` and `design` need the club that `fundament` sets up, so they run after it; `templates` needs the areas and the CD of those two.
+	// `sending` runs last: it sets the system sender, so from then on the app's mails go through the fake provider.
 	projects: [
 		{ name: 'fundament', testMatch: 'fundament.e2e.ts', use: { ...devices['Desktop Chrome'] } },
 		{
@@ -36,6 +37,12 @@ export default defineConfig({
 			testMatch: 'templates.e2e.ts',
 			use: { ...devices['Desktop Chrome'] },
 		},
+		{
+			dependencies: ['templates'],
+			name: 'sending',
+			testMatch: 'sending.e2e.ts',
+			use: { ...devices['Desktop Chrome'] },
+		},
 	],
 	reporter: isCi ? [['github'], ['list']] : 'list',
 	testDir: './e2e',
@@ -47,14 +54,22 @@ export default defineConfig({
 		locale: 'de-DE',
 		trace: 'retain-on-failure',
 	},
-	webServer: {
-		command: 'vp run build:node && node dist/node/server/index.mjs',
-		env: E2E_SERVER_ENV,
-		reuseExistingServer: false,
-		// The command builds first; a cold CI runner needs more than the default minute.
-		timeout: 180_000,
-		// The server answers once it has migrated the database and reaches it.
-		url: `${E2E_URL}/api/health`,
-	},
+	webServer: [
+		{
+			command: 'vp run build:node && node dist/node/server/index.mjs',
+			env: E2E_SERVER_ENV,
+			reuseExistingServer: false,
+			// The command builds first; a cold CI runner needs more than the default minute.
+			timeout: 180_000,
+			// The server answers once it has migrated the database and reaches it.
+			url: `${E2E_URL}/api/health`,
+		},
+		{
+			// The fake Graph and Resend of the sending tests; it delivers accepted mail to Mailpit.
+			command: 'node e2e/fakes/providers.ts',
+			reuseExistingServer: false,
+			url: 'http://localhost:3200/__control/requests',
+		},
+	],
 	workers: 1,
 });

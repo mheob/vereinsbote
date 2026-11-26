@@ -45,6 +45,8 @@ async function insertUser(
 		isAdmin?: boolean;
 		status?: UserStatus;
 		locale?: Locale;
+		/** True stores now (database clock) as the time of the user's invitation mail. */
+		invitationSent?: boolean;
 	}>,
 ): Promise<{ id: string }> {
 	const [row] = await db
@@ -55,6 +57,7 @@ async function insertUser(
 			locale: input.locale ?? DEFAULT_LOCALE,
 			name: input.name,
 			status: input.status ?? 'invited',
+			...(input.invitationSent === true ? { invitationSentAt: sql`now()` } : {}),
 		})
 		.returning({ id: user.id });
 	if (row === undefined) throw new Error('Inserting the user returned no row.');

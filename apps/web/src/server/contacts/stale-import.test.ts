@@ -1,11 +1,10 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { describe, expect, it } from 'vite-plus/test';
 
 import type { Db } from '@/server/db/client';
-import { auditLog } from '@/server/db/schema';
+import { auditLog, systemState } from '@/server/db/schema';
 import { createTestDb } from '@/server/db/test-db';
 import { parseEnv } from '@/server/env';
-import { createSystemMailer } from '@/server/mail/system-mailer';
 import { CapturingMailer } from '@/server/mail/testing';
 import { runTick } from '@/server/tick/tick';
 import { insertUser } from '@/server/users/repo';
@@ -23,6 +22,8 @@ const env = parseEnv({
 });
 
 const DAY_MS = 86_400_000;
+const HOUR_MS = 3_600_000;
+const HALF_AN_HOUR_MS = 1_800_000;
 const NOW = new Date('2026-11-24T10:00:00Z');
 
 function daysAfter(at: Date, days: number): Date {
@@ -48,6 +49,7 @@ async function tickAt(
 		env,
 		now: () => at,
 		steps: [createStaleImportWarningStep(() => mailer)],
+		storage: null,
 	});
 }
 
@@ -102,11 +104,25 @@ describe(createStaleImportWarningStep, () => {
 			'The member data in Vereinsbote is out of date',
 		]);
 		for (const mail of mailer.sent) {
-			expect(mail.text).toContain('https://bote.example.org/contacts/import/members');
+			expect(mail.content.button?.url).toBe('https://bote.example.org/contacts/import/members');
 		}
 		const german = mailer.sent.find((mail) => mail.to === 'admin@example.org');
-		expect(german?.text).toContain('Hallo Test Admin');
-		expect(german?.text).toContain('der letzte Mitglieder-Import war am 22. September 2026');
+		expect(german).toMatchObject({
+			content: {
+				button: { label: 'Mitglieder importieren' },
+				heading: 'Die Mitgliederdaten sind veraltet',
+				paragraphs: [
+					'Hallo Test Admin,',
+					'der letzte Mitglieder-Import war am 22. September 2026. Bitte lade einen aktuellen Export hoch.',
+				],
+			},
+			locale: 'de',
+		});
+		const english = mailer.sent.find((mail) => mail.to === 'en-admin@example.org');
+		expect(english).toMatchObject({
+			content: { heading: 'The member data is out of date' },
+			locale: 'en',
+		});
 	});
 
 	it('warns again only after seven days', async () => {
@@ -121,7 +137,7 @@ describe(createStaleImportWarningStep, () => {
 		expect(mailer.sent).toHaveLength(2);
 	});
 
-	it('does not retry within the week without a mailer', async () => {
+	it('gives the week back when nobody was reached and tries again an hour later', async () => {
 		const db = await createTestDb();
 		await setUpClub(db);
 		await insertUser(db, {
@@ -131,16 +147,82 @@ describe(createStaleImportWarningStep, () => {
 			status: 'active',
 		});
 		await lastImportedWeeksAgo(db, 9);
-		const step = createStaleImportWarningStep(createSystemMailer);
-		const report = await runTick({ db, env, now: () => NOW, steps: [step] });
+		// The real mailer: no system sender and no SMTP in the tests.
+		const step = createStaleImportWarningStep();
+		const report = await runTick({ db, env, now: () => NOW, steps: [step], storage: null });
 		expect(report).toMatchObject({ steps: [{ name: 'stale-import-warning', outcome: 'done' }] });
-		const [entry] = await warningEntries(db);
-		expect(entry).toMatchObject({
-			action: 'import.stale_warning',
-			details: { error: 'MailerNotConfiguredError', failed: 2, sent: 0 },
+		const claimed = await db
+			.select()
+			.from(systemState)
+			.where(eq(systemState.key, 'stale_import_warned_at'));
+		const unlogged = await warningEntries(db);
+		const mailer = new CapturingMailer();
+		await tickAt(db, new Date(NOW.getTime() + HALF_AN_HOUR_MS), mailer);
+		const withinTheHour = mailer.sent.length;
+		await tickAt(db, new Date(NOW.getTime() + HOUR_MS), mailer);
+		expect({ claimed, unlogged, withinTheHour }).toStrictEqual({
+			claimed: [],
+			unlogged: [],
+			withinTheHour: 0,
 		});
-		await runTick({ db, env, now: () => daysAfter(NOW, 0.1), steps: [step] });
-		await expect(warningEntries(db)).resolves.toHaveLength(1);
+		expect(mailer.sent).toHaveLength(2);
+		await expect(warningEntries(db)).resolves.toMatchObject([{ details: { failed: 0, sent: 2 } }]);
+	});
+
+	it('takes the claimed week back when the audit entry fails', async () => {
+		const db = await createTestDb();
+		await setUpClub(db);
+		await lastImportedWeeksAgo(db, 9);
+		const breaking = new CapturingMailer();
+		const originalSend = breaking.send.bind(breaking);
+		breaking.send = async (mail) => {
+			await originalSend(mail);
+			// The log is gone by the time the warning is written.
+			await db.execute(sql`alter table audit_log rename to audit_log_gone`);
+		};
+		const report = await runTick({
+			db,
+			env,
+			now: () => NOW,
+			steps: [createStaleImportWarningStep(() => breaking)],
+			storage: null,
+		});
+		expect(report).toMatchObject({ steps: [{ name: 'stale-import-warning', outcome: 'error' }] });
+		await expect(
+			db.select().from(systemState).where(eq(systemState.key, 'stale_import_warned_at')),
+		).resolves.toStrictEqual([]);
+
+		await db.execute(sql`alter table audit_log_gone rename to audit_log`);
+		const mailer = new CapturingMailer();
+		await tickAt(db, daysAfter(NOW, 0.1), mailer);
+		expect(mailer.sent).toHaveLength(1);
+	});
+
+	it('restores the earlier week when the audit entry fails', async () => {
+		const db = await createTestDb();
+		await setUpClub(db);
+		await lastImportedWeeksAgo(db, 12);
+		await tickAt(db, daysAfter(NOW, -8), new CapturingMailer());
+		const [before] = await db
+			.select()
+			.from(systemState)
+			.where(eq(systemState.key, 'stale_import_warned_at'));
+		const breaking = new CapturingMailer();
+		breaking.send = async () => {
+			await db.execute(sql`alter table audit_log rename to audit_log_gone`);
+		};
+		await runTick({
+			db,
+			env,
+			now: () => NOW,
+			steps: [createStaleImportWarningStep(() => breaking)],
+			storage: null,
+		});
+		const [after] = await db
+			.select()
+			.from(systemState)
+			.where(eq(systemState.key, 'stale_import_warned_at'));
+		expect(after?.value).toStrictEqual(before?.value);
 	});
 
 	it('stops warning after a new import', async () => {

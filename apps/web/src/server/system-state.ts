@@ -5,8 +5,13 @@ import { systemState } from './db/schema';
 
 type StateKey =
 	| 'last_tick'
+	| 'sending_digest_day'
+	| 'sending_disturbance_warned'
+	| 'sending_secret_warned'
+	| 'sending_warning_retry'
 	| 'setup_completed_at'
 	| 'setup_session_opened_at'
+	| 'stale_import_retry_at'
 	| 'stale_import_warned_at'
 	| 'tick_lock';
 
@@ -41,5 +46,15 @@ async function setState(db: Db, key: StateKey, value: unknown): Promise<void> {
 		});
 }
 
-export { getState, setState };
+/**
+ * Removes a state value, as if it had never been set.
+ *
+ * @param db The database.
+ * @param key The state key.
+ */
+async function clearState(db: Db, key: StateKey): Promise<void> {
+	await db.delete(systemState).where(eq(systemState.key, key));
+}
+
+export { clearState, getState, setState };
 export type { StateKey };

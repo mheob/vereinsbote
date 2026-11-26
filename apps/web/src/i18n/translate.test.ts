@@ -47,19 +47,18 @@ describe(translate, () => {
 		expect({
 			appName: translate('en', 'app.name'),
 			emailLabel: translate('en', 'auth.emailLabel'),
-			loginSubject: translate('en', 'mail.login.subject'),
-			loginText: translate('en', 'mail.login.text', { link: 'https://x' }),
+			loginSubject: translate('en', 'mail.system.login.subject'),
 			microsoft: translate('en', 'auth.microsoft'),
 			requestLink: translate('en', 'auth.requestLink'),
+			staleText: translate('en', 'mail.system.staleImport.text', { date: 'June 1, 2026' }),
 			tooManyRequests: translate('en', 'auth.tooManyRequests'),
 		}).toStrictEqual({
 			appName: 'Vereinsbote',
 			emailLabel: 'Email',
 			loginSubject: 'Your sign-in link for Vereinsbote',
-			loginText:
-				'Hello,\n\nhere is your sign-in link:\nhttps://x\n\nThe link is valid for 15 minutes and works once.',
 			microsoft: 'Sign in with Microsoft',
 			requestLink: 'Request sign-in link',
+			staleText: 'the last member import was on June 1, 2026. Please upload a current export.',
 			tooManyRequests: 'Too many requests. Please wait a minute and try again.',
 		});
 		expect(translate('de', 'app.name')).toBe('Vereinsbote');

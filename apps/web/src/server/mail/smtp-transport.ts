@@ -1,7 +1,5 @@
 import { createTransport } from 'nodemailer';
 
-import type { SystemMail } from './system-mailer';
-
 /** A file sent inline, referred to from the HTML as `cid:<cid>` (the sample mails). */
 interface InlineAttachment {
 	cid: string;
@@ -9,12 +7,20 @@ interface InlineAttachment {
 	contentType: string;
 }
 
+/** A finished mail: the system mails of `DEV_SMTP_URL` and the sample mails. */
+interface SmtpMail {
+	from: string;
+	to: string;
+	subject: string;
+	text: string;
+	html: string;
+	attachments?: InlineAttachment[];
+}
+
 interface SmtpTransport {
-	sendMail: (
-		// nodemailer's own type takes a mutable list of attachments, so the parameter cannot be readonly.
-		// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- see above
-		mail: SystemMail & { from: string; attachments?: InlineAttachment[] },
-	) => Promise<unknown>;
+	// nodemailer's own type takes a mutable list of attachments, so the parameter cannot be readonly.
+	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- see above
+	sendMail: (mail: SmtpMail) => Promise<unknown>;
 }
 
 interface SmtpTransportOptions {
@@ -68,4 +74,4 @@ function openSmtpTransport(smtpUrl: string): SmtpTransport {
 }
 
 export { openSmtpTransport, smtpTransportOptions };
-export type { InlineAttachment, SmtpTransport };
+export type { InlineAttachment, SmtpMail, SmtpTransport };

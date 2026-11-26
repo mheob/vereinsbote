@@ -5,6 +5,9 @@ type AuditAction =
 	| 'area.created'
 	| 'area.renamed'
 	| 'brand.changed'
+	| 'connection.created'
+	| 'connection.deleted'
+	| 'connection.updated'
 	| 'contact.opt_out_removed'
 	| 'contact.opted_out'
 	| 'contact.suppressed'
@@ -22,6 +25,14 @@ type AuditAction =
 	| 'partner.created'
 	| 'partner.deleted'
 	| 'partner.updated'
+	| 'sender.created'
+	| 'sender.deleted'
+	| 'sender.self_tested'
+	| 'sender.system_set'
+	| 'sender.updated'
+	| 'sending.digest_sent'
+	| 'sending.disturbance_warned'
+	| 'sending.secret_warned'
 	| 'setup.completed'
 	| 'template.created'
 	| 'template.deleted'
@@ -31,6 +42,7 @@ type AuditAction =
 	| 'user.area_level_changed'
 	| 'user.disabled'
 	| 'user.enabled'
+	| 'user.invitation_resent'
 	| 'user.invited';
 
 interface AuditEntry {
