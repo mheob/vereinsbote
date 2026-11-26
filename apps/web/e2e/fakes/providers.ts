@@ -66,7 +66,6 @@ const DEFAULT_TOP = 50;
 const HEADER_END = /\r?\n\r?\n/u;
 const UNFOLD = /\r?\n[ \t]+/gu;
 const SECRET_PREFIX = /^whsec_/u;
-const TRAILING_SLASHES = /\/+$/u;
 const ANGLE_ADDRESS = /<(?<address>[^<>]+)>/u;
 const GRAPH_ROUTE = /^\/graph\/v1\.0\/users\/(?<mailbox>[^/]+)\/(?<rest>.+)$/u;
 const TOKEN_ROUTE = /^\/login\/[^/]+\/oauth2\/v2\.0\/token$/u;
@@ -78,6 +77,12 @@ class BodyTooLargeError extends Error {
 		super('fake.bodyTooLarge');
 		this.name = 'BodyTooLargeError';
 	}
+}
+
+function withoutTrailingSlashes(text: string): string {
+	let end = text.length;
+	while (end > 0 && text[end - 1] === '/') end -= 1;
+	return text.slice(0, end);
 }
 
 async function readBody(request: IncomingMessage): Promise<string> {
@@ -273,7 +278,7 @@ async function sendWebhook(input: Json): Promise<number> {
 	const secret = asText(input.secret);
 	const key = Buffer.from(secret.replace(SECRET_PREFIX, ''), 'base64');
 	const signature = createHmac('sha256', key).update(`${id}.${timestamp}.${body}`).digest('base64');
-	const target = `${asText(input.appUrl).replace(TRAILING_SLASHES, '')}/api/webhooks/resend/${encodeURIComponent(asText(input.connectionId))}`;
+	const target = `${withoutTrailingSlashes(asText(input.appUrl))}/api/webhooks/resend/${encodeURIComponent(asText(input.connectionId))}`;
 	const answer = await fetch(target, {
 		body,
 		headers: {
@@ -354,23 +359,49 @@ async function startFakeProviders(
 		if (await deliverMime(mime, response)) send(response, HTTP_ACCEPTED);
 	}
 
+	async function graphToken(
+		request: IncomingMessage,
+		response: ServerResponse,
+		url: URL,
+	): Promise<void> {
+		requests.push({ method: 'POST', path: url.pathname });
+		const form = new URLSearchParams(await readBody(request));
+		if (form.get('client_secret') === WRONG_SECRET) {
+			send(response, HTTP_UNAUTHORIZED, { error: 'invalid_client' });
+			return;
+		}
+		send(response, HTTP_OK, {
+			access_token: `fake-token-${randomUUID()}`,
+			expires_in: 3600,
+			token_type: 'Bearer',
+		});
+	}
+
+	function graphRead(
+		request: IncomingMessage,
+		response: ServerResponse,
+		target: Readonly<{ mailbox: string; rest: string; url: URL }>,
+	): boolean {
+		const { mailbox, rest, url } = target;
+		if (request.method !== 'GET') return false;
+		const inboxRead = rest === 'mailFolders/inbox/messages';
+		if (!inboxRead && rest !== 'messages') return false;
+		requests.push({ method: 'GET', path: url.pathname });
+		if (mailboxReadable(mailbox)) {
+			send(response, HTTP_OK, inboxRead ? inbox(mailbox, url.searchParams) : { value: [] });
+		} else {
+			send(response, HTTP_FORBIDDEN, { error: { code: 'ErrorAccessDenied' } });
+		}
+		return true;
+	}
+
 	async function graph(
 		request: IncomingMessage,
 		response: ServerResponse,
 		url: URL,
 	): Promise<boolean> {
 		if (request.method === 'POST' && TOKEN_ROUTE.test(url.pathname)) {
-			requests.push({ method: 'POST', path: url.pathname });
-			const form = new URLSearchParams(await readBody(request));
-			if (form.get('client_secret') === WRONG_SECRET) {
-				send(response, HTTP_UNAUTHORIZED, { error: 'invalid_client' });
-			} else {
-				send(response, HTTP_OK, {
-					access_token: `fake-token-${randomUUID()}`,
-					expires_in: 3600,
-					token_type: 'Bearer',
-				});
-			}
+			await graphToken(request, response, url);
 			return true;
 		}
 		const route = GRAPH_ROUTE.exec(url.pathname)?.groups;
@@ -386,16 +417,7 @@ async function startFakeProviders(
 			await graphSendMail(request, response, { mailbox, path: url.pathname });
 			return true;
 		}
-		if (request.method !== 'GET') return false;
-		const inboxRead = rest === 'mailFolders/inbox/messages';
-		if (!inboxRead && rest !== 'messages') return false;
-		requests.push({ method: 'GET', path: url.pathname });
-		if (mailboxReadable(mailbox)) {
-			send(response, HTTP_OK, inboxRead ? inbox(mailbox, url.searchParams) : { value: [] });
-		} else {
-			send(response, HTTP_FORBIDDEN, { error: { code: 'ErrorAccessDenied' } });
-		}
-		return true;
+		return graphRead(request, response, { mailbox, rest, url });
 	}
 
 	async function resend(

@@ -137,6 +137,15 @@ describe(graphEndpoints, () => {
 			login: 'http://localhost:4010/login',
 		});
 	});
+
+	it('trims a long run of trailing slashes quickly', () => {
+		const started = performance.now();
+		const url = new URL(`http://localhost:4010/${'/'.repeat(200_000)}x${'/'.repeat(200_000)}`);
+		expect(graphEndpoints({ devProvidersUrl: url }).graph).toBe(
+			`http://localhost:4010/${'/'.repeat(200_000)}x/graph/v1.0`,
+		);
+		expect(performance.now() - started).toBeLessThan(1000);
+	});
 });
 
 describe('graph transport send', () => {

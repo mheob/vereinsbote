@@ -65,6 +65,13 @@ describe(resendEndpoint, () => {
 			'http://localhost:4000/resend',
 		);
 	});
+
+	it('trims a long run of trailing slashes quickly', () => {
+		const started = performance.now();
+		const url = new URL(`http://localhost:4000/x${'/'.repeat(200_000)}`);
+		expect(resendEndpoint({ devProvidersUrl: url })).toBe('http://localhost:4000/x/resend');
+		expect(performance.now() - started).toBeLessThan(1000);
+	});
 });
 
 describe(createResendTransport, () => {

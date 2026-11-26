@@ -65,9 +65,6 @@ const confirmLoginLink = createServerFn({ method: 'POST' })
 		throw redirect({ reloadDocument: true, to: AFTER_SIGN_IN_PATH });
 	});
 
-/** The failed attempts so far, so a repeated failure is announced again; 0 before the first. */
-type ConfirmState = number;
-
 export const Route = createFileRoute('/login_/confirm')({
 	// The name gives React a component (hooks rules, DevTools); TanStack Router names the property.
 	// oxlint-disable-next-line func-name-matching -- see above
@@ -78,7 +75,8 @@ export const Route = createFileRoute('/login_/confirm')({
 		const { token } = useSearch({ from: '/login_/confirm' });
 		const confirm = useServerFn(confirmLoginLink);
 		const [failures, submitForm, isPending] = useActionState(
-			async (previous: ConfirmState, formData: FormData): Promise<ConfirmState> => {
+			// The state is the failed attempts so far, so a repeated failure is announced again; 0 before the first.
+			async (previous: number, formData: FormData): Promise<number> => {
 				const entered = formData.get('token');
 				const result = await settle(
 					confirm({ data: { token: typeof entered === 'string' ? entered : '' } }),

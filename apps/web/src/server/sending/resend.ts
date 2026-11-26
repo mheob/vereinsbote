@@ -50,7 +50,6 @@ const HTTP_TOO_MANY = 429;
 const RETRYABLE_STATUS: ReadonlySet<number> = new Set([HTTP_REQUEST_TIMEOUT, HTTP_TOO_EARLY]);
 const HTTP_SERVER_ERROR = 500;
 const BASE64_CHUNK = 0x60_00;
-const TRAILING_SLASHES = /\/+$/u;
 const FIRST_PRINTABLE = 33;
 const LAST_PRINTABLE = 126;
 const MAX_KEY_LENGTH = 256;
@@ -86,6 +85,12 @@ const ERROR_NAMES: ReadonlyMap<string, Classified> = new Map<string, Classified>
 const errorSchema = z.object({ name: z.string() });
 const successSchema = z.object({ id: z.string().min(1) });
 
+function withoutTrailingSlashes(text: string): string {
+	let end = text.length;
+	while (end > 0 && text[end - 1] === '/') end -= 1;
+	return text.slice(0, end);
+}
+
 function fail(failure: SendFailureClass, code: string, wait: number | null = null): Failure {
 	return { code, failure, ok: false, retryAfterMs: wait };
 }
@@ -98,7 +103,7 @@ function fail(failure: SendFailureClass, code: string, wait: number | null = nul
  */
 function resendEndpoint(env: Pick<Env, 'devProvidersUrl'>): string {
 	if (env.devProvidersUrl === null) return DEFAULT_ENDPOINT;
-	return `${env.devProvidersUrl.href.replace(TRAILING_SLASHES, '')}/resend`;
+	return `${withoutTrailingSlashes(env.devProvidersUrl.href)}/resend`;
 }
 
 function classifyByStatus(status: number, name: string | null): Classified {

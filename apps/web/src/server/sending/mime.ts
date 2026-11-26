@@ -123,7 +123,8 @@ function fromHeader(from: OutgoingMail['from']): string {
 	const name = cleanHeaderText(from.name);
 	if (name === '') return foldHeader('From', [mailbox]);
 	if (NON_ASCII.test(name)) return foldHeader('From', [...encodeWords(name), mailbox]);
-	const quoted = `"${name.replaceAll(/["\\]/gu, String.raw`\$&`)}"`;
+	const escaped = name.replaceAll(/["\\]/gu, String.raw`\$&`);
+	const quoted = `"${escaped}"`;
 	return foldHeader('From', [quoted, mailbox]);
 }
 
