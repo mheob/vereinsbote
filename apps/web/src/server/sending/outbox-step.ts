@@ -2,23 +2,33 @@
  * The tick step of the outbox (Design 8.2 to 8.7). It turns stuck entries `uncertain`, then sends
  * the due entries of every sender in turns, one entry per turn: personal mail first, within the
  * daily limit and its reserve, at most `perMinute` mails per quota scope and minute, and on
- * Cloudflare at most 40 per sender and tick (subrequests). A disturbed connection waits: a Graph
- * connection is checked once per run by fetching a token, a Resend connection (or a refused
- * mailbox) by sending one entry. A scope the provider stopped for its quota waits until its pause
- * ends, then one entry tests it (ruling R5). The step stops starting sends shortly before its
- * deadline, so that the later steps of the tick still run, and reports `moreWork` while due
- * entries are left that hang neither on a limit, a pause nor a disturbance.
+ * Cloudflare within the subrequests the invocation has left (`ctx.subrequests`, shared by all
+ * senders and all ticks of the invocation). A disturbed connection waits: a Graph connection is
+ * checked once per run by fetching a token, a Resend connection (or a refused mailbox or domain)
+ * by sending one entry. A scope the provider stopped waits until its pause ends, then one entry
+ * tests it (ruling R5).
+ *
+ * It backs off when the provider is in trouble: after an unclear send the connection stops for the
+ * run and the scope pauses for a while, after a transient refusal the scope stops for the run (and
+ * pauses for the provider's `Retry-After`), after a preparer that throws the sender stops for the
+ * run. So an incident costs one unclear entry per scope and pause, not one per mail.
+ *
+ * The step stops starting sends shortly before its deadline, so that the later steps of the tick
+ * still run, and reports `moreWork` while due entries are left that hang neither on a limit, a
+ * pause, a disturbance nor a spent subrequest budget.
  */
-import { platformName } from '@/platform/platform';
-import type { Platform, PlatformName } from '@/platform/platform';
+import type { Platform } from '@/platform/platform';
+import { budgetedFetch, isSubrequestLimit, SUBREQUEST_LIMIT_CODE } from '@/platform/subrequests';
 import { SecretDecryptError } from '@/server/crypto/secrets';
 import { errorLabel } from '@/server/error-label';
 import type { TickContext, TickStep } from '@/server/tick/tick';
 
+import { disturbanceReason } from './disturbance';
 import { SenderNotFoundError } from './errors';
 import { openSenderTransport } from './open-transport';
 import type { QuotaScope, SenderTransport } from './open-transport';
 import {
+	askedWait,
 	claimEntry,
 	clearDisturbance,
 	disturbConnection,
@@ -51,11 +61,15 @@ import type { OutgoingMail, SendResult, Transport } from './transport';
  */
 const KICK_BUDGET_MS = 20_000;
 /**
- * Mails per sender and tick on Cloudflare: each costs one or two of the Worker's subrequests. A
- * cron invocation chains up to `MAX_CHAINED_TICKS + 1` ticks, so this bounds a tick, not the
- * invocation.
+ * The most provider requests one mail costs: Graph fetches a token for the first mail of a sender
+ * in a run, then one request per mail. A run starts no mail with fewer left in its budget.
  */
-const CLOUDFLARE_SENDS_PER_SENDER = 40;
+const REQUESTS_PER_MAIL = 2;
+/**
+ * How long a scope pauses after an unclear send: the next run after it tests the scope with one
+ * entry, so an incident leaves one unclear entry per scope and pause.
+ */
+const UNCLEAR_PAUSE_MS = 900_000;
 /**
  * No new send starts this long before the deadline, so that the later steps of the tick (bounces,
  * warnings) still run during a long wave; at most a quarter of the step's budget, so that a short
@@ -63,11 +77,6 @@ const CLOUDFLARE_SENDS_PER_SENDER = 40;
  */
 const LATER_STEPS_MS = 20_000;
 const LATER_STEPS_SHARE = 4;
-/**
- * Disturbance codes of a refused sending mailbox: a token says nothing about them, so one entry
- * tests the connection instead (like Resend).
- */
-const MAILBOX_CODES: ReadonlySet<string> = new Set(['graph.mailbox']);
 /** The throttle counts the mails of a scope per window of this length (decision 6). */
 const WINDOW_MS = 60_000;
 
@@ -79,8 +88,6 @@ interface OutboxDeps {
 	readonly sleep: (ms: number) => Promise<void>;
 	/** Opens the transport of a sender; `openSenderTransport` unless a test hands in a double. */
 	readonly openTransport?: typeof openSenderTransport;
-	/** The platform of the build unless a test sets one. */
-	readonly platform?: PlatformName;
 }
 
 /** A sender this run sends for. */
@@ -119,10 +126,14 @@ interface SendWindow {
 	readonly sent: number;
 }
 
-/** What a turn did with its entry: the outcome, and the provider's answer when it sent. */
+/**
+ * What a turn did with its entry: the outcome, the provider's answer when it sent, and whether
+ * the preparer threw.
+ */
 interface Delivery {
 	readonly outcome: Readonly<EntryOutcome>;
 	readonly result: Readonly<SendResult> | null;
+	readonly preparerThrew?: true;
 }
 
 /** What the loop of a run does next. */
@@ -185,6 +196,21 @@ function unsentOutcome(
 	return { attempt: false, code: prepared.code, kind: 'failed' };
 }
 
+/** A transport that can fetch a token. */
+type ProbingTransport = Transport & { readonly probe: NonNullable<Transport['probe']> };
+
+/**
+ * Whether a token decides about a disturbed connection: only for a Graph connection whose
+ * credentials were refused, not for a refused mailbox or domain.
+ *
+ * @param transport The transport of a sender of the connection.
+ * @param code The code of the disturbance.
+ * @returns True when the transport can fetch a token and the code is about the credentials.
+ */
+function tokenDecides(transport: Transport, code: string | null): transport is ProbingTransport {
+	return transport.probe !== null && disturbanceReason(code) === 'credentials';
+}
+
 /**
  * How a scope starts the run: open without a pause, closed while paused, probing after it.
  *
@@ -218,7 +244,8 @@ function laneOf(due: Readonly<DueSender>, opened: Readonly<SenderTransport>): La
 
 /**
  * Sends a mail. A transport that throws instead of answering may have sent: the entry becomes
- * `uncertain`, never sent again by itself.
+ * `uncertain`, never sent again by itself; only a throw of the platform's subrequest limit is
+ * known to have sent nothing.
  *
  * @param transport The transport.
  * @param mail The mail.
@@ -228,6 +255,9 @@ async function sendSafely(transport: Transport, mail: Readonly<OutgoingMail>): P
 	try {
 		return await transport.send(mail);
 	} catch (error) {
+		if (isSubrequestLimit(error)) {
+			return { code: SUBREQUEST_LIMIT_CODE, failure: 'transient', ok: false, retryAfterMs: null };
+		}
 		// oxlint-disable-next-line no-console -- name or code only, the message may carry the address
 		console.error('outbox send failed', errorLabel(error));
 		return { code: 'outbox.send', failure: 'uncertain', ok: false, retryAfterMs: null };
@@ -254,26 +284,23 @@ async function probeSafely(probe: () => Promise<SendResult>): Promise<SendResult
 class OutboxRun {
 	private lanes: Lane[] = [];
 	private turn = 0;
-	private moreWork = false;
 	private readonly windows = new Map<QuotaScope, SendWindow>();
 	private readonly scopes = new Map<QuotaScope, ScopeMode>();
 	private readonly connections = new Map<string, ConnectionState>();
-	private readonly sends = new Map<string, number>();
-	private readonly maxSends: number;
+	/** The `fetch` of the transports: it takes every request from the invocation's budget. */
+	private readonly fetch: typeof fetch;
 	/** No send starts at or after this instant, epoch milliseconds. */
 	private readonly stopAt: number;
 
 	/**
 	 * @param deps The preparers, `fetch`, `sleep` and the overrides of tests.
-	 * @param ctx The tick's database, environment, clock, deadline and storage.
+	 * @param ctx The tick's database, environment, clock, deadline, storage and subrequests.
 	 */
 	public constructor(
 		private readonly deps: Readonly<OutboxDeps>,
 		private readonly ctx: TickContext,
 	) {
-		const platform = deps.platform ?? platformName();
-		this.maxSends =
-			platform === 'cloudflare' ? CLOUDFLARE_SENDS_PER_SENDER : Number.POSITIVE_INFINITY;
+		this.fetch = budgetedFetch(deps.fetch, ctx.subrequests);
 		const budget = Math.max(0, ctx.deadline - ctx.now().getTime());
 		this.stopAt = ctx.deadline - Math.min(LATER_STEPS_MS, budget / LATER_STEPS_SHARE);
 	}
@@ -290,17 +317,18 @@ class OutboxRun {
 			// oxlint-disable-next-line no-await-in-loop -- the turns follow one another
 			next = await this.step();
 		}
-		return { moreWork: next === 'more' || this.moreWork };
+		return { moreWork: next === 'more' };
 	}
 
 	/**
 	 * Turns entries stuck in `sending` uncertain, fails entries without sender and opens a lane for
-	 * every sender with due entries.
+	 * every sender with due entries, unless the invocation's subrequests are spent.
 	 */
 	private async openLanes(): Promise<void> {
 		const { db } = this.ctx;
 		await markUncertain(db, this.ctx.now());
 		await failOrphans(db);
+		if (this.subrequestsSpent()) return;
 		for (const due of await dueSenders(db, this.ctx.now())) {
 			// oxlint-disable-next-line no-await-in-loop -- senders open one after another, a probe once per connection
 			await this.open(due);
@@ -310,10 +338,16 @@ class OutboxRun {
 	/**
 	 * One step of the loop: a mail for the next lane in turn, or a wait for the next window. Stops
 	 * shortly before the deadline (`LATER_STEPS_MS`), and when the next window would open after that.
+	 * Stops without more work when the invocation's subrequests are spent: no later tick of the
+	 * invocation could send either, the next invocation goes on.
 	 *
 	 * @returns Whether to go on, or whether work is left.
 	 */
 	private async step(): Promise<Next> {
+		if (this.subrequestsSpent()) {
+			this.endRun();
+			return 'done';
+		}
 		const now = this.ctx.now().getTime();
 		if (now >= this.stopAt) return (await this.anyLeft()) ? 'more' : 'done';
 		const lane = this.readyLane(now);
@@ -356,6 +390,16 @@ class OutboxRun {
 			}
 		}
 		return undefined;
+	}
+
+	/**
+	 * Whether the invocation has too few subrequests left for another mail.
+	 *
+	 * @returns True on Cloudflare once the budget is (nearly) spent; never elsewhere.
+	 */
+	private subrequestsSpent(): boolean {
+		const { subrequests } = this.ctx;
+		return subrequests !== null && subrequests.left() < REQUESTS_PER_MAIL;
 	}
 
 	private openAtFor(lane: Readonly<Lane>, now: number): number {
@@ -453,7 +497,7 @@ class OutboxRun {
 	 */
 	private async openTransport(due: Readonly<DueSender>): Promise<SenderTransport | null> {
 		const openTransport = this.deps.openTransport ?? openSenderTransport;
-		const { fetch } = this.deps;
+		const { fetch } = this;
 		try {
 			return await openTransport(this.ctx.db, this.ctx.env, due.senderId, {
 				fetch,
@@ -488,7 +532,7 @@ class OutboxRun {
 	/**
 	 * Whether a connection may send: yes when it is not disturbed; a disturbed Graph connection
 	 * when a token comes (the disturbance ends); a disturbed Resend connection, or one whose sending
-	 * mailbox was refused, by one entry (decision 9).
+	 * mailbox or domain was refused (a token says nothing about those), by one entry (decision 9).
 	 *
 	 * @param due The sender and its connection.
 	 * @param transport The transport of the sender.
@@ -500,7 +544,7 @@ class OutboxRun {
 	): Promise<ConnectionState['mode']> {
 		const { connectionId, disturbedCode, disturbedSince } = due;
 		if (disturbedSince === null) return 'open';
-		if (transport.probe === null || MAILBOX_CODES.has(disturbedCode ?? '')) return 'probing';
+		if (!tokenDecides(transport, disturbedCode)) return 'probing';
 		const probed = await probeSafely(transport.probe);
 		if (probed.ok) {
 			await clearDisturbance(this.ctx.db, connectionId);
@@ -580,11 +624,15 @@ class OutboxRun {
 		}
 		const prepared = await this.prepare(preparer, claim);
 		if (prepared?.kind === 'send') return this.send(lane, claim, prepared);
-		return { outcome: unsentOutcome(prepared, { attempts, now: this.ctx.now() }), result: null };
+		const outcome = unsentOutcome(prepared, { attempts, now: this.ctx.now() });
+		return prepared === null
+			? { outcome, preparerThrew: true, result: null }
+			: { outcome, result: null };
 	}
 
 	/**
-	 * Runs the preparer. A preparer that throws is logged by name and the entry tried again later.
+	 * Runs the preparer. A preparer that throws is logged by its code or name; the entry is tried
+	 * again later.
 	 *
 	 * @param preparer The preparer of the entry's source.
 	 * @param claim The take.
@@ -605,8 +653,9 @@ class OutboxRun {
 	}
 
 	/**
-	 * Sends the prepared mail with the entry's Message-ID (ruling R4) to the prepared address,
-	 * after storing that address and checking that the entry is still this run's.
+	 * Sends the prepared mail with the entry's Message-ID (ruling R4) and its id as idempotency key
+	 * to the prepared address, after storing that address and checking that the entry is still this
+	 * run's. Both stay the same for every attempt of the entry, whatever the preparer hands.
 	 *
 	 * @param lane The lane.
 	 * @param claim The take.
@@ -621,7 +670,8 @@ class OutboxRun {
 		const { recipient } = prepared;
 		if (!(await recordRecipient(this.ctx.db, claim, recipient))) return null;
 		this.countSend(lane);
-		const mail = { ...prepared.mail, messageId: claim.entry.messageId, to: recipient };
+		const { id, messageId } = claim.entry;
+		const mail = { ...prepared.mail, idempotencyKey: id, messageId, to: recipient };
 		const result = await sendSafely(lane.transport, mail);
 		const now = this.ctx.now();
 		// Counted when the provider accepts it (decision 4), before the outcome is stored.
@@ -634,32 +684,88 @@ class OutboxRun {
 	}
 
 	/**
-	 * Counts a request to the provider for the throttle and the Cloudflare limit.
+	 * Counts a mail of a scope for the throttle.
 	 *
 	 * @param lane The lane.
 	 */
 	private countSend(lane: Readonly<Lane>): void {
 		const window = this.windows.get(lane.scope) ?? EMPTY_WINDOW;
 		this.windows.set(lane.scope, withSend(window, this.ctx.now().getTime()));
-		this.sends.set(lane.senderId, (this.sends.get(lane.senderId) ?? 0) + 1);
 	}
 
 	/**
-	 * Acts on a stored outcome: records or ends a disturbance, pauses the scope on a spent quota or
-	 * ends its pause, and stops a lane at the Cloudflare limit.
+	 * Acts on a stored outcome: records a disturbance, ends the run when the platform refused a
+	 * request, stops a sender whose preparer threw, backs off after trouble at the provider, ends a
+	 * disturbance a test entry disproved, and pauses or opens the scope.
 	 *
 	 * @param lane The lane.
 	 * @param delivery What became of the entry.
 	 */
 	private async settle(lane: Readonly<Lane>, delivery: Readonly<Delivery>): Promise<void> {
+		if (await this.stopsAtOnce(lane, delivery)) return;
 		const { outcome, result } = delivery;
+		if (await this.backOff(lane, result)) return;
+		if (!(await this.settleProbe(lane, result))) return;
+		await this.settleScope(lane, outcome, result);
+	}
+
+	/**
+	 * Stops what an outcome stops whatever else the answer says: a refusal of the credentials
+	 * disturbs the connection, a request the platform refused ends the run, a preparer that threw
+	 * drops the sender for the run (the storage or the database: its next entries would fail too).
+	 *
+	 * @param lane The lane.
+	 * @param delivery What became of the entry.
+	 * @returns True when something stopped.
+	 */
+	private async stopsAtOnce(lane: Readonly<Lane>, delivery: Readonly<Delivery>): Promise<boolean> {
+		const { outcome } = delivery;
 		if (outcome.kind === 'release') {
 			await this.disturbLane(lane, outcome.code);
-			return;
+			return true;
 		}
-		if (!(await this.settleProbe(lane, result))) return;
-		if (!(await this.settleScope(lane, outcome, result))) return;
-		await this.stopAtLimit(lane);
+		if (outcome.kind === 'requeue') this.endRun();
+		else if (delivery.preparerThrew === true) this.dropLane(lane);
+		else return false;
+		return true;
+	}
+
+	/**
+	 * Backs off after an answer that shows trouble at the provider. An unclear send stops the
+	 * connection for the run and pauses the scope for `UNCLEAR_PAUSE_MS`; a transient refusal stops
+	 * the scope for the run and, when the provider named a wait, pauses it until then.
+	 *
+	 * @param lane The lane.
+	 * @param result The provider's answer, or null when nothing was sent.
+	 * @returns True when the lane stopped.
+	 */
+	private async backOff(
+		lane: Readonly<Lane>,
+		result: Readonly<SendResult> | null,
+	): Promise<boolean> {
+		if (result === null || result.ok) return false;
+		if (result.failure === 'uncertain') {
+			await this.pauseFor(lane, result.code, UNCLEAR_PAUSE_MS);
+			this.closeConnection(lane.connectionId);
+			return true;
+		}
+		if (result.failure !== 'transient') return false;
+		await this.pauseFor(lane, result.code, askedWait(result.retryAfterMs));
+		this.closeScope(lane.scope);
+		return true;
+	}
+
+	/**
+	 * Pauses the scope of a lane for a while (persisted, so the next runs wait too).
+	 *
+	 * @param lane The lane.
+	 * @param code The code of the answer that caused it.
+	 * @param ms How long; nothing happens for 0.
+	 */
+	private async pauseFor(lane: Readonly<Lane>, code: string, ms: number): Promise<void> {
+		if (ms <= 0) return;
+		const until = new Date(this.ctx.now().getTime() + ms);
+		await pauseScope(this.ctx.db, { code, scope: lane.scope, until });
 	}
 
 	/**
@@ -669,21 +775,20 @@ class OutboxRun {
 	 * @param lane The lane.
 	 * @param outcome What became of the entry.
 	 * @param result The provider's answer, or null when nothing was sent.
-	 * @returns False when the scope's lanes stopped.
 	 */
 	private async settleScope(
 		lane: Readonly<Lane>,
 		outcome: Readonly<EntryOutcome>,
 		result: Readonly<SendResult> | null,
-	): Promise<boolean> {
+	): Promise<void> {
 		if (outcome.kind === 'pause') {
 			const { code, until } = outcome;
 			await pauseScope(this.ctx.db, { code, scope: lane.scope, until });
 			this.closeScope(lane.scope);
-			return false;
+			return;
 		}
-		if (this.scopes.get(lane.scope) !== 'probing' || result === null) return true;
-		return this.endPause(lane, result);
+		if (this.scopes.get(lane.scope) !== 'probing' || result === null) return;
+		await this.endPause(lane, result);
 	}
 
 	/**
@@ -691,16 +796,14 @@ class OutboxRun {
 	 *
 	 * @param lane The lane.
 	 * @param result The provider's answer to the test entry.
-	 * @returns Whether the scope sends again.
 	 */
-	private async endPause(lane: Readonly<Lane>, result: Readonly<SendResult>): Promise<boolean> {
+	private async endPause(lane: Readonly<Lane>, result: Readonly<SendResult>): Promise<void> {
 		if (!result.ok) {
 			this.closeScope(lane.scope);
-			return false;
+			return;
 		}
 		await liftPause(this.ctx.db, lane.scope, this.ctx.now());
 		this.scopes.set(lane.scope, 'open');
-		return true;
 	}
 
 	/**
@@ -739,19 +842,6 @@ class OutboxRun {
 	}
 
 	/**
-	 * Stops a lane at the Cloudflare limit of mails per sender and tick; due entries the scope's
-	 * limit lets start ask for the next tick.
-	 *
-	 * @param lane The lane.
-	 */
-	private async stopAtLimit(lane: Readonly<Lane>): Promise<void> {
-		if ((this.sends.get(lane.senderId) ?? 0) < this.maxSends) return;
-		this.dropLane(lane);
-		const sendable = await this.hasSendable(lane);
-		this.moreWork ||= sendable;
-	}
-
-	/**
 	 * Records a refusal of the credentials and stops the connection's lanes for this run.
 	 *
 	 * @param connectionId The connection.
@@ -776,6 +866,14 @@ class OutboxRun {
 
 	private dropLane(dropped: Readonly<Lane>): void {
 		this.lanes = this.lanes.filter((lane) => lane !== dropped);
+	}
+
+	/** Stops every lane: the invocation may make no more requests. */
+	private endRun(): void {
+		if (this.lanes.length === 0) return;
+		this.lanes = [];
+		// oxlint-disable-next-line no-console -- no details; the next invocation goes on
+		console.warn('outbox stopped at the subrequest limit');
 	}
 }
 
@@ -809,8 +907,14 @@ async function started(run: () => Promise<unknown>): Promise<unknown> {
  * Starts a short run in the background ("sofort", Design 8.7): the caller hands over a run with
  * `KICK_BUDGET_MS`, and the platform keeps it alive after the response.
  *
+ * The run must not use the request's database: on Cloudflare it ends with the response
+ * (`requestDbReleaser`), and an entry the run took then would stay `sending` and later turn
+ * `uncertain`. The caller passes a run that opens a database of its own and ends it afterwards,
+ * as the cron handler does (`cloudflare-worker.ts`), and gives its tick the subrequest budget of
+ * the request's invocation (`invocationBudget`).
+ *
  * @param platform The platform.
- * @param run The run, e.g. a tick with the budget `KICK_BUDGET_MS`.
+ * @param run The run, e.g. a tick with the budget `KICK_BUDGET_MS` and a database of its own.
  */
 function kickOutbox(platform: Platform, run: () => Promise<unknown>): void {
 	platform.waitUntil(started(run));

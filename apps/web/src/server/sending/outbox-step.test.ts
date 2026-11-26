@@ -1,7 +1,9 @@
 import { eq, inArray } from 'drizzle-orm';
 import { describe, expect, it, vi } from 'vite-plus/test';
 
-import type { Platform, PlatformName } from '@/platform/platform';
+import type { Platform } from '@/platform/platform';
+import { createSubrequestBudget } from '@/platform/subrequests';
+import type { SubrequestBudget } from '@/platform/subrequests';
 import { compareCodePoints } from '@/server/compare-code-points';
 import { setUpClub } from '@/server/contacts/testing';
 import { SecretDecryptError } from '@/server/crypto/secrets';
@@ -213,14 +215,15 @@ interface StepOptions {
 	readonly transports: ReadonlyMap<string, Transport>;
 	/** `null`: no preparer for waves. */
 	readonly preparer?: EntryPreparer | null;
-	readonly platform?: PlatformName;
 	readonly openTransport?: OutboxDeps['openTransport'];
+	/** The `fetch` of real transports (`openTransport: openSenderTransport`). */
+	readonly fetch?: typeof fetch;
 }
 
 /**
  * The outbox step with the transports of the test.
  *
- * @param options The clock, the transport per sender, the preparer and the platform.
+ * @param options The clock, the transport per sender, the preparer and the `fetch`.
  * @returns The step.
  */
 function outboxStep(options: Readonly<StepOptions>): TickStep {
@@ -232,9 +235,8 @@ function outboxStep(options: Readonly<StepOptions>): TickStep {
 		return { ...opened, transport };
 	};
 	return createOutboxStep({
-		fetch: fakeProviders().fetch,
+		fetch: options.fetch ?? fakeProviders().fetch,
 		openTransport: options.openTransport ?? withTestTransport,
-		platform: options.platform ?? 'node',
 		preparers: preparer === null ? {} : { wave: preparer },
 		sleep: clock.sleep,
 	});
@@ -252,12 +254,15 @@ interface Harness {
  * @param harness The database and the clock.
  * @param step The step.
  * @param budgetMs The time budget.
+ * @param subrequests The subrequest budget of the invocation, or null for none.
  * @returns What the step reports.
  */
+// oxlint-disable-next-line max-params -- the harness, the step and the two budgets
 async function runStep(
 	harness: Readonly<Harness>,
 	step: TickStep,
 	budgetMs = BUDGET_MS,
+	subrequests: SubrequestBudget | null = null,
 ): Promise<{ moreWork: boolean }> {
 	const { clock, db } = harness;
 	return step.run({
@@ -266,6 +271,7 @@ async function runStep(
 		env: testEnv(),
 		now: clock.now,
 		storage: null,
+		subrequests,
 	});
 }
 
@@ -576,7 +582,7 @@ describe(createOutboxStep, () => {
 		});
 	});
 
-	it('sends with the message id and the address of the entry whatever the mail says', async () => {
+	it('sends with the message id, the key and the address of the entry whatever the mail says', async () => {
 		const harness = { clock: testClock(), db: await createTestDb() };
 		const { senderId } = await graphSender(harness.db);
 		const [id = ''] = await planEntries(harness.db, senderId, 1);
@@ -589,7 +595,12 @@ describe(createOutboxStep, () => {
 			source: 'wave',
 			sourceId: WAVE_ID,
 		} as const;
-		const mail = { ...testMail(claim), messageId: '<other@example.org>', to: 'x@example.org' };
+		const mail = {
+			...testMail(claim),
+			idempotencyKey: 'other-key',
+			messageId: '<other@example.org>',
+			to: 'x@example.org',
+		};
 		const preparer = testPreparer(
 			new Map([[id, { kind: 'send', mail, recipient: addressOf(id) }]]),
 		);
@@ -597,8 +608,8 @@ describe(createOutboxStep, () => {
 		const transports = new Map([[senderId, transport]]);
 		await runStep(harness, outboxStep({ clock: harness.clock, preparer, transports }));
 		const row = await readEntry(harness.db, id);
-		expect(mails.map((sent) => [sent.to, sent.messageId])).toStrictEqual([
-			[addressOf(id), row.messageId],
+		expect(mails.map((sent) => [sent.to, sent.messageId, sent.idempotencyKey])).toStrictEqual([
+			[addressOf(id), row.messageId, id],
 		]);
 		expect(row.messageId).toMatch(MESSAGE_ID);
 	});
@@ -663,40 +674,72 @@ describe(createOutboxStep, () => {
 		expect(harness.clock.sleeps).toStrictEqual([]);
 	});
 
-	it('sends at most 40 mails per sender and run on cloudflare', async () => {
-		const harness = { clock: testClock(), db: await createTestDb() };
-		const { senderId } = await graphSender(harness.db, { perMinute: 100 });
-		await planEntries(harness.db, senderId, 41);
-		const { mails, transport } = testTransport();
-		const step = outboxStep({
-			clock: harness.clock,
-			platform: 'cloudflare',
-			transports: new Map([[senderId, transport]]),
-		});
-		await expect(runStep(harness, step)).resolves.toStrictEqual({ moreWork: true });
-		expect(mails).toHaveLength(40);
-		await expect(runStep(harness, step)).resolves.toStrictEqual({ moreWork: false });
-		expect(mails).toHaveLength(41);
-	});
-
-	it('reports no more work at the cloudflare limit when only reserved capacity is left', async () => {
+	it('stops at the subrequest budget of the invocation across senders and runs', async () => {
 		const harness = { clock: testClock(), db: await createTestDb() };
 		const { db } = harness;
-		const { senderId } = await graphSender(db, { dailyLimit: 41, perMinute: 100 });
-		await planEntries(db, senderId, 41);
-		// Due at 12:00: it keeps one mail of the limit free for itself.
-		await planEntries(db, senderId, 1, {
-			notBefore: new Date(START + 2 * HOUR_MS),
-			priority: 'personal',
-		});
-		const { mails, transport } = testTransport();
+		const { admin } = await setUpClub(db);
+		const connectionId = await graphConnection(db, admin);
+		const first = await senderOn(db, admin, connectionId, 'a@example.org');
+		const second = await senderOn(db, admin, connectionId, 'b@example.org');
+		const ids = [...(await planEntries(db, first, 3)), ...(await planEntries(db, second, 3))];
+		const providers = fakeProviders();
 		const step = outboxStep({
 			clock: harness.clock,
-			platform: 'cloudflare',
-			transports: new Map([[senderId, transport]]),
+			fetch: providers.fetch,
+			openTransport: openSenderTransport,
+			transports: new Map(),
 		});
+		const sendCalls = (): number =>
+			providers.calls.filter((call) => call.url.endsWith('/sendMail')).length;
+		// A token and a mail per sender, then a mail each: one request is left, too few for a mail.
+		const invocation = createSubrequestBudget(7);
+		await expect(runStep(harness, step, BUDGET_MS, invocation)).resolves.toStrictEqual({
+			moreWork: false,
+		});
+		const firstTick = { left: invocation.left(), requests: providers.calls.length };
+		await runStep(harness, step, BUDGET_MS, invocation);
+		expect({ ...firstTick, mails: sendCalls(), requests: providers.calls.length }).toStrictEqual({
+			left: 1,
+			mails: 4,
+			requests: 6,
+		});
+		expect(sortedStatesOf(await readEntries(db, ids))).toStrictEqual([
+			['planned', 0, null],
+			['planned', 0, null],
+			['sent', 1, null],
+			['sent', 1, null],
+			['sent', 1, null],
+			['sent', 1, null],
+		]);
+		await runStep(harness, step, BUDGET_MS, createSubrequestBudget(7));
+		expect(sendCalls()).toBe(6);
+	});
+
+	it('puts an entry back without an attempt when the platform refuses the request', async () => {
+		const harness = { clock: testClock(), db: await createTestDb() };
+		const { first, second } = await resendSenders(harness.db);
+		const ids = [
+			...(await planEntries(harness.db, first, 2)),
+			...(await planEntries(harness.db, second, 2)),
+		];
+		const { mails, transport } = testTransport(() => refusal('transient', 'platform.subrequests'));
+		const transports = new Map([
+			[first, transport],
+			[second, transport],
+		]);
+		const step = outboxStep({ clock: harness.clock, transports });
 		await expect(runStep(harness, step)).resolves.toStrictEqual({ moreWork: false });
-		expect(mails).toHaveLength(40);
+		const rows = await readEntries(harness.db, ids);
+		expect({ mails: mails.length, states: sortedStatesOf(rows) }).toStrictEqual({
+			mails: 1,
+			states: [
+				['planned', 0, 'platform.subrequests'],
+				['planned', 0, null],
+				['planned', 0, null],
+				['planned', 0, null],
+			],
+		});
+		expect(rows.map((row) => row.nextAttemptAt)).toStrictEqual([null, null, null, null]);
 	});
 
 	it.each([
@@ -1054,6 +1097,152 @@ describe(createOutboxStep, () => {
 		expect(sorted(states.map((state) => state[2]))).toStrictEqual(['graph.timeout', 'outbox.send']);
 		expect(mails).toHaveLength(2);
 		expect(JSON.stringify(log.mock.calls)).not.toContain('@example.org');
+		log.mockRestore();
+	});
+
+	it('stops the connection after an unclear send and pauses its scope for a while', async () => {
+		const harness = { clock: testClock(), db: await createTestDb() };
+		const { clock, db } = harness;
+		const log = vi.spyOn(console, 'error').mockReturnValue();
+		const { connectionId, first, second } = await resendSenders(db);
+		const ids = [...(await planEntries(db, first, 2)), ...(await planEntries(db, second, 2))];
+		const { mails, transport } = testTransport(inTurn(['throws']));
+		const transports = new Map([
+			[first, transport],
+			[second, transport],
+		]);
+		const step = outboxStep({ clock, transports });
+		await expect(runStep(harness, step)).resolves.toStrictEqual({ moreWork: false });
+		const afterIncident = {
+			mails: mails.length,
+			pause: await scopePause(db, `connection:${connectionId}`),
+			states: sortedStatesOf(await readEntries(db, ids)),
+		};
+		clock.advance(10 * MINUTE_MS);
+		await runStep(harness, step);
+		const whilePaused = mails.length;
+		clock.advance(5 * MINUTE_MS);
+		await runStep(harness, step);
+		expect({ afterIncident, whilePaused }).toStrictEqual({
+			afterIncident: {
+				mails: 1,
+				pause: { code: 'outbox.send', until: new Date(START + 15 * MINUTE_MS) },
+				states: [
+					['planned', 0, null],
+					['planned', 0, null],
+					['planned', 0, null],
+					['uncertain', 1, 'outbox.send'],
+				],
+			},
+			whilePaused: 1,
+		});
+		expect(mails).toHaveLength(4);
+		await expect(scopePause(db, `connection:${connectionId}`)).resolves.toBeNull();
+		log.mockRestore();
+	});
+
+	it('waits the retry-after of a transient answer with the whole scope', async () => {
+		const harness = { clock: testClock(), db: await createTestDb() };
+		const { clock, db } = harness;
+		const { connectionId, first, second } = await resendSenders(db);
+		const ids = [...(await planEntries(db, first, 2)), ...(await planEntries(db, second, 2))];
+		const throttled = { ...refusal('transient', 'resend.throttled'), retryAfterMs: 10 * MINUTE_MS };
+		const { mails, transport } = testTransport(inTurn([throttled]));
+		const transports = new Map([
+			[first, transport],
+			[second, transport],
+		]);
+		const step = outboxStep({ clock, transports });
+		await expect(runStep(harness, step)).resolves.toStrictEqual({ moreWork: false });
+		const rows = await readEntries(db, ids);
+		const throttledAt = {
+			mails: mails.length,
+			pause: await scopePause(db, `connection:${connectionId}`),
+			states: sortedStatesOf(rows),
+			waits: rows.map((row) => row.nextAttemptAt).filter((at) => at !== null),
+		};
+		clock.advance(5 * MINUTE_MS);
+		await runStep(harness, step);
+		const whilePaused = mails.length;
+		clock.advance(5 * MINUTE_MS);
+		await runStep(harness, step);
+		expect({ throttledAt, whilePaused }).toStrictEqual({
+			throttledAt: {
+				mails: 1,
+				pause: { code: 'resend.throttled', until: new Date(START + 10 * MINUTE_MS) },
+				states: [
+					['planned', 0, null],
+					['planned', 0, null],
+					['planned', 0, null],
+					['planned', 1, 'resend.throttled'],
+				],
+				waits: [new Date(START + 10 * MINUTE_MS)],
+			},
+			whilePaused: 1,
+		});
+		expect(mails).toHaveLength(5);
+		expect(statesOf(await readEntries(db, ids)).map(([status]) => status)).toStrictEqual([
+			'sent',
+			'sent',
+			'sent',
+			'sent',
+		]);
+	});
+
+	it('stops the scope for the run after a transient answer without retry-after', async () => {
+		const harness = { clock: testClock(), db: await createTestDb() };
+		const { db } = harness;
+		const { senderId } = await graphSender(db);
+		const ids = await planEntries(db, senderId, 3);
+		const { mails, transport } = testTransport(inTurn([refusal('transient', 'graph.server')]));
+		const step = outboxStep({ clock: harness.clock, transports: new Map([[senderId, transport]]) });
+		await expect(runStep(harness, step)).resolves.toStrictEqual({ moreWork: false });
+		expect({
+			mails: mails.length,
+			pause: await scopePause(db, `sender:${senderId}`),
+			states: sortedStatesOf(await readEntries(db, ids)),
+		}).toStrictEqual({
+			mails: 1,
+			pause: null,
+			states: [
+				['planned', 0, null],
+				['planned', 0, null],
+				['planned', 1, 'graph.server'],
+			],
+		});
+	});
+
+	it('drops the lane of a sender for the run when its preparer throws', async () => {
+		const harness = { clock: testClock(), db: await createTestDb() };
+		const { db } = harness;
+		const log = vi.spyOn(console, 'error').mockReturnValue();
+		const { first, second } = await resendSenders(db);
+		const broken = await planEntries(db, first, 2);
+		const working = await planEntries(db, second, 2);
+		const preparer = testPreparer(new Map(broken.map((id) => [id, 'throws'] as const)));
+		const { mails, transport } = testTransport();
+		const transports = new Map([
+			[first, transport],
+			[second, transport],
+		]);
+		const step = outboxStep({ clock: harness.clock, preparer, transports });
+		await expect(runStep(harness, step)).resolves.toStrictEqual({ moreWork: false });
+		expect({
+			broken: sortedStatesOf(await readEntries(db, broken)),
+			mails: mails.length,
+			working: statesOf(await readEntries(db, working)),
+		}).toStrictEqual({
+			broken: [
+				['planned', 0, null],
+				['planned', 1, 'outbox.prepare'],
+			],
+			mails: 2,
+			working: [
+				['sent', 1, null],
+				['sent', 1, null],
+			],
+		});
+		expect(log).toHaveBeenCalledWith('outbox entry not prepared', 'Error');
 		log.mockRestore();
 	});
 

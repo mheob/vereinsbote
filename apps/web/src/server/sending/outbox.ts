@@ -8,6 +8,7 @@ import { and, asc, count, desc, eq, gt, isNull, lt, lte, min, or, sql } from 'dr
 import type { SQL } from 'drizzle-orm';
 import type { PgUpdateSetSource } from 'drizzle-orm/pg-core';
 
+import { SUBREQUEST_LIMIT_CODE } from '@/platform/subrequests';
 import type { Db } from '@/server/db/client';
 import { mailConnections, outboxEntries, senders } from '@/server/db/schema';
 import type { Env } from '@/server/env';
@@ -85,7 +86,9 @@ type EntryOutcome =
 	/** Back to `planned` without an attempt: the provider refused the credentials. */
 	| { kind: 'release'; code: string }
 	/** Back to `planned` without an attempt, and the scope pauses until `until` (ruling R5). */
-	| { kind: 'pause'; code: string; until: Date };
+	| { kind: 'pause'; code: string; until: Date }
+	/** Back to `planned` without an attempt: the request never left (a Worker's subrequests). */
+	| { kind: 'requeue'; code: string };
 
 /** A taken entry and the time of the take, which every later write names. */
 interface Claim {
@@ -141,8 +144,33 @@ function retryOrFail(
 }
 
 /**
+ * What a refusal of the provider makes of the entry; see `outcomeOf`.
+ *
+ * @param result The refusal.
+ * @param at The attempts before this one and the instant.
+ * @returns The outcome.
+ */
+function refusalOutcome(
+	result: Readonly<Extract<SendResult, { ok: false }>>,
+	at: Readonly<{ attempts: number; now: Date }>,
+): EntryOutcome {
+	const { code, failure, retryAfterMs } = result;
+	const { now } = at;
+	if (failure === 'uncertain') return { code, kind: 'uncertain' };
+	if (failure === 'rejected') return { attempt: true, code, kind: 'failed' };
+	if (failure === 'unauthorized') return { code, kind: 'release' };
+	if (failure === 'quota') {
+		const pause = Math.max(QUOTA_PAUSE_MS, askedWait(retryAfterMs));
+		return { code, kind: 'pause', until: new Date(now.getTime() + pause) };
+	}
+	if (code === SUBREQUEST_LIMIT_CODE) return { code, kind: 'requeue' };
+	return retryOrFail(code, { attempts: at.attempts + 1, now, retryAfterMs });
+}
+
+/**
  * What a send result makes of the entry (Design 6.3, 8.4 to 8.6; ruling R2: an unclear send is
- * never repeated; ruling R5: a spent quota pauses the scope for at least an hour).
+ * never repeated; ruling R5: a spent quota pauses the scope for at least an hour). A request the
+ * platform refused to make (`platform.subrequests`) sent nothing and costs no attempt.
  *
  * @param result What the transport answered.
  * @param at The attempts before this one and the instant.
@@ -153,16 +181,7 @@ function outcomeOf(
 	at: Readonly<{ attempts: number; now: Date }>,
 ): EntryOutcome {
 	if (result.ok) return { kind: 'sent', providerId: result.providerId };
-	const { code, failure, retryAfterMs } = result;
-	const { now } = at;
-	if (failure === 'uncertain') return { code, kind: 'uncertain' };
-	if (failure === 'rejected') return { attempt: true, code, kind: 'failed' };
-	if (failure === 'unauthorized') return { code, kind: 'release' };
-	if (failure === 'quota') {
-		const pause = Math.max(QUOTA_PAUSE_MS, askedWait(retryAfterMs));
-		return { code, kind: 'pause', until: new Date(now.getTime() + pause) };
-	}
-	return retryOrFail(code, { attempts: at.attempts + 1, now, retryAfterMs });
+	return refusalOutcome(result, at);
 }
 
 /**
@@ -397,7 +416,8 @@ function changesOf(
 		return { ...counted, lastErrorCode: outcome.code, status: 'failed' };
 	}
 	if (kind === 'skipped') return { lastErrorCode: outcome.reason, status: 'skipped' };
-	// `release` and `pause`: the entry waits for its connection or its scope, without an attempt.
+	// `release`, `pause` and `requeue`: the entry waits for its connection, its scope or the next
+	// invocation, without an attempt.
 	return { lastErrorCode: outcome.code, status: 'planned' };
 }
 
@@ -490,6 +510,7 @@ export {
 	MAX_ATTEMPTS,
 	RETRY_DELAYS_MS,
 	UNCERTAIN_AFTER_MS,
+	askedWait,
 	claimEntry,
 	clearDisturbance,
 	disturbConnection,
