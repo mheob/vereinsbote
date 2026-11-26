@@ -5,6 +5,7 @@ import { ACCESS_LEVELS } from '@/i18n/levels';
 import { DEFAULT_LOCALE, SUPPORTED_LOCALES } from '@/i18n/locale';
 import { invalidInviteFields } from '@/server/users/form';
 import type { InviteField } from '@/server/users/form';
+import type { ResendRefusal } from '@/server/users/users';
 
 /*
  * The server functions of the user management. Server modules are imported inside the handlers,
@@ -23,6 +24,11 @@ type InviteResult = Readonly<
 
 /** The result of a change the last-admin rule can refuse. */
 type AdminChangeResult = Readonly<{ ok: true } | { ok: false; failure: 'lastAdmin' }>;
+
+/** Whether a resent invitation went out, or why it was not sent again. */
+type ResendResult = Readonly<
+	{ ok: true; mailSent: boolean } | { ok: false; failure: ResendRefusal }
+>;
 
 const inviteRequest = z.object({
 	email: z.string(),
@@ -150,5 +156,32 @@ const submitEnable = createServerFn({ method: 'POST' })
 		await enableUser(context.db, principal, data.userId);
 	});
 
-export { loadUsersPage, submitAdmin, submitDisable, submitEnable, submitInvite, submitLevel };
+/** Sends the invitation of an invited user again, at most once a minute (`resendInvitation`). */
+const submitResendInvitation = createServerFn({ method: 'POST' })
+	.validator(userRequest)
+	.handler(async ({ data }): Promise<ResendResult> => {
+		const [{ requireRequestPrincipal }, { resendInvitation }] = await Promise.all([
+			import('@/platform/request-principal'),
+			import('@/server/users/users'),
+		]);
+		const { context, principal } = await requireRequestPrincipal();
+		const result = await resendInvitation(
+			{ appUrl: context.env.appUrl, db: context.db, mailer: context.mailer },
+			principal,
+			data.userId,
+		);
+		return 'refused' in result
+			? { failure: result.refused, ok: false }
+			: { mailSent: result.mailSent, ok: true };
+	});
+
+export {
+	loadUsersPage,
+	submitAdmin,
+	submitDisable,
+	submitEnable,
+	submitInvite,
+	submitLevel,
+	submitResendInvitation,
+};
 export type { InviteFieldError, InviteFieldErrors };

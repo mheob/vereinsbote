@@ -29,22 +29,33 @@ async function createTemplate(): Promise<Blob> {
 // oxlint-disable-next-line node/no-top-level-await -- see above, the work belongs to the import, not to the first test
 const templateDump = await createTemplate();
 
+interface TestDbOptions {
+	/** Gets the SQL of every statement the database runs, e.g. to compare the statements of two calls. */
+	readonly logQuery?: (query: string) => void;
+}
+
 /**
  * Creates an in-memory PGlite database with all migrations applied, closed when the calling test
  * ends. An open PGlite keeps its WebAssembly memory until the garbage collector finds it, so a
  * worker running many database tests grew by gigabytes.
  *
+ * @param options What to do with the SQL of each statement.
  * @returns A fresh, isolated database.
  * @throws {Error} When called outside a test, e.g. in `beforeAll`.
  */
-async function createTestDb(): Promise<Db> {
+async function createTestDb(options: TestDbOptions = {}): Promise<Db> {
 	const client = new PGlite({ loadDataDir: templateDump });
 	onTestFinished(async () => {
 		await client.close();
 	});
 	await client.waitReady;
-	const db: Db = drizzle(client, { schema });
+	const { logQuery } = options;
+	const db: Db = drizzle(client, {
+		schema,
+		...(logQuery === undefined ? {} : { logger: { logQuery } }),
+	});
 	return db;
 }
 
 export { createTestDb };
+export type { TestDbOptions };

@@ -1,8 +1,15 @@
 import { and, inArray, lt, lte, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 
+import { todayInClubZone } from '@/server/contacts/calendar';
 import type { Db } from '@/server/db/client';
-import { loginLinkWindow, rateLimit, session, verification } from '@/server/db/schema';
+import {
+	loginLinkDays,
+	loginLinkWindow,
+	rateLimit,
+	session,
+	verification,
+} from '@/server/db/schema';
 import type { TickContext, TickStep } from '@/server/tick/tick';
 
 import { LOGIN_LINK_WINDOW_SECONDS, LONGEST_RATE_LIMIT_WINDOW_SECONDS } from './sign-in-limits';
@@ -17,8 +24,8 @@ const PRUNE_BATCH_SIZE = 500;
 const MS_PER_SECOND = 1000;
 const STALE_RATE_LIMIT_MS = 2 * LONGEST_RATE_LIMIT_WINDOW_SECONDS * MS_PER_SECOND;
 
-/** Deletes up to one batch and returns how many rows it deleted. */
-type BatchDelete = (db: Db, batchSize: number) => Promise<number>;
+/** Deletes up to one batch at the tick's instant and returns how many rows it deleted. */
+type BatchDelete = (db: Db, batchSize: number, now: Date) => Promise<number>;
 
 /*
  * Each delete repeats its age condition on the rows it deletes, not only in the batch subquery:
@@ -46,6 +53,14 @@ function isClosedLoginWindow(): SQL {
 		loginLinkWindow.openedAt,
 		sql`now() - make_interval(secs => ${LOGIN_LINK_WINDOW_SECONDS})`,
 	);
+}
+
+/*
+ * The login link days follow the club day of the app's clock, the one `takeLoginLinkOfDay`
+ * counts with, not the database clock.
+ */
+function isPastLoginLinkDay(now: Date): SQL {
+	return lt(loginLinkDays.day, todayInClubZone(now));
 }
 
 /**
@@ -86,6 +101,33 @@ const deleteClosedLoginWindows: BatchDelete = async (db, batchSize) => {
 		.delete(loginLinkWindow)
 		.where(and(inArray(loginLinkWindow.emailHash, closed), isClosedLoginWindow()))
 		.returning({ emailHash: loginLinkWindow.emailHash });
+	return deleted.length;
+};
+
+/**
+ * Deletes the login link counts of past club days: only today's count limits a request.
+ *
+ * @param db The database.
+ * @param batchSize The most rows to delete.
+ * @param now The tick's instant; its club day stays.
+ * @returns How many rows it deleted.
+ */
+const deletePastLoginLinkDays: BatchDelete = async (db, batchSize, now) => {
+	const past = db
+		.select({ day: loginLinkDays.day, emailHash: loginLinkDays.emailHash })
+		.from(loginLinkDays)
+		.where(isPastLoginLinkDay(now))
+		.limit(batchSize);
+	const deleted = await db
+		.delete(loginLinkDays)
+		.where(
+			and(
+				// The row value names the columns in the order the subquery selects them.
+				sql`(${loginLinkDays.day}, ${loginLinkDays.emailHash}) in ${past}`,
+				isPastLoginLinkDay(now),
+			),
+		)
+		.returning({ emailHash: loginLinkDays.emailHash });
 	return deleted.length;
 };
 
@@ -145,9 +187,10 @@ async function deleteUntilDone(
 	batchSize: number,
 ): Promise<boolean> {
 	for (;;) {
-		if (ctx.now().getTime() >= ctx.deadline) return true;
+		const now = ctx.now();
+		if (now.getTime() >= ctx.deadline) return true;
 		// oxlint-disable-next-line no-await-in-loop -- each batch is one short statement, by design
-		const deleted = await deleteBatch(ctx.db, batchSize);
+		const deleted = await deleteBatch(ctx.db, batchSize, now);
 		if (deleted < batchSize) return false;
 	}
 }
@@ -156,14 +199,15 @@ async function deleteUntilDone(
 const BATCH_DELETES: readonly BatchDelete[] = [
 	deleteExpiredVerifications,
 	deleteClosedLoginWindows,
+	deletePastLoginLinkDays,
 	deleteExpiredSessions,
 	deleteStaleRateLimits,
 ];
 
 /**
  * Builds the step that deletes expired verification rows, closed login link windows, expired
- * sessions and stale rate limiter rows, all judged by the database clock, within the step's time
- * budget.
+ * sessions and stale rate limiter rows, judged by the database clock, and the login link counts of
+ * past club days, judged by the tick's clock, within the step's time budget.
  *
  * @param batchSize Rows per delete statement; tests make it small.
  * @returns The `prune-auth-records` tick step.

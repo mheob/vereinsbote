@@ -4,25 +4,17 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { isAPIError } from 'better-auth/api';
 import { magicLink } from 'better-auth/plugins/magic-link';
 import { tanstackStartCookies } from 'better-auth/tanstack-start';
-import { sql } from 'drizzle-orm';
 
 import type { Locale } from '@/i18n/locale';
 import { translate } from '@/i18n/translate';
-import { AFTER_SIGN_IN_PATH, LOGIN_PATH } from '@/paths';
+import { LOGIN_CONFIRM_PATH } from '@/paths';
 import {
 	deriveAuthSecret,
 	deriveLoginWindowKey,
 	hashLoginWindowEmail,
 } from '@/server/crypto/secrets';
 import type { Db } from '@/server/db/client';
-import {
-	account,
-	loginLinkWindow,
-	rateLimit,
-	session,
-	user,
-	verification,
-} from '@/server/db/schema';
+import { account, rateLimit, session, user, verification } from '@/server/db/schema';
 import type { Env } from '@/server/env';
 import { errorLabel, errorLabelWithCause } from '@/server/error-label';
 import type { SystemMail, SystemMailDelivery, SystemMailer } from '@/server/mail/system-mailer';
@@ -30,12 +22,9 @@ import { closeSetupRecoveryFor } from '@/server/setup/setup';
 import { findUserByEmail, findUserById, recordSignIn } from '@/server/users/repo';
 
 import { normalizeEmail } from './email';
+import { allowLoginLink } from './login-link-days';
 import { isServerOpenedSession, sessionForUser } from './session-for-user';
-import {
-	LINK_REQUEST_WINDOW_SECONDS,
-	LINK_REQUESTS_PER_WINDOW,
-	LOGIN_LINK_WINDOW_SECONDS,
-} from './sign-in-limits';
+import { LINK_REQUEST_WINDOW_SECONDS, LINK_REQUESTS_PER_WINDOW } from './sign-in-limits';
 
 /** 15 minutes. */
 const LOGIN_LINK_TTL_SECONDS = 900;
@@ -56,10 +45,13 @@ const IP_ADDRESS_HEADERS =
 
 /**
  * Every routed Better Auth endpoint except the ones the app uses: `/sign-in/magic-link`,
- * `/magic-link/verify`, `/sign-in/social`, `/callback/:id` (Microsoft), `/sign-out`, `/ok` and
- * `/error`. `/get-session` is off as well: the app reads sessions on the server
- * (`auth.api.getSession`), so the browser needs no endpoint that returns the session and user.
- * A test keeps this list complete for new Better Auth versions.
+ * `/sign-in/social`, `/callback/:id` (Microsoft), `/sign-out`, `/ok` and `/error`. `/get-session`
+ * is off as well: the app reads sessions on the server (`auth.api.getSession`), so the browser
+ * needs no endpoint that returns the session and user. So is `/magic-link/verify`: a GET there
+ * would use up the link, also when a mail scanner opens it. The login link leads to the app's
+ * confirmation page instead, whose POST verifies it on the server (`verifyLoginLink` calls the
+ * endpoint as `auth.api.magicLinkVerify`, which `disabledPaths` does not touch). A test keeps
+ * this list complete for new Better Auth versions.
  */
 const DISABLED_PATHS = [
 	'/account-info',
@@ -72,6 +64,7 @@ const DISABLED_PATHS = [
 	'/link-social',
 	'/list-accounts',
 	'/list-sessions',
+	'/magic-link/verify',
 	'/refresh-token',
 	'/request-password-reset',
 	'/reset-password',
@@ -98,7 +91,7 @@ interface AuthDeps {
 	db: Db;
 	env: Env;
 	mailer: SystemMailer;
-	/** Runs the delivery of login links after the response. Defaults to `runDetached`. */
+	/** Keeps the delivery of login links running after the request. Defaults to `runDetached`. */
 	runInBackground?: BackgroundRunner;
 }
 
@@ -203,12 +196,25 @@ async function prepareLoginLink(
 	}
 }
 
+/** Resolves on the next macrotask, after the current one and all its microtasks have run. */
+async function nextMacrotask(): Promise<void> {
+	const { promise, resolve } = Promise.withResolvers<null>();
+	setTimeout(() => {
+		resolve(null);
+	}, 0);
+	await promise;
+}
+
 /**
- * Delivers a prepared login link. Never rejects: a failure is logged, since nobody waits for it.
+ * Delivers a prepared login link, starting on the next macrotask: by then the `sendMagicLink`
+ * callback has returned and Better Auth has built its response, so not even the synchronous start
+ * of rendering the mail delays the answer. Never rejects: a failure is logged, since nobody waits
+ * for it.
  *
  * @param delivery The delivery of the prepared mail.
  */
 async function deliverLoginLink(delivery: SystemMailDelivery): Promise<void> {
+	await nextMacrotask();
 	try {
 		await delivery();
 	} catch (error) {
@@ -217,58 +223,52 @@ async function deliverLoginLink(delivery: SystemMailDelivery): Promise<void> {
 }
 
 /**
- * Opens the login link window of an address, unless one was opened within the last
- * `LOGIN_LINK_WINDOW_SECONDS`. One atomic statement on the database clock, so it holds across
- * isolates and concurrent requests. Requests inside an open window do not extend it.
+ * The link of a login link mail: the app's confirmation page, whose button signs in. Only its
+ * POST uses up the token, so a mail scanner that opens the link leaves it valid.
  *
- * @param db The database.
- * @param emailHash The HMAC of the normalized address.
- * @returns True when this request opened the window.
+ * @param appUrl `APP_URL`.
+ * @param token The token of the link.
+ * @returns The link.
  */
-async function openLoginLinkWindow(db: Db, emailHash: string): Promise<boolean> {
-	const opened = await db
-		.insert(loginLinkWindow)
-		.values({ emailHash, openedAt: sql`now()` })
-		.onConflictDoUpdate({
-			set: { openedAt: sql`excluded.opened_at` },
-			setWhere: sql`${loginLinkWindow.openedAt} <= now() - make_interval(secs => ${LOGIN_LINK_WINDOW_SECONDS})`,
-			target: loginLinkWindow.emailHash,
-		})
-		.returning({ emailHash: loginLinkWindow.emailHash });
-	return opened.length > 0;
+function confirmationLink(appUrl: URL, token: string): string {
+	const link = new URL(LOGIN_CONFIRM_PATH, appUrl.origin);
+	link.searchParams.set('token', token);
+	return link.href;
 }
 
 /**
  * Builds the `sendMagicLink` callback. It sends only when the request opened the login link
- * window of the address and the user exists and is not disabled, in the user's stored language.
- * Every request runs the same statements, whether the address is invited or not: the window
- * upsert, the user lookup and the mailer's preparation (the system sender, its credentials, the
- * brand and the count, which adds nothing without a mail). The mail is rendered and sent after the
- * response. So neither the result nor the response time tells which addresses are invited. The
- * preparation needs the database, which on Cloudflare ends with the response, so it runs first;
- * the delivery needs none.
+ * window of the address, a link of the club day is left (`LOGIN_LINKS_PER_DAY`) and the user
+ * exists and is not disabled, in the user's stored language. Every request runs the same
+ * statements in the same order, whether the address is invited or not: the window upsert and the
+ * day's count, the user lookup and the mailer's preparation (the system sender, its credentials,
+ * the brand and the count, which adds nothing without a mail). The mail is rendered and sent from
+ * the next macrotask on, once the callback has returned (`deliverLoginLink`). So neither the
+ * result nor the response time tells which addresses are invited. The preparation needs the
+ * database, which on Cloudflare ends with the response, so it runs first; the delivery needs none.
  *
  * @param deps The dependencies of the auth instance.
  * @param deps.db The database.
+ * @param deps.env The environment (`APP_URL`).
  * @param deps.mailer The mailer for login links.
- * @param deps.runInBackground Runs the delivery after the response.
+ * @param deps.runInBackground Keeps the delivery running after the request.
  * @param windowKey The HMAC key for the login link windows.
  * @returns The callback for the magic link plugin.
  */
 function createLinkSender(
-	{ db, mailer, runInBackground = runDetached }: AuthDeps,
+	{ db, env, mailer, runInBackground = runDetached }: AuthDeps,
 	windowKey: CryptoKey,
-): (data: Readonly<{ email: string; url: string }>) => Promise<void> {
-	return async ({ email, url }) => {
+): (data: Readonly<{ email: string; token: string }>) => Promise<void> {
+	return async ({ email, token }) => {
 		const to = normalizeEmail(email);
 		const emailHash = await hashLoginWindowEmail(windowKey, to);
-		const [openedWindow, found] = await Promise.all([
-			openLoginLinkWindow(db, emailHash),
+		const [allowed, found] = await Promise.all([
+			allowLoginLink(db, emailHash, new Date()),
 			findUserByEmail(db, to),
 		]);
 		const mail =
-			openedWindow && found !== null && found.status !== 'disabled'
-				? loginLinkMail({ link: url, locale: found.locale, to })
+			allowed && found !== null && found.status !== 'disabled'
+				? loginLinkMail({ link: confirmationLink(env.appUrl, token), locale: found.locale, to })
 				: null;
 		const delivery = await prepareLoginLink(mailer, mail);
 		if (delivery !== null) runInBackground(deliverLoginLink(delivery));
@@ -431,17 +431,14 @@ async function handleAuthRequest(auth: Pick<Auth, 'handler'>, request: Request):
  */
 async function requestLoginLink(auth: Auth, email: string): Promise<void> {
 	await auth.api.signInMagicLink({
-		body: {
-			callbackURL: AFTER_SIGN_IN_PATH,
-			email: normalizeEmail(email),
-			errorCallbackURL: LOGIN_PATH,
-		},
+		body: { email: normalizeEmail(email) },
 		headers: new Headers(),
 	});
 }
 
 /**
- * Checks a login link and opens a session.
+ * Checks a login link and opens a session; the token is used up. The confirmation page calls it
+ * when its button is pressed (`/login/confirm`).
  *
  * @param auth The auth instance.
  * @param token The token of the link.

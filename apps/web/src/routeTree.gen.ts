@@ -27,6 +27,7 @@ import { Route as ApiTickRouteImport } from './routes/api/tick'
 import { Route as ContactsIndexRouteImport } from './routes/contacts/index'
 import { Route as ContactsContactIdRouteImport } from './routes/contacts/$contactId'
 import { Route as ContactsNewRouteImport } from './routes/contacts/new'
+import { Route as LoginConfirmRouteImport } from './routes/login_.confirm'
 import { Route as MediaFileRouteImport } from './routes/media/$file'
 import { Route as TemplatesIndexRouteImport } from './routes/templates/index'
 import { Route as TemplatesTemplateIdRouteImport } from './routes/templates/$templateId'
@@ -132,6 +133,11 @@ const ContactsNewRoute = ContactsNewRouteImport.update({
   path: '/new',
   getParentRoute: () => ContactsRouteRoute,
 } as any)
+const LoginConfirmRoute = LoginConfirmRouteImport.update({
+  id: '/login_/confirm',
+  path: '/login/confirm',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MediaFileRoute = MediaFileRouteImport.update({
   id: '/media/$file',
   path: '/media/$file',
@@ -223,6 +229,7 @@ export interface FileRoutesByFullPath {
   '/api/tick': typeof ApiTickRoute
   '/contacts/$contactId': typeof ContactsContactIdRoute
   '/contacts/new': typeof ContactsNewRoute
+  '/login/confirm': typeof LoginConfirmRoute
   '/media/$file': typeof MediaFileRoute
   '/templates/$templateId': typeof TemplatesTemplateIdRoute
   '/templates/new': typeof TemplatesNewRoute
@@ -254,6 +261,7 @@ export interface FileRoutesByTo {
   '/api/tick': typeof ApiTickRoute
   '/contacts/$contactId': typeof ContactsContactIdRoute
   '/contacts/new': typeof ContactsNewRoute
+  '/login/confirm': typeof LoginConfirmRoute
   '/media/$file': typeof MediaFileRoute
   '/templates/$templateId': typeof TemplatesTemplateIdRoute
   '/templates/new': typeof TemplatesNewRoute
@@ -289,6 +297,7 @@ export interface FileRoutesById {
   '/api/tick': typeof ApiTickRoute
   '/contacts/$contactId': typeof ContactsContactIdRoute
   '/contacts/new': typeof ContactsNewRoute
+  '/login_/confirm': typeof LoginConfirmRoute
   '/media/$file': typeof MediaFileRoute
   '/templates/$templateId': typeof TemplatesTemplateIdRoute
   '/templates/new': typeof TemplatesNewRoute
@@ -325,6 +334,7 @@ export interface FileRouteTypes {
     | '/api/tick'
     | '/contacts/$contactId'
     | '/contacts/new'
+    | '/login/confirm'
     | '/media/$file'
     | '/templates/$templateId'
     | '/templates/new'
@@ -356,6 +366,7 @@ export interface FileRouteTypes {
     | '/api/tick'
     | '/contacts/$contactId'
     | '/contacts/new'
+    | '/login/confirm'
     | '/media/$file'
     | '/templates/$templateId'
     | '/templates/new'
@@ -390,6 +401,7 @@ export interface FileRouteTypes {
     | '/api/tick'
     | '/contacts/$contactId'
     | '/contacts/new'
+    | '/login_/confirm'
     | '/media/$file'
     | '/templates/$templateId'
     | '/templates/new'
@@ -419,6 +431,7 @@ export interface RootRouteChildren {
   SetupRoute: typeof SetupRoute
   ApiHealthRoute: typeof ApiHealthRoute
   ApiTickRoute: typeof ApiTickRoute
+  LoginConfirmRoute: typeof LoginConfirmRoute
   MediaFileRoute: typeof MediaFileRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
@@ -550,6 +563,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/contacts/new'
       preLoaderRoute: typeof ContactsNewRouteImport
       parentRoute: typeof ContactsRouteRoute
+    }
+    '/login_/confirm': {
+      id: '/login_/confirm'
+      path: '/login/confirm'
+      fullPath: '/login/confirm'
+      preLoaderRoute: typeof LoginConfirmRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/media/$file': {
       id: '/media/$file'
@@ -734,6 +754,7 @@ const rootRouteChildren: RootRouteChildren = {
   SetupRoute: SetupRoute,
   ApiHealthRoute: ApiHealthRoute,
   ApiTickRoute: ApiTickRoute,
+  LoginConfirmRoute: LoginConfirmRoute,
   MediaFileRoute: MediaFileRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
 }

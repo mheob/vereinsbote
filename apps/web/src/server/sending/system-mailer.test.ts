@@ -5,6 +5,7 @@ import { setUpClub } from '@/server/contacts/testing';
 import type { Db } from '@/server/db/client';
 import { createTestDb } from '@/server/db/test-db';
 import { parseEnv } from '@/server/env';
+import type { Env } from '@/server/env';
 import { errorLabel } from '@/server/error-label';
 import type { SmtpMail } from '@/server/mail/smtp-transport';
 
@@ -76,17 +77,49 @@ function endable(db: Db): { db: Db; end: () => void } {
 }
 
 /**
+ * Sets up a club with a Graph sender that sends the system mails.
+ *
+ * @param db The test database.
+ * @returns The sender's id.
+ */
+async function addGraphSystemSender(db: Db): Promise<string> {
+	const { admin } = await setUpClub(db);
+	const connectionId = await graphConnection(db, admin);
+	const senderId = await senderOn(db, admin, connectionId, 'verein@example.org');
+	await setSystemSender(db, admin, senderId);
+	return senderId;
+}
+
+/**
  * A club with a Graph sender that sends the system mails.
  *
  * @returns The database and the sender's id.
  */
 async function graphSystemSender(): Promise<{ db: Db; senderId: string }> {
 	const db = await createTestDb();
-	const { admin } = await setUpClub(db);
-	const connectionId = await graphConnection(db, admin);
-	const senderId = await senderOn(db, admin, connectionId, 'verein@example.org');
-	await setSystemSender(db, admin, senderId);
-	return { db, senderId };
+	return { db, senderId: await addGraphSystemSender(db) };
+}
+
+/** The ways a system mail can go: the system sender, `DEV_SMTP_URL`, or none at all. */
+const MAILER_PATHS = ['system sender', 'DEV_SMTP_URL', 'none'] as const;
+
+/**
+ * Sets up a mailer path: a system sender, `DEV_SMTP_URL`, or neither.
+ *
+ * @param db The test database.
+ * @param path The path.
+ * @returns The environment; its app secret matches the stored credentials.
+ */
+async function setUpPath(db: Db, path: (typeof MAILER_PATHS)[number]): Promise<Env> {
+	if (path === 'system sender') await addGraphSystemSender(db);
+	if (path !== 'DEV_SMTP_URL') return testEnv();
+	return parseEnv({
+		APP_SECRET: Buffer.alloc(32, 7).toString('base64'),
+		APP_URL: 'https://bote.example.org',
+		CRON_SECRET: 'c'.repeat(32),
+		DATABASE_URL: 'postgres://x@localhost/x',
+		DEV_SMTP_URL: 'smtp://localhost:1025',
+	});
 }
 
 /**
@@ -202,6 +235,34 @@ describe(createSystemMailer, () => {
 		expect(providers.calls).toStrictEqual([]);
 		await expect(quotaToday(db, `sender:${senderId}`, NOW)).resolves.toMatchObject({ used: 0 });
 	});
+
+	it.each(MAILER_PATHS)(
+		'runs the same statements with and without a mail through %s',
+		async (path) => {
+			const queries: string[] = [];
+			const db = await createTestDb({
+				logQuery(query) {
+					queries.push(query);
+				},
+			});
+			const mailer = createSystemMailer({
+				db,
+				env: await setUpPath(db, path),
+				fetch: fakeProviders().fetch,
+				now: () => NOW,
+			});
+
+			queries.length = 0;
+			// Without a transport the mail fails after the same statements.
+			const delivery = await mailer.prepare(MAIL).catch(() => null);
+			const withMail = queries.splice(0);
+			await expect(mailer.prepare(null)).resolves.toBeNull();
+
+			expect(withMail).not.toStrictEqual([]);
+			expect(queries).toStrictEqual(withMail);
+			expect(delivery === null).toBe(path === 'none');
+		},
+	);
 
 	it('throws with the code of the provider when it refuses the mail', async () => {
 		const { db } = await graphSystemSender();

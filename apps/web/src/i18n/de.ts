@@ -29,6 +29,10 @@ export const de = {
 	'areas.renamed': '{from} heißt jetzt {to}.',
 	'areas.tableCaption': 'Alle Bereiche',
 	'areas.title': 'Bereiche',
+	'auth.confirmSubmit': 'Anmelden',
+	'auth.confirmText':
+		'Mit dem Knopf meldest du dich an. Erst er verbraucht deinen Anmeldelink, das bloße Öffnen des Links nicht.',
+	'auth.confirmTitle': 'Anmeldung bestätigen',
 	'auth.emailLabel': 'E-Mail',
 	'auth.linkSent':
 		'Wir haben einen Anmeldelink an {email} geschickt, falls die Adresse eingeladen ist.',
@@ -1099,6 +1103,12 @@ export const de = {
 	'users.emailTaken': 'Diese Adresse ist schon eingeladen.',
 	'users.enable': 'Entsperren',
 	'users.enabled': '{name} wurde entsperrt.',
+	'users.invitationFailed': 'Einladung nicht verschickt',
+	'users.invitationNotInvited': '{name} ist nicht mehr eingeladen.',
+	'users.invitationResendFailed': 'Die Einladung an {name} konnte nicht verschickt werden.',
+	'users.invitationResent': 'Die Einladung an {name} wurde erneut verschickt.',
+	'users.invitationTooSoon':
+		'Die Einladung an {name} wurde gerade erst verschickt. Bitte warte eine Minute und versuche es dann erneut.',
 	'users.inviteAdmin': 'Admin',
 	'users.inviteLocale': 'Sprache',
 	'users.inviteSubmit': 'Einladen',
@@ -1113,6 +1123,7 @@ export const de = {
 	'users.nameColumn': 'Name',
 	'users.nameInvalid': 'Bitte gib einen Namen ein.',
 	'users.nameLabel': 'Name',
+	'users.resendInvitation': 'Einladung erneut senden',
 	'users.status.active': 'Aktiv',
 	'users.status.disabled': 'Gesperrt',
 	'users.status.invited': 'Eingeladen',

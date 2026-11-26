@@ -1,5 +1,6 @@
 /* oxlint-disable max-classes-per-file -- the plan's interface defines both user errors in this module */
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, lte, or, sql } from 'drizzle-orm';
+import type { SQL } from 'drizzle-orm';
 
 import type { Locale } from '@/i18n/locale';
 import { translate } from '@/i18n/translate';
@@ -34,12 +35,17 @@ class LastAdminError extends Error {
 	}
 }
 
+/** A resend waits this long after the last invitation mail of the user. */
+const INVITATION_RESEND_SECONDS = 60;
+
 interface UserRow {
 	readonly id: string;
 	readonly email: string;
 	readonly name: string;
 	readonly isAdmin: boolean;
 	readonly status: UserStatus;
+	/** The last invitation mail could not be sent. */
+	readonly invitationFailed: boolean;
 	/** The level per area id; areas without an entry are not accessible. */
 	readonly levels: Readonly<Record<string, AccessLevel>>;
 }
@@ -50,6 +56,9 @@ interface InviteDeps {
 	/** `APP_URL`; the invitation links to its sign-in page. */
 	readonly appUrl: URL;
 }
+
+/** Why an invitation was not sent again: the user is no longer invited, or was just mailed. */
+type ResendRefusal = 'notInvited' | 'tooSoon';
 
 interface InviteInput {
 	/** The address as typed; it is stored normalized. */
@@ -195,9 +204,33 @@ async function createInvitedUser(
 }
 
 /**
+ * Stores how the invitation mail of a user went.
+ *
+ * @param db The database.
+ * @param userId The user.
+ * @param mail Whether it went out, and whether its time is stored already (a resend claims it).
+ * @param mail.mailSent True when the mail went out.
+ * @param mail.stampSentAt True to store now as the time of the mail.
+ */
+async function recordInvitation(
+	db: Db,
+	userId: string,
+	{ mailSent, stampSentAt }: Readonly<{ mailSent: boolean; stampSentAt: boolean }>,
+): Promise<void> {
+	await db
+		.update(user)
+		.set({
+			invitationFailed: !mailSent,
+			...(stampSentAt ? { invitationSentAt: sql`now()` } : {}),
+		})
+		.where(eq(user.id, userId));
+}
+
+/**
  * Invites a user: creates the user (status `invited`, the given role and language) and sends an
  * invitation in that language that links to the sign-in page. The user stays invited when the mail
  * cannot be sent; they can still request a login link or use Microsoft, and the result says so.
+ * The time of the mail and whether it failed are stored, for the user list and for a resend.
  *
  * @param deps The database, the mailer and `APP_URL`.
  * @param actor Who invites; must be an admin.
@@ -219,7 +252,89 @@ async function inviteUser(
 		name: input.name.trim(),
 		to: normalizeEmail(input.email),
 	});
+	await recordInvitation(deps.db, userId, { mailSent, stampSentAt: true });
 	return { mailSent, userId };
+}
+
+/**
+ * The condition of a user whose last invitation mail is old enough for a resend: none yet, or at
+ * least `INVITATION_RESEND_SECONDS` ago (database clock).
+ *
+ * @returns The condition on `user`.
+ */
+function isResendDue(): SQL | undefined {
+	const waited = sql`now() - make_interval(secs => ${INVITATION_RESEND_SECONDS})`;
+	return or(isNull(user.invitationSentAt), lte(user.invitationSentAt, waited));
+}
+
+/**
+ * Claims the resend of an invitation: stores now as the time of the mail, but only for an invited
+ * user whose last invitation mail is at least `INVITATION_RESEND_SECONDS` old (database clock).
+ * One statement, so two admins who press at once send one mail.
+ *
+ * @param db The database.
+ * @param userId The user.
+ * @returns The address, the name and the language of the user, or null when not claimed.
+ */
+async function claimInvitationResend(
+	db: Db,
+	userId: string,
+): Promise<{ email: string; name: string; locale: Locale } | null> {
+	const [claimed] = await db
+		.update(user)
+		.set({ invitationSentAt: sql`now()` })
+		.where(and(eq(user.id, userId), eq(user.status, 'invited'), isResendDue()))
+		.returning({ email: user.email, locale: user.locale, name: user.name });
+	return claimed ?? null;
+}
+
+/**
+ * Tells why an invitation could not be claimed for a resend.
+ *
+ * @param db The database.
+ * @param userId The user.
+ * @returns `tooSoon` for an invited user, `notInvited` for any other or an unknown user.
+ */
+async function resendRefusal(db: Db, userId: string): Promise<ResendRefusal> {
+	const [found] = await db.select({ status: user.status }).from(user).where(eq(user.id, userId));
+	return found?.status === 'invited' ? 'tooSoon' : 'notInvited';
+}
+
+/**
+ * Sends the invitation of an invited user again, at most once a minute per user (counted from the
+ * last invitation mail, sent or failed). The result and the activity log say whether it went out;
+ * the user list shows a failed one.
+ *
+ * @param deps The database, the mailer and `APP_URL`.
+ * @param actor Who resends; must be an admin.
+ * @param userId The user.
+ * @returns Whether the mail went out, or why it was not sent again.
+ * @throws {ForbiddenError} When the actor is no admin.
+ */
+async function resendInvitation(
+	deps: InviteDeps,
+	actor: Principal,
+	userId: string,
+): Promise<{ mailSent: boolean } | { refused: ResendRefusal }> {
+	assertAdmin(actor);
+	const claimed = await claimInvitationResend(deps.db, userId);
+	if (claimed === null) return { refused: await resendRefusal(deps.db, userId) };
+	const mailSent = await sendInvitation(deps.mailer, {
+		appUrl: deps.appUrl,
+		locale: claimed.locale,
+		name: claimed.name,
+		to: claimed.email,
+	});
+	await deps.db.transaction(async (tx) => {
+		await recordInvitation(tx, userId, { mailSent, stampSentAt: false });
+		await writeAudit(tx, {
+			action: 'user.invitation_resent',
+			actorUserId: actor.userId,
+			details: { mailSent },
+			target: `user:${userId}`,
+		});
+	});
+	return { mailSent };
 }
 
 /**
@@ -369,6 +484,7 @@ async function listUsersWithLevels(db: Db, actor: Principal): Promise<UserRow[]>
 			.select({
 				email: user.email,
 				id: user.id,
+				invitationFailed: user.invitationFailed,
 				isAdmin: user.isAdmin,
 				name: user.name,
 				status: user.status,
@@ -387,9 +503,10 @@ async function listUsersWithLevels(db: Db, actor: Principal): Promise<UserRow[]>
 	for (const { areaId, level, userId } of memberships) {
 		levels.set(userId, { ...levels.get(userId), [areaId]: level });
 	}
-	return users.map(({ email, id, isAdmin, name, status }) => ({
+	return users.map(({ email, id, invitationFailed, isAdmin, name, status }) => ({
 		email,
 		id,
+		invitationFailed,
 		isAdmin,
 		levels: levels.get(id) ?? {},
 		name,
@@ -404,7 +521,8 @@ export {
 	enableUser,
 	inviteUser,
 	listUsersWithLevels,
+	resendInvitation,
 	setAdmin,
 	setAreaLevel,
 };
-export type { UserRow };
+export type { ResendRefusal, UserRow };

@@ -31,6 +31,7 @@ import type { Key } from 'react-aria-components';
 
 import type { Announce } from '@/components/announcements';
 import { CheckIcon, ChevronIcon } from '@/components/icons';
+import { FAILED, settle } from '@/components/settle';
 import {
 	checkboxBoxClass,
 	checkboxClass,
@@ -40,7 +41,13 @@ import {
 	secondaryButtonClass,
 	selectButtonClass,
 } from '@/components/styles';
-import { submitAdmin, submitDisable, submitEnable, submitLevel } from '@/functions/users';
+import {
+	submitAdmin,
+	submitDisable,
+	submitEnable,
+	submitLevel,
+	submitResendInvitation,
+} from '@/functions/users';
 import { ACCESS_LEVELS, LEVEL_MESSAGES, NO_ACCESS } from '@/i18n/levels';
 import type { LevelChoice } from '@/i18n/levels';
 import { useT } from '@/i18n/use-t';
@@ -304,9 +311,70 @@ function EnableAction({
 }
 
 /**
- * One user: name (row header), address, status, role, a level select per area and „Sperren“ or,
- * for a disabled user, „Entsperren“. The button swaps once the status changes; the focus moves to
- * the row header instead of getting lost.
+ * The button „Einladung erneut senden“ of an invited user. The server sends one at most once a
+ * minute; the result is announced. A user who is no longer invited (signed in meanwhile) gets the
+ * table reloaded, and the button goes.
+ *
+ * @param props The props.
+ * @param props.announce Announces the result.
+ * @param props.describedBy The id of the row header, so the button names its user.
+ * @param props.onGone Called when the user turned out to be no longer invited, before the reload.
+ * @param props.user The user of the row.
+ * @returns The button.
+ */
+function ResendInvitationAction({
+	announce,
+	describedBy,
+	onGone,
+	user,
+}: Readonly<{
+	announce: Announce;
+	describedBy: string;
+	onGone: () => void;
+	user: UserRow;
+}>): ReactNode {
+	const t = useT();
+	const router = useRouter();
+	const resend = useServerFn(submitResendInvitation);
+	const [isPending, startPending] = useTransition();
+	const onPress = useCallback(() => {
+		startPending(async () => {
+			const result = await settle(resend({ data: { userId: user.id } }));
+			// The session ended; the redirect takes over.
+			if (result === undefined) return;
+			if (result === FAILED) {
+				announce(t('auth.requestFailed'), 'alert');
+				return;
+			}
+			if (!result.ok && result.failure === 'tooSoon') {
+				announce(t('users.invitationTooSoon', { name: user.name }), 'alert');
+				return;
+			}
+			if (!result.ok) onGone();
+			await router.invalidate();
+			if (!result.ok) announce(t('users.invitationNotInvited', { name: user.name }), 'alert');
+			else if (result.mailSent)
+				announce(t('users.invitationResent', { name: user.name }), 'status');
+			else announce(t('users.invitationResendFailed', { name: user.name }), 'alert');
+		});
+	}, [announce, onGone, resend, router, t, user]);
+	return (
+		<Button
+			aria-describedby={describedBy}
+			className={secondaryButtonClass}
+			isPending={isPending}
+			onPress={onPress}
+		>
+			{t('users.resendInvitation')}
+		</Button>
+	);
+}
+
+/**
+ * One user: name (row header), address, status (with a note when the invitation mail failed),
+ * role, a level select per area and „Sperren“ or, for a disabled user, „Entsperren“; an invited
+ * user also gets „Einladung erneut senden“. The buttons swap once the status changes; the focus
+ * moves to the row header instead of getting lost.
  *
  * @param props The props.
  * @param props.announce Announces results.
@@ -338,7 +406,12 @@ function UserTableRow({
 				{user.name}
 			</th>
 			<td className={cellClass}>{user.email}</td>
-			<td className={cellClass}>{t(`users.status.${user.status}`)}</td>
+			<td className={cellClass}>
+				{t(`users.status.${user.status}`)}
+				{user.status === 'invited' && user.invitationFailed ? (
+					<span className="block text-sm text-red-700">{t('users.invitationFailed')}</span>
+				) : null}
+			</td>
 			<td className={cellClass}>
 				<AdminCheckbox announce={announce} user={user} />
 			</td>
@@ -348,21 +421,31 @@ function UserTableRow({
 				</td>
 			))}
 			<td className={cellClass}>
-				{user.status === 'disabled' ? (
-					<EnableAction
-						announce={announce}
-						describedBy={headerId}
-						onEnabled={onStatusChanged}
-						user={user}
-					/>
-				) : (
-					<DisableAction
-						announce={announce}
-						describedBy={headerId}
-						onDisabled={onStatusChanged}
-						user={user}
-					/>
-				)}
+				<div className="flex gap-2">
+					{user.status === 'invited' ? (
+						<ResendInvitationAction
+							announce={announce}
+							describedBy={headerId}
+							onGone={onStatusChanged}
+							user={user}
+						/>
+					) : null}
+					{user.status === 'disabled' ? (
+						<EnableAction
+							announce={announce}
+							describedBy={headerId}
+							onEnabled={onStatusChanged}
+							user={user}
+						/>
+					) : (
+						<DisableAction
+							announce={announce}
+							describedBy={headerId}
+							onDisabled={onStatusChanged}
+							user={user}
+						/>
+					)}
+				</div>
 			</td>
 		</tr>
 	);

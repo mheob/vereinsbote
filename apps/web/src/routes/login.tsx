@@ -68,11 +68,8 @@ async function requestLink(formData: FormData): Promise<StatusMessage> {
 	const entered = formData.get('email');
 	const email = normalizeEmail(typeof entered === 'string' ? entered : '');
 	try {
-		const response = await postToAuth('/sign-in/magic-link', {
-			callbackURL: AFTER_SIGN_IN_PATH,
-			email,
-			errorCallbackURL: LOGIN_PATH,
-		});
+		// The link in the mail leads to the confirmation page (`/login/confirm`), whatever the body.
+		const response = await postToAuth('/sign-in/magic-link', { email });
 		return response.ok ? { key: 'auth.linkSent', params: { email } } : failureMessage(response);
 	} catch {
 		return REQUEST_FAILED;

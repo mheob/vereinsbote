@@ -2,7 +2,14 @@ import { sql } from 'drizzle-orm';
 import { describe, expect, it } from 'vite-plus/test';
 
 import type { Db } from '@/server/db/client';
-import { loginLinkWindow, rateLimit, session, user, verification } from '@/server/db/schema';
+import {
+	loginLinkDays,
+	loginLinkWindow,
+	rateLimit,
+	session,
+	user,
+	verification,
+} from '@/server/db/schema';
 import { createTestDb } from '@/server/db/test-db';
 import { parseEnv } from '@/server/env';
 import type { TickContext } from '@/server/tick/tick';
@@ -159,6 +166,31 @@ describe('prune-auth-records', () => {
 		await insertRateLimits(db, [121, 5, 3600, 119]);
 		await expect(pruneAuthRecords.run(context(db))).resolves.toStrictEqual({ moreWork: false });
 		await expect(rateLimitIds(db)).resolves.toStrictEqual(['r1', 'r3']);
+	});
+
+	it('deletes the login link counters of past club days', async () => {
+		const db = await createTestDb();
+		await db.insert(loginLinkDays).values([
+			{ count: 3, day: '2026-11-24', emailHash: 'h0' },
+			{ count: 10, day: '2026-11-25', emailHash: 'h1' },
+			{ count: 1, day: '2026-11-26', emailHash: 'h1' },
+			{ count: 2, day: '2026-11-26', emailHash: 'h2' },
+		]);
+		// Half past midnight in Berlin: the 26th has begun, while it is still the 25th in UTC.
+		const now = new Date('2026-11-25T23:30:00Z');
+		const ctx = { db, deadline: now.getTime() + HOUR_MS, env, now: () => now, storage: null };
+		await expect(createPruneAuthRecordsStep(1).run(ctx)).resolves.toStrictEqual({
+			moreWork: false,
+		});
+		await expect(
+			db
+				.select({ day: loginLinkDays.day, emailHash: loginLinkDays.emailHash })
+				.from(loginLinkDays)
+				.orderBy(loginLinkDays.emailHash),
+		).resolves.toStrictEqual([
+			{ day: '2026-11-26', emailHash: 'h1' },
+			{ day: '2026-11-26', emailHash: 'h2' },
+		]);
 	});
 
 	it('deletes in batches until nothing is left', async () => {

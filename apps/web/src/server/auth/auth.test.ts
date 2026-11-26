@@ -4,15 +4,19 @@ import { eq, sql } from 'drizzle-orm';
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import { translate } from '@/i18n/translate';
+import { setUpClub } from '@/server/contacts/testing';
 import { deriveLoginWindowKey, hashLoginWindowEmail } from '@/server/crypto/secrets';
 import type { Db } from '@/server/db/client';
-import { loginLinkWindow, session, user, verification } from '@/server/db/schema';
+import { loginLinkDays, loginLinkWindow, session, user, verification } from '@/server/db/schema';
 import { createTestDb } from '@/server/db/test-db';
 import { parseEnv } from '@/server/env';
 import type { Env } from '@/server/env';
-import { MailerNotConfiguredError } from '@/server/mail/system-mailer';
+import type { SmtpMail } from '@/server/mail/smtp-transport';
+import { createSystemMailer, MailerNotConfiguredError } from '@/server/mail/system-mailer';
 import type { SystemMail, SystemMailer } from '@/server/mail/system-mailer';
 import { CapturingMailer } from '@/server/mail/testing';
+import { setSystemSender } from '@/server/sending/senders';
+import { fakeProviders, graphConnection, senderOn, testEnv } from '@/server/sending/testing';
 import { findUserByEmail, insertUser, revokeSessions } from '@/server/users/repo';
 
 import {
@@ -25,10 +29,50 @@ import {
 	verifyLoginLink,
 } from './auth';
 import type { Auth } from './auth';
+import { LOGIN_LINKS_PER_DAY } from './login-link-days';
 import { getSessionUser } from './session';
+
+/** What the SMTP double was handed: the `DEV_SMTP_URL` path delivers to it, not to a server. */
+const smtp = vi.hoisted(() => ({ sent: [] as SmtpMail[] }));
+
+vi.mock(import('@/server/mail/smtp-transport'), async (importOriginal) => ({
+	...(await importOriginal()),
+	openSmtpTransport: () => ({
+		// oxlint-disable-next-line typescript/require-await, typescript/prefer-readonly-parameter-types -- the double records, it does not send; nodemailer's mail holds a mutable list
+		async sendMail(mail: SmtpMail) {
+			smtp.sent.push({ ...mail });
+		},
+	}),
+}));
 
 const FIFTEEN_MINUTES = 15 * 60_000;
 const APP_URL = 'https://bote.example.org';
+/** Noon in Berlin. */
+const NOON = new Date('2026-11-25T11:00:00Z');
+/** Midnight in Berlin after `NOON`: the next club day. */
+const NEXT_MIDNIGHT = new Date('2026-11-25T23:00:00Z');
+
+/** Resolves on the next macrotask, once a delivery started by the last request has begun. */
+async function nextMacrotask(): Promise<void> {
+	const { promise, resolve } = Promise.withResolvers<null>();
+	setTimeout(() => {
+		resolve(null);
+	}, 0);
+	await promise;
+}
+
+/**
+ * Requests a login link and waits until a delivery it started has begun. The delivery starts one
+ * macrotask after the request (`createLinkSender`); timers of the same delay run in the order they
+ * were set, so it has begun when this one fires, and the capturing mailers record synchronously.
+ *
+ * @param auth The auth instance.
+ * @param email The address as typed.
+ */
+async function requestLink(auth: Auth, email: string): Promise<void> {
+	await requestLoginLink(auth, email);
+	await nextMacrotask();
+}
 
 /** The `send` of a fake mailer that only prepares: login links never use it. */
 // oxlint-disable-next-line typescript/require-await -- the fake rejects immediately
@@ -132,6 +176,8 @@ async function requestLinkOverHttp(auth: Auth, email: string, ip = '203.0.113.7'
 		method: 'POST',
 	});
 	const response = await handleAuthRequest(auth, request);
+	// A delivery the request started has begun then, see `requestLink`.
+	await nextMacrotask();
 	return response.status;
 }
 
@@ -139,6 +185,16 @@ function tokenFrom(text: string): string {
 	const token = /token=(?<token>[^&\s]+)/u.exec(text)?.groups?.token;
 	if (token === undefined) throw new Error('The mail contains no token.');
 	return token;
+}
+
+/**
+ * Reads the login link in the last mail.
+ *
+ * @param sent The mails sent so far.
+ * @returns The link.
+ */
+function lastLink(sent: readonly Readonly<SystemMail>[]): URL {
+	return new URL(sent.at(-1)?.content.button?.url ?? 'about:blank');
 }
 
 /**
@@ -227,6 +283,91 @@ function captureConsole(): () => string {
 			.join('\n');
 }
 
+/** The ways a system mail can go: the system sender, `DEV_SMTP_URL`, or none at all. */
+const MAILER_PATHS = ['system sender', 'DEV_SMTP_URL', 'none'] as const;
+type MailerPath = (typeof MAILER_PATHS)[number];
+
+interface RecordingSetup {
+	readonly auth: Auth;
+	readonly db: Db;
+	/** Returns the SQL of every statement since the last call, in order. */
+	readonly takeQueries: () => string[];
+	/** The address of each mail the auth instance prepared. */
+	readonly mailed: readonly string[];
+	/** The deliveries started after the requests. */
+	readonly background: readonly Readonly<Promise<unknown>>[];
+}
+
+/**
+ * The environment of a mailer path.
+ *
+ * @param path The path.
+ * @returns The environment; its app secret matches the stored credentials of the sending tests.
+ */
+function envFor(path: MailerPath): Env {
+	if (path !== 'DEV_SMTP_URL') return testEnv();
+	return parseEnv({
+		APP_SECRET: Buffer.alloc(32, 7).toString('base64'),
+		APP_URL,
+		CRON_SECRET: 'c'.repeat(32),
+		DATABASE_URL: 'postgres://x@localhost/x',
+		DEV_SMTP_URL: 'smtp://localhost:1025',
+	});
+}
+
+/**
+ * An auth instance with the app's real system mailer on a database that records its statements.
+ *
+ * @param path How the system mails go.
+ * @returns The auth instance, the database and the records.
+ */
+async function recordingSetup(path: MailerPath): Promise<RecordingSetup> {
+	const queries: string[] = [];
+	const db = await createTestDb({
+		logQuery(query) {
+			queries.push(query);
+		},
+	});
+	if (path === 'system sender') {
+		const { admin } = await setUpClub(db);
+		const connectionId = await graphConnection(db, admin);
+		await setSystemSender(db, admin, await senderOn(db, admin, connectionId, 'verein@example.org'));
+	}
+	const env = envFor(path);
+	const real = createSystemMailer({ db, env, fetch: fakeProviders().fetch });
+	const mailed: string[] = [];
+	const mailer: SystemMailer = {
+		async prepare(mail) {
+			if (mail !== null) mailed.push(mail.to);
+			return real.prepare(mail);
+		},
+		send: real.send,
+	};
+	const background: Readonly<Promise<unknown>>[] = [];
+	const auth = await createAuth({
+		db,
+		env,
+		mailer,
+		runInBackground(promise) {
+			background.push(promise);
+		},
+	});
+	return { auth, background, db, mailed, takeQueries: () => queries.splice(0) };
+}
+
+/**
+ * The statements a login link request runs.
+ *
+ * @param context The recording setup.
+ * @param email The address of the request.
+ * @returns The SQL of each statement, in order.
+ */
+async function statementsOf(context: RecordingSetup, email: string): Promise<string[]> {
+	context.takeQueries();
+	await requestLoginLink(context.auth, email);
+	return context.takeQueries();
+}
+
 /**
  * Invites a user, requests a link and verifies it.
  *
@@ -243,7 +384,7 @@ async function signIn(
 	input: Readonly<{ email: string; isAdmin?: boolean }>,
 ): Promise<{ headers: Headers; id: string }> {
 	const { id } = await insertUser(db, { ...input, name: 'Anna' });
-	await requestLoginLink(auth, input.email);
+	await requestLink(auth, input.email);
 	const { setCookie } = await verifyLoginLink(auth, lastToken(mailer.sent));
 	return { headers: cookieHeaders(setCookie), id };
 }
@@ -258,7 +399,7 @@ describe('passwordless sign-in', () => {
 		it('sends a link to an invited user regardless of case and spaces', async () => {
 			const { db, mailer, auth } = await setupCapturing();
 			await insertUser(db, { email: 'anna@verein.de', name: 'Anna' });
-			await requestLoginLink(auth, ' Anna@Verein.DE');
+			await requestLink(auth, ' Anna@Verein.DE');
 			expect(mailer.sent).toHaveLength(1);
 			expect(mailer.sent[0]).toMatchObject({
 				content: { button: { label: 'Anmelden' }, heading: 'Dein Anmeldelink' },
@@ -267,7 +408,7 @@ describe('passwordless sign-in', () => {
 				to: 'anna@verein.de',
 			});
 			expect(mailer.sent[0]?.content.button?.url).toMatch(
-				/^https:\/\/bote\.example\.org\/api\/auth\/magic-link\/verify\?token=/u,
+				/^https:\/\/bote\.example\.org\/login\/confirm\?token=[A-Za-z]+$/u,
 			);
 			expect(textOf(mailer.sent[0])).toContain(
 				'Der Link ist 15 Minuten gültig und funktioniert einmal.',
@@ -277,7 +418,7 @@ describe('passwordless sign-in', () => {
 		it("sends the sign-in link in the user's language", async () => {
 			const { db, mailer, auth } = await setupCapturing();
 			await insertUser(db, { email: 'kim@verein.de', locale: 'en', name: 'Kim' });
-			await requestLoginLink(auth, 'kim@verein.de');
+			await requestLink(auth, 'kim@verein.de');
 			expect(mailer.sent).toHaveLength(1);
 			expect(mailer.sent[0]).toMatchObject({
 				content: { button: { label: 'Sign in' }, heading: 'Your sign-in link' },
@@ -291,7 +432,7 @@ describe('passwordless sign-in', () => {
 		it('sends the sign-in link in German by default', async () => {
 			const { db, mailer, auth } = await setupCapturing();
 			await insertUser(db, { email: 'anna@verein.de', name: 'Anna' });
-			await requestLoginLink(auth, 'anna@verein.de');
+			await requestLink(auth, 'anna@verein.de');
 			expect(mailer.sent[0]?.subject).toBe('Dein Anmeldelink für den Vereinsbote');
 		});
 
@@ -304,21 +445,21 @@ describe('passwordless sign-in', () => {
 		it('sends a link to an active user', async () => {
 			const { db, mailer, auth } = await setupCapturing();
 			await insertUser(db, { email: 'anna@verein.de', name: 'Anna', status: 'active' });
-			await requestLoginLink(auth, 'anna@verein.de');
+			await requestLink(auth, 'anna@verein.de');
 			expect(mailer.sent).toHaveLength(1);
 			expect(mailer.sent[0]).toMatchObject({ to: 'anna@verein.de' });
 		});
 
 		it('sends nothing to unknown addresses', async () => {
 			const { mailer, auth } = await setupCapturing();
-			await expect(requestLoginLink(auth, 'fremd@example.org')).resolves.toBeUndefined();
+			await expect(requestLink(auth, 'fremd@example.org')).resolves.toBeUndefined();
 			expect(mailer.sent).toHaveLength(0);
 		});
 
 		it('sends nothing to disabled users', async () => {
 			const { db, mailer, auth } = await setupCapturing();
 			await insertUser(db, { email: 'kim@verein.de', name: 'Kim', status: 'disabled' });
-			await expect(requestLoginLink(auth, 'kim@verein.de')).resolves.toBeUndefined();
+			await expect(requestLink(auth, 'kim@verein.de')).resolves.toBeUndefined();
 			expect(mailer.sent).toHaveLength(0);
 		});
 
@@ -348,7 +489,49 @@ describe('passwordless sign-in', () => {
 			const { auth, db } = await setup({ mailer: stuckMailer });
 			await insertUser(db, { email: 'anna@verein.de', name: 'Anna' });
 			await expect(requestLoginLink(auth, 'anna@verein.de')).resolves.toBeUndefined();
+			await nextMacrotask();
 			expect(attempted).toHaveLength(1);
+		});
+
+		it('starts the delivery only after the request has returned', async () => {
+			const { delivered: attempted, mailer: recording } = fakeMailer(noDelivery);
+			const background: Readonly<Promise<unknown>>[] = [];
+			const { auth, db } = await setup({
+				mailer: recording,
+				runInBackground(promise) {
+					background.push(promise);
+				},
+			});
+			await insertUser(db, { email: 'anna@verein.de', name: 'Anna' });
+
+			await requestLoginLink(auth, 'anna@verein.de');
+
+			// Handed to the runner during the request, begun on a later macrotask.
+			expect(background).toHaveLength(1);
+			expect(attempted).toHaveLength(0);
+			await Promise.all(background);
+			expect(attempted).toMatchObject([{ to: 'anna@verein.de' }]);
+		});
+
+		it('links to the confirmation page instead of the verify endpoint', async () => {
+			const { db, mailer, auth } = await setupCapturing();
+			const { id } = await insertUser(db, { email: 'anna@verein.de', name: 'Anna' });
+			await requestLink(auth, 'anna@verein.de');
+			const link = lastLink(mailer.sent);
+			expect(`${link.origin}${link.pathname}`).toBe(`${APP_URL}/login/confirm`);
+			expect([...link.searchParams.keys()]).toStrictEqual(['token']);
+			// Better Auth's own endpoint is closed: opening it signs nobody in and uses up nothing.
+			const opened = await handleAuthRequest(
+				auth,
+				new Request(
+					`${APP_URL}/api/auth/magic-link/verify?token=${link.searchParams.get('token')}`,
+				),
+			);
+			expect(opened.status).toBe(404);
+			await expect(db.select().from(session)).resolves.toHaveLength(0);
+			await expect(verifyLoginLink(auth, lastToken(mailer.sent))).resolves.toMatchObject({
+				userId: id,
+			});
 		});
 
 		it('prepares the mailer for every request, with a mail only for an invited address', async () => {
@@ -409,7 +592,7 @@ describe('passwordless sign-in', () => {
 		it('stores only a hash of the link token', async () => {
 			const { db, mailer, auth } = await setupCapturing();
 			const { id } = await insertUser(db, { email: 'anna@verein.de', name: 'Anna' });
-			await requestLoginLink(auth, 'anna@verein.de');
+			await requestLink(auth, 'anna@verein.de');
 			const token = lastToken(mailer.sent);
 			const rows = await db.select({ identifier: verification.identifier }).from(verification);
 			expect(rows).toHaveLength(1);
@@ -423,7 +606,7 @@ describe('passwordless sign-in', () => {
 		it('sends the first request of a window', async () => {
 			const { db, mailer, auth } = await setupCapturing();
 			await insertUser(db, { email: 'anna@verein.de', name: 'Anna' });
-			await requestLoginLink(auth, 'anna@verein.de');
+			await requestLink(auth, 'anna@verein.de');
 			expect(mailer.sent).toMatchObject([{ to: 'anna@verein.de' }]);
 		});
 
@@ -431,33 +614,33 @@ describe('passwordless sign-in', () => {
 			const { db, mailer, auth } = await setupCapturing();
 			await insertUser(db, { email: 'anna@verein.de', name: 'Anna' });
 			await insertUser(db, { email: 'kim@verein.de', name: 'Kim' });
-			await requestLoginLink(auth, 'anna@verein.de');
+			await requestLink(auth, 'anna@verein.de');
 			// The HTTP endpoint gets the address as typed; the window must still match it.
 			await expect(requestLinkOverHttp(auth, 'Anna@Verein.DE')).resolves.toBe(200);
-			await requestLoginLink(auth, 'kim@verein.de');
+			await requestLink(auth, 'kim@verein.de');
 			expect(mailer.sent).toMatchObject([{ to: 'anna@verein.de' }, { to: 'kim@verein.de' }]);
 		});
 
 		it('sends again once the window has passed', async () => {
 			const { db, mailer, auth } = await setupCapturing();
 			await insertUser(db, { email: 'anna@verein.de', name: 'Anna' });
-			await requestLoginLink(auth, 'anna@verein.de');
+			await requestLink(auth, 'anna@verein.de');
 			await ageWindows(db, 61);
-			await requestLoginLink(auth, 'anna@verein.de');
+			await requestLink(auth, 'anna@verein.de');
 			expect(mailer.sent).toHaveLength(2);
 		});
 
 		it('is not extended by requests inside an open window', async () => {
 			const { db, mailer, auth } = await setupCapturing();
 			await insertUser(db, { email: 'anna@verein.de', name: 'Anna' });
-			await requestLoginLink(auth, 'anna@verein.de');
+			await requestLink(auth, 'anna@verein.de');
 			const sentAfter = [mailer.sent.length];
 			// Someone requests the address every 50 seconds.
 			for (let step = 1; step <= 4; step += 1) {
 				// oxlint-disable-next-line no-await-in-loop -- each step builds on the clock of the last
 				await ageWindows(db, 50);
 				// oxlint-disable-next-line no-await-in-loop -- see above
-				await requestLoginLink(auth, 'anna@verein.de');
+				await requestLink(auth, 'anna@verein.de');
 				sentAfter.push(mailer.sent.length);
 			}
 			// Requests at 0, 50, 100, 150 and 200 seconds: the ones at 100 and 200 open a new window.
@@ -467,8 +650,8 @@ describe('passwordless sign-in', () => {
 		it('opens the window for unknown and disabled addresses too, but sends nothing', async () => {
 			const { db, env, mailer, auth } = await setupCapturing();
 			await insertUser(db, { email: 'kim@verein.de', name: 'Kim', status: 'disabled' });
-			await requestLoginLink(auth, 'fremd@example.org');
-			await requestLoginLink(auth, 'kim@verein.de');
+			await requestLink(auth, 'fremd@example.org');
+			await requestLink(auth, 'kim@verein.de');
 			expect(mailer.sent).toHaveLength(0);
 			const rows = await db.select({ emailHash: loginLinkWindow.emailHash }).from(loginLinkWindow);
 			expect(rows).toHaveLength(2);
@@ -481,11 +664,103 @@ describe('passwordless sign-in', () => {
 		});
 	});
 
+	describe('login links per day', () => {
+		it('sends at most ten login links per address and club day', async () => {
+			vi.useFakeTimers({ toFake: ['Date'] });
+			vi.setSystemTime(NOON);
+			const { db, mailer, auth } = await setupCapturing();
+			await insertUser(db, { email: 'anna@verein.de', name: 'Anna' });
+			for (let request = 1; request <= 11; request += 1) {
+				// oxlint-disable-next-line no-await-in-loop -- each request opens a window of its own
+				await requestLink(auth, 'anna@verein.de');
+				// oxlint-disable-next-line no-await-in-loop -- see above
+				await ageWindows(db, 61);
+			}
+			expect(mailer.sent).toHaveLength(10);
+
+			// The next club day begins at midnight in Berlin.
+			vi.setSystemTime(NEXT_MIDNIGHT);
+			await requestLink(auth, 'anna@verein.de');
+			expect(mailer.sent).toHaveLength(11);
+		});
+
+		it('counts unknown addresses the same way', async () => {
+			vi.useFakeTimers({ toFake: ['Date'] });
+			vi.setSystemTime(NOON);
+			const { db, env, auth } = await setupCapturing();
+			await insertUser(db, { email: 'anna@verein.de', name: 'Anna' });
+			for (let request = 1; request <= 11; request += 1) {
+				// oxlint-disable-next-line no-await-in-loop -- each request opens a window of its own
+				await requestLink(auth, 'anna@verein.de');
+				// oxlint-disable-next-line no-await-in-loop -- see above
+				await requestLink(auth, 'fremd@example.org');
+				// oxlint-disable-next-line no-await-in-loop -- see above
+				await ageWindows(db, 61);
+			}
+			const rows = await db
+				.select({ count: loginLinkDays.count, day: loginLinkDays.day })
+				.from(loginLinkDays)
+				.where(eq(loginLinkDays.emailHash, await windowHash(env, 'fremd@example.org')));
+			expect(rows).toStrictEqual([{ count: LOGIN_LINKS_PER_DAY, day: '2026-11-25' }]);
+			const annaHash = await windowHash(env, 'anna@verein.de');
+			await expect(
+				db
+					.select({ count: loginLinkDays.count })
+					.from(loginLinkDays)
+					.where(eq(loginLinkDays.emailHash, annaHash)),
+			).resolves.toStrictEqual([{ count: LOGIN_LINKS_PER_DAY }]);
+		});
+
+		it('counts only the requests that open a window', async () => {
+			const { db, mailer, auth } = await setupCapturing();
+			await insertUser(db, { email: 'anna@verein.de', name: 'Anna' });
+			await requestLink(auth, 'anna@verein.de');
+			await requestLink(auth, 'anna@verein.de');
+			await requestLink(auth, 'anna@verein.de');
+			expect(mailer.sent).toHaveLength(1);
+			await expect(
+				db.select({ count: loginLinkDays.count }).from(loginLinkDays),
+			).resolves.toStrictEqual([{ count: 1 }]);
+		});
+	});
+
+	describe('statements of a login link request', () => {
+		it.each(MAILER_PATHS)(
+			'are the same for every address, with or without a link, through %s',
+			async (path) => {
+				// Without a transport the one link that would go out is logged as not sent.
+				vi.spyOn(console, 'error').mockReturnValue();
+				const context = await recordingSetup(path);
+				const { db } = context;
+				await insertUser(db, { email: 'anna@verein.de', name: 'Anna' });
+				await insertUser(db, { email: 'kim@verein.de', name: 'Kim', status: 'disabled' });
+
+				const sent = await statementsOf(context, 'anna@verein.de');
+				const inWindow = await statementsOf(context, 'anna@verein.de');
+				const unknown = await statementsOf(context, 'fremd@example.org');
+				const disabled = await statementsOf(context, 'kim@verein.de');
+				await db.update(loginLinkDays).set({ count: LOGIN_LINKS_PER_DAY });
+				await ageWindows(db, 61);
+				const overDailyLimit = await statementsOf(context, 'anna@verein.de');
+				await Promise.all(context.background);
+
+				expect(context.mailed).toStrictEqual(['anna@verein.de']);
+				expect(sent.filter((query) => query.includes('"login_link_days"'))).toHaveLength(1);
+				expect({ disabled, inWindow, overDailyLimit, unknown }).toStrictEqual({
+					disabled: sent,
+					inWindow: sent,
+					overDailyLimit: sent,
+					unknown: sent,
+				});
+			},
+		);
+	});
+
 	describe(verifyLoginLink, () => {
 		it('activates an invited user on first verification and opens a session', async () => {
 			const { db, mailer, auth } = await setupCapturing();
 			const { id } = await insertUser(db, { email: 'anna@verein.de', name: 'Anna' });
-			await requestLoginLink(auth, 'anna@verein.de');
+			await requestLink(auth, 'anna@verein.de');
 			const { userId, setCookie } = await verifyLoginLink(auth, lastToken(mailer.sent));
 			expect(userId).toBe(id);
 			await expect(findUserByEmail(db, 'anna@verein.de')).resolves.toMatchObject({
@@ -501,7 +776,7 @@ describe('passwordless sign-in', () => {
 		it('rejects a link used twice', async () => {
 			const { db, mailer, auth } = await setupCapturing();
 			await insertUser(db, { email: 'anna@verein.de', name: 'Anna' });
-			await requestLoginLink(auth, 'anna@verein.de');
+			await requestLink(auth, 'anna@verein.de');
 			const token = lastToken(mailer.sent);
 			await verifyLoginLink(auth, token);
 			await expect(verifyLoginLink(auth, token)).rejects.toBeInstanceOf(LoginLinkInvalidError);
@@ -511,7 +786,7 @@ describe('passwordless sign-in', () => {
 			vi.useFakeTimers({ toFake: ['Date'] });
 			const { db, mailer, auth } = await setupCapturing();
 			const { id } = await insertUser(db, { email: 'anna@verein.de', name: 'Anna' });
-			await requestLoginLink(auth, 'anna@verein.de');
+			await requestLink(auth, 'anna@verein.de');
 			const token = lastToken(mailer.sent);
 			vi.setSystemTime(Date.now() + FIFTEEN_MINUTES - 60_000);
 			await expect(verifyLoginLink(auth, token)).resolves.toMatchObject({ userId: id });
@@ -521,7 +796,7 @@ describe('passwordless sign-in', () => {
 			vi.useFakeTimers({ toFake: ['Date'] });
 			const { db, mailer, auth } = await setupCapturing();
 			await insertUser(db, { email: 'anna@verein.de', name: 'Anna' });
-			await requestLoginLink(auth, 'anna@verein.de');
+			await requestLink(auth, 'anna@verein.de');
 			const token = lastToken(mailer.sent);
 			vi.setSystemTime(Date.now() + FIFTEEN_MINUTES + 60_000);
 			await expect(verifyLoginLink(auth, token)).rejects.toBeInstanceOf(LoginLinkInvalidError);
@@ -537,7 +812,7 @@ describe('passwordless sign-in', () => {
 		it('rejects a link of a user disabled after it was sent and opens no session', async () => {
 			const { db, mailer, auth } = await setupCapturing();
 			const { id } = await insertUser(db, { email: 'anna@verein.de', name: 'Anna' });
-			await requestLoginLink(auth, 'anna@verein.de');
+			await requestLink(auth, 'anna@verein.de');
 			const token = lastToken(mailer.sent);
 			await db.update(user).set({ status: 'disabled' }).where(eq(user.id, id));
 			await expect(verifyLoginLink(auth, token)).rejects.toBeInstanceOf(LoginLinkInvalidError);
@@ -728,7 +1003,6 @@ describe('passwordless sign-in', () => {
 			const used = new Set([
 				'/callback/:id',
 				'/error',
-				'/magic-link/verify',
 				'/ok',
 				// `disabledPaths` matches exact paths only, so a route with a parameter cannot be
 				// listed. No reset token is ever issued (no passwords), so it only answers with an error.
@@ -739,6 +1013,8 @@ describe('passwordless sign-in', () => {
 			]);
 			expect(openUnusedPaths(auth, used)).toStrictEqual([]);
 			expect(auth.options.disabledPaths).toContain('/update-user');
+			// Links are confirmed on the app's own page (`/login/confirm`), never by a GET here.
+			expect(auth.options.disabledPaths).toContain('/magic-link/verify');
 		});
 
 		it('does not serve /get-session, while the server still reads sessions', async () => {
