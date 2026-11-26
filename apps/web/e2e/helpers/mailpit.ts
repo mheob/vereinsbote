@@ -12,8 +12,22 @@ const POLL_INTERVAL_MS = 250;
 const messageSummary = z.object({ ID: z.string() });
 const searchResult = z.object({ messages: z.array(messageSummary) });
 const message = z.object({ Text: z.string() });
-const listedMessage = z.object({ ID: z.string(), Subject: z.string() });
+const mailAddress = z.object({ Address: z.string() });
+const listedMessage = z.object({
+	From: mailAddress,
+	ID: z.string(),
+	Subject: z.string(),
+	To: z.array(mailAddress).nullable(),
+});
 const listing = z.object({ messages: z.array(listedMessage) });
+const attachment = z.object({ ContentType: z.string(), FileName: z.string() });
+const linkList = z.array(z.string()).nullable();
+const messageDetail = z.object({
+	Attachments: z.array(attachment),
+	ListUnsubscribe: z.object({ HeaderPost: z.string(), Links: linkList }),
+	MessageID: z.string(),
+	Text: z.string(),
+});
 const htmlMessage = z.object({ HTML: z.string() });
 const htmlCheck = z.object({ Total: z.object({ Supported: z.number() }) });
 
@@ -94,14 +108,70 @@ async function latestLink(to: string, pattern: Readonly<RegExp>): Promise<string
 	}
 }
 
+/** A message as the inbox lists it. */
+interface ListedMessage {
+	readonly id: string;
+	readonly subject: string;
+	readonly from: string;
+	readonly to: readonly string[];
+}
+
+/** What the tests read of one message besides its body. */
+interface MessageDetails {
+	/** The Message-ID without angle brackets, as Mailpit gives it. */
+	readonly messageId: string;
+	readonly attachments: readonly Readonly<{ name: string; contentType: string }>[];
+	/** The links of the `List-Unsubscribe` header. */
+	readonly unsubscribeLinks: readonly string[];
+	/** The value of the `List-Unsubscribe-Post` header, empty without one. */
+	readonly unsubscribePost: string;
+	readonly text: string;
+}
+
 /**
- * Every message in the inbox, oldest first.
+ * Every message in the inbox, oldest first. Mailpit lists them by the time they arrived.
  *
- * @returns The ID and the subject of each.
+ * @returns The ID, the subject, the sender and the recipients of each.
  */
-async function listMessages(): Promise<{ id: string; subject: string }[]> {
+async function listMessages(): Promise<ListedMessage[]> {
 	const { messages } = listing.parse(await mailpitJson('/messages?limit=500'));
-	return messages.toReversed().map(({ ID, Subject }) => ({ id: ID, subject: Subject }));
+	return messages.toReversed().map(({ From, ID, Subject, To }) => ({
+		from: From.Address,
+		id: ID,
+		subject: Subject,
+		to: (To ?? []).map(({ Address }) => Address),
+	}));
+}
+
+/**
+ * The messages to an address, oldest first.
+ *
+ * @param to The recipient address.
+ * @returns The messages.
+ */
+async function messagesTo(to: string): Promise<ListedMessage[]> {
+	const messages = await listMessages();
+	return messages.filter((entry) => entry.to.includes(to));
+}
+
+/**
+ * The Message-ID, the attachments, the unsubscribe headers and the plain text of a message.
+ *
+ * @param id The message's ID.
+ * @returns The details.
+ */
+async function messageDetails(id: string): Promise<MessageDetails> {
+	const detail = messageDetail.parse(await mailpitJson(`/message/${id}`));
+	return {
+		attachments: detail.Attachments.map(({ ContentType, FileName }) => ({
+			contentType: ContentType,
+			name: FileName,
+		})),
+		messageId: detail.MessageID,
+		text: detail.Text,
+		unsubscribeLinks: detail.ListUnsubscribe.Links ?? [],
+		unsubscribePost: detail.ListUnsubscribe.HeaderPost,
+	};
 }
 
 /**
@@ -124,4 +194,13 @@ async function supportedShare(id: string): Promise<number> {
 	return htmlCheck.parse(await mailpitJson(`/message/${id}/html-check`)).Total.Supported;
 }
 
-export { deleteAllMessages, latestLink, listMessages, messageHtml, supportedShare };
+export {
+	deleteAllMessages,
+	latestLink,
+	listMessages,
+	messageDetails,
+	messageHtml,
+	messagesTo,
+	supportedShare,
+};
+export type { ListedMessage, MessageDetails };
