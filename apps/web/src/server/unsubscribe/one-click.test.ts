@@ -37,6 +37,46 @@ function oneClick(
 }
 
 /**
+ * A one-click POST as `multipart/form-data`, the form RFC 8058 prefers.
+ *
+ * @param token The token of the link.
+ * @param fields The fields of the form; a `Blob` is sent as a file.
+ * @returns The request; its content type names the boundary.
+ */
+function multipartOneClick(
+	token: string,
+	fields: readonly (readonly [string, Blob | string])[] = [['List-Unsubscribe', 'One-Click']],
+): Request {
+	const form = new FormData();
+	for (const [name, value] of fields) form.append(name, value);
+	return new Request(`${URL_BASE}${token}`, { body: form, method: 'POST' });
+}
+
+/**
+ * A multipart one-click POST with the right field after a long preamble, which a multipart parser
+ * skips: only the bound of the body refuses it.
+ *
+ * @param token The token of the link.
+ * @returns The request.
+ */
+function paddedMultipartOneClick(token: string): Request {
+	const body = [
+		'x'.repeat(2000),
+		'--b',
+		'Content-Disposition: form-data; name="List-Unsubscribe"',
+		'',
+		'One-Click',
+		'--b--',
+		'',
+	].join('\r\n');
+	return new Request(`${URL_BASE}${token}`, {
+		body,
+		headers: { 'content-type': 'multipart/form-data; boundary=b' },
+		method: 'POST',
+	});
+}
+
+/**
  * Services that count how often the database was opened.
  *
  * @param db The database, or null for one that must never be opened.
@@ -95,6 +135,17 @@ describe(handleOneClick, () => {
 		await expect(db.select().from(contactOptOuts)).resolves.toHaveLength(1);
 	});
 
+	it('takes the one-click POST as multipart form data as well', async () => {
+		const { db, occasionId, token } = await mailed();
+		const response = await handleOneClick(multipartOneClick(token), token, services(db).services);
+		expect(response.status).toBe(200);
+		await expect(response.text()).resolves.toBe('');
+		const rows = await db.select().from(contactOptOuts);
+		expect(rows.map(({ occasionId: id, scope }) => [scope, id])).toStrictEqual([
+			['occasion', occasionId],
+		]);
+	});
+
 	it('takes the form content type with a charset', async () => {
 		const { db, token } = await mailed();
 		const request = oneClick(token, {
@@ -108,12 +159,16 @@ describe(handleOneClick, () => {
 	it.each([
 		['no content type', { contentType: null }],
 		['JSON', { body: '{"List-Unsubscribe":"One-Click"}', contentType: 'application/json' }],
-		['multipart form data', { contentType: 'multipart/form-data; boundary=x' }],
+		[
+			'a multipart type without a multipart body',
+			{ contentType: 'multipart/form-data; boundary=x' },
+		],
 		['plain text', { contentType: 'text/plain' }],
 		['another value', { body: 'List-Unsubscribe=Yes' }],
 		['another field as well', { body: `${ONE_CLICK}&x=1` }],
 		['an empty body', { body: '' }],
-		['a body above 1 KiB', { body: `${ONE_CLICK}${'&x=1'.repeat(300)}` }],
+		// Empty pairs are skipped by the parser: only the bound refuses it.
+		['a body above 1 KiB', { body: `${ONE_CLICK}${'&'.repeat(2000)}` }],
 	])('refuses %s with 400 before it opens the token or the database', async (_name, options) => {
 		const tracked = services(null);
 		const response = await handleOneClick(
@@ -121,6 +176,30 @@ describe(handleOneClick, () => {
 			'anything',
 			tracked.services,
 		);
+		expect(response.status).toBe(400);
+		await expect(response.text()).resolves.toBe('');
+		expect(tracked.opened()).toBe(0);
+	});
+
+	it.each([
+		['another value', () => multipartOneClick('anything', [['List-Unsubscribe', 'Yes']])],
+		[
+			'another field as well',
+			() =>
+				multipartOneClick('anything', [
+					['List-Unsubscribe', 'One-Click'],
+					['x', '1'],
+				]),
+		],
+		[
+			'a file for the field',
+			() => multipartOneClick('anything', [['List-Unsubscribe', new Blob(['One-Click'])]]),
+		],
+		['an empty form', () => multipartOneClick('anything', [])],
+		['a body above 1 KiB', () => paddedMultipartOneClick('anything')],
+	])('refuses multipart form data with %s with 400', async (_name, request) => {
+		const tracked = services(null);
+		const response = await handleOneClick(request(), 'anything', tracked.services);
 		expect(response.status).toBe(400);
 		await expect(response.text()).resolves.toBe('');
 		expect(tracked.opened()).toBe(0);
