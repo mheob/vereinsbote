@@ -60,7 +60,7 @@ Releases are automatic: after a merge to `main`, the Release workflow opens a pu
 
 ## Translations
 
-Every visible string goes into both `apps/web/src/i18n/de.ts` and `en.ts`, with the same key. Read it with `useT()` (components) or `translate()` (server). Never hard-code UI text. Every new page also sets its document title with `pageHead` (`apps/web/src/i18n/page-title.ts`).
+Every visible string goes into both `apps/web/src/i18n/de.ts` and `en.ts`, with the same key. Read it with `useT()` (components) or `translate()` (server). Never hard-code UI text. Every new page also sets its document title with `pageHead` (`apps/web/src/i18n/page-title.ts`). A new code that an outbox entry can carry (a skip reason, a failure, a provider's code) needs its text `outbox.code.<code>` for the sending overview; `apps/web/src/components/sending/overview-texts.test.ts` fails without it.
 
 ## Accessibility and security
 

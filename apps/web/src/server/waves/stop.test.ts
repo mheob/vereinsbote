@@ -8,7 +8,12 @@ import type { Db } from '@/server/db/client';
 import { auditLog, outboxEntries, waves } from '@/server/db/schema';
 import { ForbiddenError } from '@/server/permissions/principal';
 
-import { WaveEntryNotFoundError, WaveEntryStateError, WaveNotFoundError } from './errors';
+import {
+	WaveEntryNotFoundError,
+	WaveEntryStateError,
+	WaveNotFoundError,
+	WaveStoppedError,
+} from './errors';
 import { resendUncertain, stopWave } from './stop';
 import { confirmTestWave, setUpWaveClub, waveEntryIds } from './testing';
 import type { WaveClub } from './testing';
@@ -207,7 +212,7 @@ describe(resendUncertain, () => {
 		const [id = ''] = entryIds;
 		await setEntry(c.db, id, { messageId: '<unklar@example.org>', status: 'uncertain' });
 		await expect(stopWave(c.db, c.sender, waveId)).resolves.toStrictEqual({ cancelled: 2 });
-		await expect(resendUncertain(c.db, c.sender, id)).rejects.toBeInstanceOf(WaveEntryStateError);
+		await expect(resendUncertain(c.db, c.sender, id)).rejects.toBeInstanceOf(WaveStoppedError);
 		await expect(statusesOf(c.db, [id])).resolves.toStrictEqual(['uncertain']);
 	});
 });

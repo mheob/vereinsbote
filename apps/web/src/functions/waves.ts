@@ -5,7 +5,11 @@ import { z } from 'zod';
 import type { AppContext } from '@/platform/context';
 import type { RemoveAttachmentResult, UploadAttachmentResult } from '@/server/attachments/failures';
 import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from '@/server/attachments/limits';
-import { contactListQuerySchema, MAX_SEARCH_LENGTH } from '@/server/contacts/list-query';
+import {
+	contactListQuerySchema,
+	MAX_LIST_PAGE,
+	MAX_SEARCH_LENGTH,
+} from '@/server/contacts/list-query';
 import type {
 	ConfirmWaveResult,
 	RecipientPreviewResult,
@@ -15,16 +19,30 @@ import type {
 	StopWaveResult,
 	SummarizeWaveResult,
 } from '@/server/waves/failures';
+import type { AreaOverview, OverviewArea, WavePage } from '@/server/waves/overview';
 import type { SendFlowPage } from '@/server/waves/send-flow-page';
 
 /*
  * The server functions of the send flow: its page, the search and the preview of recipients, the
- * attachments, the test mail, the summary of a wave and its confirmation, stopping a wave and
- * sending an uncertain entry again. Server modules are imported inside the handlers, so they stay
- * out of the client bundle. Each handler authorizes itself from the session principal. The file
- * goes as form data, so the request body limit answers an oversized upload before the function
- * runs. The selection of the recipients and the search terms go by POST, never into a URL.
+ * attachments, the test mail, the summary of a wave and its confirmation; and of the sending
+ * overview: its areas, waves, entries and bounce marks, stopping a wave and sending an uncertain
+ * entry again. Server modules are imported inside the handlers, so they stay out of the client
+ * bundle. Each handler authorizes itself from the session principal. The file goes as form data,
+ * so the request body limit answers an oversized upload before the function runs. The selection
+ * of the recipients and the search terms go by POST, never into a URL.
  */
+
+/** The sending overview: the areas the user reads and the overview of the first of them. */
+interface SendingOverviewPage {
+	readonly areas: readonly OverviewArea[];
+	/** The overview of the first area; null without an area. */
+	readonly overview: AreaOverview | null;
+}
+
+/** A page of the entries of a wave with the wave as it is now, or the wave is gone. */
+type WaveEntriesResult =
+	| Readonly<{ ok: true; page: WavePage }>
+	| Readonly<{ ok: false; failure: 'gone' }>;
 
 /** The longest id of an attachment (22 characters) with room to spare. */
 const MAX_ID_LENGTH = 64;
@@ -64,6 +82,9 @@ const testMailRequest = z.object({
 	occasionId: z.uuid(),
 });
 const stopRequest = z.object({ waveId: z.uuid() });
+const listPage = z.int().min(1).max(MAX_LIST_PAGE);
+const areaOverviewRequest = z.object({ areaId: z.uuid(), page: listPage });
+const waveEntriesRequest = z.object({ page: listPage, waveId: z.uuid() });
 const resendRequest = z.object({ entryId: z.uuid() });
 const confirmRequest = summaryRequest.extend({
 	/** Null: at once. */
@@ -297,10 +318,90 @@ const resendUncertain = createServerFn({ method: 'POST' })
 		return resendUncertainResult(context.db, principal, data.entryId);
 	});
 
+/**
+ * The sending overview (Design 16): the areas the user reads, and the first page of the waves and
+ * the bounce marks of the first area. Without an area the page says so.
+ */
+const loadSendingOverview = createServerFn({ method: 'GET' }).handler(
+	async (): Promise<SendingOverviewPage> => {
+		const [{ requireRequestPrincipal }, { areaOverview, overviewAreas }] = await Promise.all([
+			import('@/platform/request-principal'),
+			import('@/server/waves/overview'),
+		]);
+		const { context, principal } = await requireRequestPrincipal();
+		const areas = await overviewAreas(context.db, principal);
+		const [first] = areas;
+		const overview =
+			first === undefined ? null : await areaOverview(context.db, principal, first.id, 1);
+		return { areas, overview };
+	},
+);
+
+/** A page of the waves of an area and its bounce marks; needs `read` in the area. */
+const loadAreaOverview = createServerFn({ method: 'GET' })
+	.validator(areaOverviewRequest)
+	.handler(async ({ data }): Promise<AreaOverview> => {
+		const [{ requireRequestPrincipal }, { areaOverview }] = await Promise.all([
+			import('@/platform/request-principal'),
+			import('@/server/waves/overview'),
+		]);
+		const { context, principal } = await requireRequestPrincipal();
+		return areaOverview(context.db, principal, data.areaId, data.page);
+	});
+
+/**
+ * The page of a wave: the wave and the first page of its entries. A wave that does not exist, or
+ * that the user may not read, is "not found", like the occasion pages.
+ */
+const loadWavePage = createServerFn({ method: 'GET' })
+	.validator(pageRequest)
+	.handler(async ({ data }): Promise<WavePage> => {
+		const [{ requireRequestPrincipal }, { wavePage }, { ForbiddenError }, { WaveNotFoundError }] =
+			await Promise.all([
+				import('@/platform/request-principal'),
+				import('@/server/waves/overview'),
+				import('@/server/permissions/principal'),
+				import('@/server/waves/errors'),
+			]);
+		const { context, principal } = await requireRequestPrincipal();
+		// oxlint-disable-next-line typescript/only-throw-error -- the router shows its not-found page
+		if (!z.uuid().safeParse(data.id).success) throw notFound();
+		try {
+			return await wavePage(context.db, principal, data.id, 1);
+		} catch (error) {
+			const hidden = error instanceof WaveNotFoundError || error instanceof ForbiddenError;
+			// oxlint-disable-next-line typescript/only-throw-error -- see above
+			if (hidden) throw notFound();
+			throw error;
+		}
+	});
+
+/** A page of the entries of a wave, with the wave as it is now; a gone wave is a result. */
+const loadWaveEntries = createServerFn({ method: 'GET' })
+	.validator(waveEntriesRequest)
+	.handler(async ({ data }): Promise<WaveEntriesResult> => {
+		const [{ requireRequestPrincipal }, { wavePage }, { WaveNotFoundError }] = await Promise.all([
+			import('@/platform/request-principal'),
+			import('@/server/waves/overview'),
+			import('@/server/waves/errors'),
+		]);
+		const { context, principal } = await requireRequestPrincipal();
+		try {
+			return { ok: true, page: await wavePage(context.db, principal, data.waveId, data.page) };
+		} catch (error) {
+			if (error instanceof WaveNotFoundError) return { failure: 'gone', ok: false };
+			throw error;
+		}
+	});
+
 export {
 	confirmWave,
+	loadAreaOverview,
 	loadRecipientValues,
 	loadSendFlow,
+	loadSendingOverview,
+	loadWaveEntries,
+	loadWavePage,
 	removeAttachment,
 	resendUncertain,
 	searchRecipients,
@@ -309,4 +410,5 @@ export {
 	summarizeWave,
 	uploadAttachment,
 };
+export type { SendingOverviewPage, WaveEntriesResult };
 export type { SendFlowPage } from '@/server/waves/send-flow-page';

@@ -1,6 +1,7 @@
 import { eq, sql } from 'drizzle-orm';
 import { describe, expect, it } from 'vite-plus/test';
 
+import { getContactSettings } from '@/server/contacts/settings';
 import { setUpClub } from '@/server/contacts/testing';
 import { encryptSecret, secretAad } from '@/server/crypto/secrets';
 import type { Db } from '@/server/db/client';
@@ -8,8 +9,10 @@ import { auditLog, mailConnections, outboxEntries, systemState } from '@/server/
 import { createTestDb } from '@/server/db/test-db';
 import type { SystemMail } from '@/server/mail/system-mailer';
 import { CapturingMailer } from '@/server/mail/testing';
+import { insertOccasion } from '@/server/occasions/testing';
 import { runTick } from '@/server/tick/tick';
 import { insertUser } from '@/server/users/repo';
+import { insertWave } from '@/server/waves/testing';
 
 import { setSystemSender } from './senders';
 import {
@@ -63,6 +66,8 @@ async function setUpGraph(db: Db): Promise<{
 interface Failure {
 	readonly status: 'failed' | 'uncertain';
 	readonly claimedAt: Date;
+	/** The wave of the entry; none by default. */
+	readonly waveId?: string;
 }
 
 async function failEntries(
@@ -71,15 +76,16 @@ async function failEntries(
 	entries: readonly Readonly<Failure>[],
 ): Promise<void> {
 	await db.insert(outboxEntries).values(
-		entries.map(({ claimedAt, status }) => ({
+		entries.map(({ claimedAt, status, waveId }) => ({
 			claimedAt,
 			lastErrorCode: 'graph.unavailable',
 			priority: 'group' as const,
 			recipient: 'member@example.org',
 			senderId,
 			source: 'wave' as const,
-			sourceId: WAVE_ID,
+			sourceId: waveId ?? WAVE_ID,
 			status,
+			waveId,
 		})),
 	);
 }
@@ -180,18 +186,31 @@ function breakingMailer(db: Db): CapturingMailer {
 	return mailer;
 }
 
-// A club with two senders, on Graph and on Resend, and a capturing mailer.
+// A club with two senders, on Graph and on Resend, a wave in each of its areas and a capturing
+// mailer.
 async function setUpDigest(): Promise<{
 	db: Db;
 	mailer: CapturingMailer;
 	senderId: string;
 	resendSenderId: string;
+	membersWaveId: string;
+	partnersWaveId: string;
 }> {
 	const db = await createTestDb();
 	const { admin, senderId } = await setUpGraph(db);
 	const resendId = await resendConnection(db, admin);
 	const resendSenderId = await senderOn(db, admin, resendId, 'news@example.org');
-	return { db, mailer: new CapturingMailer(), resendSenderId, senderId };
+	const { membersAreaId, partnersAreaId } = await getContactSettings(db);
+	const waveIn = async (areaId: string | null): Promise<string> =>
+		insertWave(db, await insertOccasion(db, admin, areaId ?? ''));
+	return {
+		db,
+		mailer: new CapturingMailer(),
+		membersWaveId: await waveIn(membersAreaId),
+		partnersWaveId: await waveIn(partnersAreaId),
+		resendSenderId,
+		senderId,
+	};
 }
 
 describe(createSendingWarningsStep, () => {
@@ -477,6 +496,37 @@ describe('the digest of the sending warnings', () => {
 		const entries = await auditEntries(db, 'sending.digest_sent');
 		expect(entries.map((entry) => entry.details)).toStrictEqual([
 			{ failed: 0, failedEntries: 2, senders: 2, sent: 1, uncertainEntries: 2 },
+		]);
+	});
+
+	it('counts the entries of a wave per area and sender', async () => {
+		const { db, mailer, membersWaveId, partnersWaveId, resendSenderId, senderId } =
+			await setUpDigest();
+		const at = new Date('2026-11-25T08:00:00Z');
+		await failEntries(db, senderId, [
+			{ claimedAt: at, status: 'failed', waveId: membersWaveId },
+			{ claimedAt: at, status: 'failed', waveId: membersWaveId },
+			{ claimedAt: at, status: 'uncertain', waveId: partnersWaveId },
+			{ claimedAt: at, status: 'uncertain' },
+		]);
+		await failEntries(db, resendSenderId, [
+			{ claimedAt: at, status: 'failed', waveId: membersWaveId },
+		]);
+		await tickAt(db, NOW, mailer);
+		const text = textOf(mailer.sent[0]);
+		expect(text).toContain('Je Bereich und Absender:');
+		expect(text).toContain(
+			[
+				'Finanzen – verein@example.org: 0 fehlgeschlagen, 1 unklar',
+				'Mitglieder – news@example.org: 1 fehlgeschlagen, 0 unklar',
+				'Mitglieder – verein@example.org: 2 fehlgeschlagen, 0 unklar',
+				'verein@example.org: 0 fehlgeschlagen, 1 unklar',
+			].join('\n'),
+		);
+		expect(text).not.toContain('member@example.org');
+		const entries = await auditEntries(db, 'sending.digest_sent');
+		expect(entries.map((entry) => entry.details)).toStrictEqual([
+			{ failed: 0, failedEntries: 3, senders: 2, sent: 1, uncertainEntries: 2 },
 		]);
 	});
 

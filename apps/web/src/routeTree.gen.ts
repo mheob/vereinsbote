@@ -16,6 +16,7 @@ import { Route as ImagesRouteImport } from './routes/images'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as OccasionsRouteRouteImport } from './routes/occasions/route'
 import { Route as PreviewFrameRouteImport } from './routes/preview-frame'
+import { Route as SendingRouteRouteImport } from './routes/sending/route'
 import { Route as SetupRouteImport } from './routes/setup'
 import { Route as TemplatesRouteRouteImport } from './routes/templates/route'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
@@ -33,6 +34,7 @@ import { Route as MediaFileRouteImport } from './routes/media/$file'
 import { Route as OccasionsIndexRouteImport } from './routes/occasions/index'
 import { Route as OccasionsOccasionIdRouteImport } from './routes/occasions/$occasionId'
 import { Route as OccasionsNewRouteImport } from './routes/occasions/new'
+import { Route as SendingIndexRouteImport } from './routes/sending/index'
 import { Route as TemplatesIndexRouteImport } from './routes/templates/index'
 import { Route as TemplatesTemplateIdRouteImport } from './routes/templates/$templateId'
 import { Route as TemplatesNewRouteImport } from './routes/templates/new'
@@ -44,6 +46,7 @@ import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ContactsImportMembersRouteImport } from './routes/contacts/import/members'
 import { Route as ContactsImportPartnersRouteImport } from './routes/contacts/import/partners'
 import { Route as OccasionsOccasionIdSendRouteImport } from './routes/occasions/$occasionId_.send'
+import { Route as SendingWavesWaveIdRouteImport } from './routes/sending/waves.$waveId'
 import { Route as AdminSendingConnectionsConnectionIdRouteImport } from './routes/admin/sending/connections.$connectionId'
 import { Route as AdminSendingConnectionsNewRouteImport } from './routes/admin/sending/connections.new'
 import { Route as AdminSendingSendersSenderIdRouteImport } from './routes/admin/sending/senders.$senderId'
@@ -83,6 +86,11 @@ const OccasionsRouteRoute = OccasionsRouteRouteImport.update({
 const PreviewFrameRoute = PreviewFrameRouteImport.update({
   id: '/preview-frame',
   path: '/preview-frame',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SendingRouteRoute = SendingRouteRouteImport.update({
+  id: '/sending',
+  path: '/sending',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SetupRoute = SetupRouteImport.update({
@@ -170,6 +178,11 @@ const OccasionsNewRoute = OccasionsNewRouteImport.update({
   path: '/new',
   getParentRoute: () => OccasionsRouteRoute,
 } as any)
+const SendingIndexRoute = SendingIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => SendingRouteRoute,
+} as any)
 const TemplatesIndexRoute = TemplatesIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -225,6 +238,11 @@ const OccasionsOccasionIdSendRoute = OccasionsOccasionIdSendRouteImport.update({
   path: '/$occasionId/send',
   getParentRoute: () => OccasionsRouteRoute,
 } as any)
+const SendingWavesWaveIdRoute = SendingWavesWaveIdRouteImport.update({
+  id: '/waves/$waveId',
+  path: '/waves/$waveId',
+  getParentRoute: () => SendingRouteRoute,
+} as any)
 const AdminSendingConnectionsConnectionIdRoute =
   AdminSendingConnectionsConnectionIdRouteImport.update({
     id: '/sending/connections/$connectionId',
@@ -260,6 +278,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRouteRouteWithChildren
   '/contacts': typeof ContactsRouteRouteWithChildren
   '/occasions': typeof OccasionsRouteRouteWithChildren
+  '/sending': typeof SendingRouteRouteWithChildren
   '/templates': typeof TemplatesRouteRouteWithChildren
   '/images': typeof ImagesRoute
   '/login': typeof LoginRoute
@@ -283,12 +302,14 @@ export interface FileRoutesByFullPath {
   '/admin/': typeof AdminIndexRoute
   '/contacts/': typeof ContactsIndexRoute
   '/occasions/': typeof OccasionsIndexRoute
+  '/sending/': typeof SendingIndexRoute
   '/templates/': typeof TemplatesIndexRoute
   '/admin/layouts/$layoutId': typeof AdminLayoutsLayoutIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/contacts/import/members': typeof ContactsImportMembersRoute
   '/contacts/import/partners': typeof ContactsImportPartnersRoute
   '/occasions/$occasionId/send': typeof OccasionsOccasionIdSendRoute
+  '/sending/waves/$waveId': typeof SendingWavesWaveIdRoute
   '/admin/layouts/': typeof AdminLayoutsIndexRoute
   '/admin/sending/': typeof AdminSendingIndexRoute
   '/admin/sending/connections/$connectionId': typeof AdminSendingConnectionsConnectionIdRoute
@@ -321,12 +342,14 @@ export interface FileRoutesByTo {
   '/admin': typeof AdminIndexRoute
   '/contacts': typeof ContactsIndexRoute
   '/occasions': typeof OccasionsIndexRoute
+  '/sending': typeof SendingIndexRoute
   '/templates': typeof TemplatesIndexRoute
   '/admin/layouts/$layoutId': typeof AdminLayoutsLayoutIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/contacts/import/members': typeof ContactsImportMembersRoute
   '/contacts/import/partners': typeof ContactsImportPartnersRoute
   '/occasions/$occasionId/send': typeof OccasionsOccasionIdSendRoute
+  '/sending/waves/$waveId': typeof SendingWavesWaveIdRoute
   '/admin/layouts': typeof AdminLayoutsIndexRoute
   '/admin/sending': typeof AdminSendingIndexRoute
   '/admin/sending/connections/$connectionId': typeof AdminSendingConnectionsConnectionIdRoute
@@ -341,6 +364,7 @@ export interface FileRoutesById {
   '/admin': typeof AdminRouteRouteWithChildren
   '/contacts': typeof ContactsRouteRouteWithChildren
   '/occasions': typeof OccasionsRouteRouteWithChildren
+  '/sending': typeof SendingRouteRouteWithChildren
   '/templates': typeof TemplatesRouteRouteWithChildren
   '/images': typeof ImagesRoute
   '/login': typeof LoginRoute
@@ -364,12 +388,14 @@ export interface FileRoutesById {
   '/admin/': typeof AdminIndexRoute
   '/contacts/': typeof ContactsIndexRoute
   '/occasions/': typeof OccasionsIndexRoute
+  '/sending/': typeof SendingIndexRoute
   '/templates/': typeof TemplatesIndexRoute
   '/admin/layouts/$layoutId': typeof AdminLayoutsLayoutIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/contacts/import/members': typeof ContactsImportMembersRoute
   '/contacts/import/partners': typeof ContactsImportPartnersRoute
   '/occasions/$occasionId_/send': typeof OccasionsOccasionIdSendRoute
+  '/sending/waves/$waveId': typeof SendingWavesWaveIdRoute
   '/admin/layouts/': typeof AdminLayoutsIndexRoute
   '/admin/sending/': typeof AdminSendingIndexRoute
   '/admin/sending/connections/$connectionId': typeof AdminSendingConnectionsConnectionIdRoute
@@ -385,6 +411,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/contacts'
     | '/occasions'
+    | '/sending'
     | '/templates'
     | '/images'
     | '/login'
@@ -408,12 +435,14 @@ export interface FileRouteTypes {
     | '/admin/'
     | '/contacts/'
     | '/occasions/'
+    | '/sending/'
     | '/templates/'
     | '/admin/layouts/$layoutId'
     | '/api/auth/$'
     | '/contacts/import/members'
     | '/contacts/import/partners'
     | '/occasions/$occasionId/send'
+    | '/sending/waves/$waveId'
     | '/admin/layouts/'
     | '/admin/sending/'
     | '/admin/sending/connections/$connectionId'
@@ -446,12 +475,14 @@ export interface FileRouteTypes {
     | '/admin'
     | '/contacts'
     | '/occasions'
+    | '/sending'
     | '/templates'
     | '/admin/layouts/$layoutId'
     | '/api/auth/$'
     | '/contacts/import/members'
     | '/contacts/import/partners'
     | '/occasions/$occasionId/send'
+    | '/sending/waves/$waveId'
     | '/admin/layouts'
     | '/admin/sending'
     | '/admin/sending/connections/$connectionId'
@@ -465,6 +496,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/contacts'
     | '/occasions'
+    | '/sending'
     | '/templates'
     | '/images'
     | '/login'
@@ -488,12 +520,14 @@ export interface FileRouteTypes {
     | '/admin/'
     | '/contacts/'
     | '/occasions/'
+    | '/sending/'
     | '/templates/'
     | '/admin/layouts/$layoutId'
     | '/api/auth/$'
     | '/contacts/import/members'
     | '/contacts/import/partners'
     | '/occasions/$occasionId_/send'
+    | '/sending/waves/$waveId'
     | '/admin/layouts/'
     | '/admin/sending/'
     | '/admin/sending/connections/$connectionId'
@@ -508,6 +542,7 @@ export interface RootRouteChildren {
   AdminRouteRoute: typeof AdminRouteRouteWithChildren
   ContactsRouteRoute: typeof ContactsRouteRouteWithChildren
   OccasionsRouteRoute: typeof OccasionsRouteRouteWithChildren
+  SendingRouteRoute: typeof SendingRouteRouteWithChildren
   TemplatesRouteRoute: typeof TemplatesRouteRouteWithChildren
   ImagesRoute: typeof ImagesRoute
   LoginRoute: typeof LoginRoute
@@ -571,6 +606,13 @@ declare module '@tanstack/react-router' {
       path: '/preview-frame'
       fullPath: '/preview-frame'
       preLoaderRoute: typeof PreviewFrameRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sending': {
+      id: '/sending'
+      path: '/sending'
+      fullPath: '/sending'
+      preLoaderRoute: typeof SendingRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/setup': {
@@ -692,6 +734,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OccasionsNewRouteImport
       parentRoute: typeof OccasionsRouteRoute
     }
+    '/sending/': {
+      id: '/sending/'
+      path: '/'
+      fullPath: '/sending/'
+      preLoaderRoute: typeof SendingIndexRouteImport
+      parentRoute: typeof SendingRouteRoute
+    }
     '/templates/': {
       id: '/templates/'
       path: '/'
@@ -768,6 +817,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/occasions/$occasionId/send'
       preLoaderRoute: typeof OccasionsOccasionIdSendRouteImport
       parentRoute: typeof OccasionsRouteRoute
+    }
+    '/sending/waves/$waveId': {
+      id: '/sending/waves/$waveId'
+      path: '/waves/$waveId'
+      fullPath: '/sending/waves/$waveId'
+      preLoaderRoute: typeof SendingWavesWaveIdRouteImport
+      parentRoute: typeof SendingRouteRoute
     }
     '/admin/sending/connections/$connectionId': {
       id: '/admin/sending/connections/$connectionId'
@@ -880,6 +936,20 @@ const OccasionsRouteRouteWithChildren = OccasionsRouteRoute._addFileChildren(
   OccasionsRouteRouteChildren,
 )
 
+interface SendingRouteRouteChildren {
+  SendingIndexRoute: typeof SendingIndexRoute
+  SendingWavesWaveIdRoute: typeof SendingWavesWaveIdRoute
+}
+
+const SendingRouteRouteChildren: SendingRouteRouteChildren = {
+  SendingIndexRoute: SendingIndexRoute,
+  SendingWavesWaveIdRoute: SendingWavesWaveIdRoute,
+}
+
+const SendingRouteRouteWithChildren = SendingRouteRoute._addFileChildren(
+  SendingRouteRouteChildren,
+)
+
 interface TemplatesRouteRouteChildren {
   TemplatesTemplateIdRoute: typeof TemplatesTemplateIdRoute
   TemplatesNewRoute: typeof TemplatesNewRoute
@@ -901,6 +971,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRouteRoute: AdminRouteRouteWithChildren,
   ContactsRouteRoute: ContactsRouteRouteWithChildren,
   OccasionsRouteRoute: OccasionsRouteRouteWithChildren,
+  SendingRouteRoute: SendingRouteRouteWithChildren,
   TemplatesRouteRoute: TemplatesRouteRouteWithChildren,
   ImagesRoute: ImagesRoute,
   LoginRoute: LoginRoute,

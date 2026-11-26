@@ -155,6 +155,22 @@ describe(resendUncertainResult, () => {
 		});
 		await expect(resendUncertainResult(c.db, c.editor, id)).rejects.toBeInstanceOf(ForbiddenError);
 	});
+
+	it('tells a stopped wave apart from an entry that is no longer uncertain', async () => {
+		const c = await setUpWaveClub();
+		await insertContact(c.db, { email: 'anna@example.org', kind: 'member', memberNumber: '1' });
+		const waveId = await confirmTestWave(c, NOW);
+		const [id = ''] = await waveEntryIds(c.db, waveId);
+		await c.db
+			.update(outboxEntries)
+			.set({ messageId: '<unklar@example.org>', status: 'uncertain' })
+			.where(eq(outboxEntries.id, id));
+		await stopWaveResult(c.db, c.sender, waveId);
+		await expect(resendUncertainResult(c.db, c.sender, id)).resolves.toStrictEqual({
+			failure: 'stopped',
+			ok: false,
+		});
+	});
 });
 
 describe(searchRecipientsResult, () => {

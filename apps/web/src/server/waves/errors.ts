@@ -40,6 +40,14 @@ class WaveEntryStateError extends Error {
 	}
 }
 
+/** The wave of the entry was stopped: it sends nothing more, not even an uncertain entry. */
+class WaveStoppedError extends Error {
+	public constructor() {
+		super('The wave was stopped.');
+		this.name = 'WaveStoppedError';
+	}
+}
+
 /**
  * The provider did not take a test mail. `uncertain`: the request went out and its outcome is
  * unknown, so the mail may still arrive; it counts as sent.
@@ -60,4 +68,5 @@ export {
 	WaveEntryNotFoundError,
 	WaveEntryStateError,
 	WaveNotFoundError,
+	WaveStoppedError,
 };

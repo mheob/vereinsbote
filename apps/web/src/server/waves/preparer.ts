@@ -402,3 +402,4 @@ const wavePreparer: EntryPreparer = {
 };
 
 export { wavePreparer };
+export type { SkipReason };

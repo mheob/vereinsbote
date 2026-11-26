@@ -16,7 +16,12 @@ import { outboxEntries, waves } from '@/server/db/schema';
 import { assertArea } from '@/server/permissions/principal';
 import type { Principal } from '@/server/permissions/principal';
 
-import { WaveEntryNotFoundError, WaveEntryStateError, WaveNotFoundError } from './errors';
+import {
+	WaveEntryNotFoundError,
+	WaveEntryStateError,
+	WaveNotFoundError,
+	WaveStoppedError,
+} from './errors';
 
 /**
  * Stops a wave (Design 11.4): every planned entry is cancelled, the wave records who stopped it
@@ -70,8 +75,8 @@ async function stopWave(db: Db, actor: Principal, waveId: string): Promise<{ can
  * @param entryId The entry.
  * @throws {WaveEntryNotFoundError} When no entry of a wave has the id.
  * @throws {ForbiddenError} Without `send` in the area.
- * @throws {WaveEntryStateError} When the entry is not `uncertain` (any more) or its wave was
- *   stopped.
+ * @throws {WaveEntryStateError} When the entry is not `uncertain` (any more).
+ * @throws {WaveStoppedError} When its wave was stopped.
  */
 async function resendUncertain(db: Db, actor: Principal, entryId: string): Promise<void> {
 	const [entry] = await db
@@ -89,7 +94,7 @@ async function resendUncertain(db: Db, actor: Principal, entryId: string): Promi
 			.from(waves)
 			.where(eq(waves.id, entry.waveId))
 			.for('share');
-		if (wave?.stoppedAt !== null) throw new WaveEntryStateError();
+		if (wave?.stoppedAt !== null) throw new WaveStoppedError();
 		const resent = await tx
 			.update(outboxEntries)
 			.set({

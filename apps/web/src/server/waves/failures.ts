@@ -19,6 +19,7 @@ import {
 	WaveEntryNotFoundError,
 	WaveEntryStateError,
 	WaveNotFoundError,
+	WaveStoppedError,
 } from './errors';
 import { recipientPreview } from './recipient-preview';
 import type { RecipientPreview } from './recipient-preview';
@@ -54,12 +55,12 @@ type StopWaveResult =
 	| Readonly<{ ok: false; failure: 'gone' }>;
 
 /**
- * Sending an uncertain entry again: done, the entry is gone, or it is no longer uncertain (another
- * person sent it again already, or its wave was stopped).
+ * Sending an uncertain entry again: done, the entry is gone, it is no longer uncertain (another
+ * person sent it again already), or its wave was stopped.
  */
 type ResendUncertainResult =
 	| Readonly<{ ok: true }>
-	| Readonly<{ ok: false; failure: 'gone' | 'notUncertain' }>;
+	| Readonly<{ ok: false; failure: 'gone' | 'notUncertain' | 'stopped' }>;
 
 /** The contacts a search of the send flow found. */
 type SearchRecipientsResult =
@@ -191,6 +192,7 @@ async function resendUncertainResult(
 	} catch (error) {
 		if (error instanceof WaveEntryNotFoundError) return { failure: 'gone', ok: false };
 		if (error instanceof WaveEntryStateError) return { failure: 'notUncertain', ok: false };
+		if (error instanceof WaveStoppedError) return { failure: 'stopped', ok: false };
 		throw error;
 	}
 }
