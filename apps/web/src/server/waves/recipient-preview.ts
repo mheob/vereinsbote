@@ -15,7 +15,9 @@ import { getTemplate } from '@/server/templates/templates';
 
 import { planMails } from './merge';
 import { contactsWithMarks, exclusionOf, resolveRecipients } from './recipients';
-import type { ExclusionReason, RecipientSelection } from './recipients';
+import type { RecipientSelection, ShownExclusion } from './recipients';
+import { shownReason } from './shown-reasons';
+import type { ExitDateSight } from './shown-reasons';
 import { sendableOccasion } from './waves';
 
 /** What the preview shows for a contact of the selection. */
@@ -29,34 +31,40 @@ interface RecipientPreview {
 	readonly values: Readonly<Record<string, string>>;
 	/** Who the mail goes to, the filling contact first; empty when the chosen one gets none. */
 	readonly names: readonly string[];
-	/** Why the chosen contact gets no mail of this selection; null when it gets one. */
-	readonly excluded: ExclusionReason | 'notSelected' | null;
+	/**
+	 * Why the chosen contact gets no mail of this selection, as the user may see it (ruling R10);
+	 * null when it gets one.
+	 */
+	readonly excluded: ShownExclusion | 'notSelected' | null;
 }
 
 /**
- * Why a contact outside the planned mails gets none: its first reason, or that the selection does
- * not take it.
+ * Why a contact outside the planned mails gets none, as the user may see it: its first reason
+ * (`unavailable` for an exit date the user may not see), or that the selection does not take it.
  *
  * @param db The database.
- * @param occasion The occasion: its id and area.
- * @param occasion.id The occasion.
- * @param occasion.areaId Its area.
- * @param contactId The contact.
+ * @param asked The occasion (its id and area), the contact and the user's sight of exit dates.
+ * @param asked.occasion The occasion.
+ * @param asked.contactId The contact.
+ * @param asked.sight Whether the user sees the exit date, per kind.
  * @param now The instant.
  * @returns The reason.
  * @throws {ContactNotFoundError} When the contact is gone.
  */
-// oxlint-disable-next-line max-params -- the database, the occasion, the contact and the clock
 async function reasonOf(
 	db: Db,
-	occasion: Readonly<{ id: string; areaId: string }>,
-	contactId: string,
+	asked: Readonly<{
+		occasion: Readonly<{ id: string; areaId: string }>;
+		contactId: string;
+		sight: ExitDateSight;
+	}>,
 	now: Date,
-): Promise<ExclusionReason | 'notSelected'> {
-	const [row] = await contactsWithMarks(db, occasion, [contactId]);
+): Promise<ShownExclusion | 'notSelected'> {
+	const [row] = await contactsWithMarks(db, asked.occasion, [asked.contactId]);
 	if (row === undefined) throw new ContactNotFoundError();
 	const { contact, ...marks } = row;
-	return exclusionOf(contact, marks, todayInClubZone(now)) ?? 'notSelected';
+	const reason = exclusionOf(contact, marks, todayInClubZone(now));
+	return reason === null ? 'notSelected' : shownReason(reason, contact.kind, asked.sight);
 }
 
 /**
@@ -90,7 +98,11 @@ async function recipientPreview(
 		merged.some(({ id }) => id === input.contactId),
 	);
 	const filling = mail?.contacts[0]?.id ?? input.contactId;
-	const excluded = mail === undefined ? await reasonOf(db, occasion, input.contactId, now) : null;
+	const sight = recipients.exitDateSight;
+	const excluded =
+		mail === undefined
+			? await reasonOf(db, { contactId: input.contactId, occasion, sight }, now)
+			: null;
 	const template = await getTemplate(db, actor, occasion.templateId);
 	const values = await previewValues(db, actor, template.id, filling, template.salutationTexts);
 	if (values === null) throw new ContactNotFoundError();

@@ -145,7 +145,6 @@ export function SendFlow({
 				)}
 				{step === 'preview' ? (
 					<ConfirmDialog
-						announce={announce}
 						attachments={attachments.length}
 						input={confirmInput}
 						name={page.occasion.name}

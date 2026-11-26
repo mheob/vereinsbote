@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vite-plus/test';
 import { emptyTemplate } from '@/mail/starters/starters';
 import type { TemplateInput } from '@/mail/templates/template-schema';
 import { ContactNotFoundError } from '@/server/contacts/errors';
+import { setFieldAreas } from '@/server/contacts/settings';
 import { insertContact } from '@/server/contacts/testing';
 import { contactSuppressions } from '@/server/db/schema';
 import { ForbiddenError } from '@/server/permissions/principal';
@@ -114,6 +115,29 @@ describe(recipientPreview, () => {
 		await expect(
 			recipientPreview(c.db, c.sender, { ...input, contactId: partner }, NOW),
 		).resolves.toMatchObject({ contactId: partner, excluded: 'notSelected', names: [] });
+	});
+
+	it('names a reached exit only to a user who may see exit dates', async () => {
+		const c = await setUpWaveClub({ template: TEMPLATE });
+		const exited = await insertContact(c.db, {
+			email: 'ausgetreten@example.org',
+			exitDate: '2020-01-01',
+			firstName: 'Ina',
+			kind: 'member',
+			memberNumber: '4',
+		});
+		const input = { contactId: exited, occasionId: c.occasionId, selection: EVERY_MEMBER };
+		await expect(recipientPreview(c.db, c.sender, input, NOW)).resolves.toMatchObject({
+			excluded: 'exited',
+		});
+		await setFieldAreas(c.db, c.admin, {
+			areaIds: [c.partnersAreaId],
+			fieldKey: 'exitDate',
+			kind: 'member',
+		});
+		await expect(recipientPreview(c.db, c.sender, input, NOW)).resolves.toMatchObject({
+			excluded: 'unavailable',
+		});
 	});
 
 	it('refuses a contact that is gone and a user without send', async () => {

@@ -6,7 +6,7 @@
 import type { MessageKey, MessageParams } from '@/i18n/translate';
 import type { AttachmentFailure } from '@/server/attachments/failures';
 import type { SendTestMailResult, WaveFailure } from '@/server/waves/failures';
-import type { ExclusionReason } from '@/server/waves/recipients';
+import type { ShownExclusion } from '@/server/waves/recipients';
 import type { TestMailRefusal } from '@/server/waves/test-mail-content';
 import { TEST_MAILS_PER_HOUR } from '@/server/waves/test-mail-limit';
 import type { WaveProblem, WaveRefusal, WaveSummary } from '@/server/waves/waves';
@@ -20,10 +20,14 @@ interface CountRow {
 	readonly value: number;
 }
 
-/** The reasons in the order the server checks them (`exclusionOf`). */
-const REASONS: readonly ExclusionReason[] = [
+/**
+ * The reasons in the order the server checks them (`exclusionOf`); `unavailable` stands for an exit
+ * the user may not see (ruling R10).
+ */
+const REASONS: readonly ShownExclusion[] = [
 	'suppressed',
 	'exited',
+	'unavailable',
 	'noEmail',
 	'invalidEmail',
 	'optedOutOccasion',

@@ -4,7 +4,6 @@ import type { ReactNode } from 'react';
 import { Button, Dialog, DialogTrigger, Heading, Modal, ModalOverlay } from 'react-aria-components';
 import type { FormProps } from 'react-aria-components';
 
-import type { Announce } from '@/components/announcements';
 import { PostForm } from '@/components/post-form';
 import { FAILED, settle } from '@/components/settle';
 import { primaryButtonClass, secondaryButtonClass } from '@/components/styles';
@@ -41,10 +40,11 @@ interface ConfirmInput {
 /**
  * The form inside the dialog: the numbers, „Sofort“ or „Geplant“ with a date and time on the club's
  * clock (Europe/Berlin), and the confirmation. It mounts each time the dialog opens, so the
- * proposed start and its bounds are those of that moment.
+ * proposed start and its bounds are those of that moment. A call that failed (the answer was lost)
+ * is said inside the dialog, which stays open: the modal hides the page from screen readers, and a
+ * retry sends the flow's key again, so it gets the same wave.
  *
  * @param props The props.
- * @param props.announce Announces in the page's live region.
  * @param props.attachments How many files the mail carries.
  * @param props.input The occasion, the selection, the files and the flow's key.
  * @param props.onConfirmed Called with the wave the confirmation made.
@@ -53,14 +53,12 @@ interface ConfirmInput {
  * @returns The form.
  */
 function ConfirmForm({
-	announce,
 	attachments,
 	input,
 	onConfirmed,
 	onFailure,
 	summary,
 }: Readonly<{
-	announce: Announce;
 	attachments: number;
 	input: ConfirmInput;
 	onConfirmed: (wave: ConfirmedWave) => void;
@@ -69,6 +67,8 @@ function ConfirmForm({
 }>): ReactNode {
 	const t = useT();
 	const confirm = useServerFn(confirmWave);
+	// Counts the failed calls since the last try: a new alert element per failure is read again.
+	const [failedCall, setFailedCall] = useState<number | null>(null);
 	const [isPending, startPending] = useTransition();
 	const [when, setWhen] = useState<When>('now');
 	const [at, setAt] = useState<ReturnType<typeof defaultSchedule> | null>(() =>
@@ -96,6 +96,7 @@ function ConfirmForm({
 				return;
 			}
 			const notBefore = when === 'later' && at !== null ? scheduledInstant(at) : null;
+			setFailedCall(null);
 			startPending(async () => {
 				const data = {
 					...input,
@@ -106,7 +107,7 @@ function ConfirmForm({
 				const result = await settle(confirm({ data }));
 				if (result === undefined) return;
 				if (result === FAILED) {
-					announce(t('auth.requestFailed'), 'alert');
+					setFailedCall((previous) => (previous ?? 0) + 1);
 				} else if (result.ok) {
 					onConfirmed({ mails: result.mails, notBefore });
 				} else if (result.failure === 'refused') {
@@ -117,7 +118,7 @@ function ConfirmForm({
 				}
 			});
 		},
-		[announce, at, confirm, input, onConfirmed, onFailure, t, when],
+		[at, confirm, input, onConfirmed, onFailure, when],
 	);
 	const atRefused = refusal === 'scheduleOutOfRange';
 	return (
@@ -128,6 +129,11 @@ function ConfirmForm({
 			{refusal === null || atRefused ? null : (
 				<p className="font-semibold text-red-700" role="alert">
 					{t(confirmRefusalMessage(refusal))}
+				</p>
+			)}
+			{failedCall === null ? null : (
+				<p className="font-semibold text-red-700" key={failedCall} role="alert">
+					{t('auth.requestFailed')}
 				</p>
 			)}
 			{blocked === null ? null : (
@@ -157,7 +163,6 @@ function ConfirmForm({
  * wave anew. React Aria's modal keeps the focus inside and returns it to the button.
  *
  * @param props The props.
- * @param props.announce Announces in the page's live region.
  * @param props.attachments How many files the mail carries.
  * @param props.input The occasion, the selection, the files and the flow's key.
  * @param props.name The name of the occasion.
@@ -168,7 +173,6 @@ function ConfirmForm({
  * @returns The button with its dialog.
  */
 export function ConfirmDialog({
-	announce,
 	attachments,
 	input,
 	name,
@@ -177,7 +181,6 @@ export function ConfirmDialog({
 	onOpen,
 	summary,
 }: Readonly<{
-	announce: Announce;
 	attachments: number;
 	input: ConfirmInput;
 	name: string;
@@ -216,7 +219,6 @@ export function ConfirmDialog({
 							{t('send.confirmTitle', { name })}
 						</Heading>
 						<ConfirmForm
-							announce={announce}
 							attachments={attachments}
 							input={input}
 							onConfirmed={onConfirmed}

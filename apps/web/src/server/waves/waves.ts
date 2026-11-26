@@ -43,7 +43,7 @@ import { WaveAttachmentsGoneError } from './errors';
 import { planMails } from './merge';
 import type { PlannedMail } from './merge';
 import { resolveRecipients } from './recipients';
-import type { ExclusionReason, RecipientSelection } from './recipients';
+import type { ExclusionReason, RecipientSelection, ShownExclusion } from './recipients';
 
 interface WaveSummaryInput {
 	occasionId: string;
@@ -59,7 +59,8 @@ interface WaveSummary {
 	readonly mails: number;
 	/** Addresses of a circular that get one mail for several contacts. */
 	readonly merged: number;
-	readonly excluded: Readonly<Record<ExclusionReason, number>>;
+	/** The excluded contacts by reason as the user may see them (ruling R10, `shown-reasons.ts`). */
+	readonly excluded: Readonly<Record<ShownExclusion, number>>;
 	readonly attachmentsBytes: number;
 	/** Club days until the last mail goes, today the first; infinite when the reserve leaves none. */
 	readonly estimatedDays: number;
@@ -115,6 +116,8 @@ interface WavePlan {
 	readonly template: CompiledTemplate;
 	readonly mails: readonly PlannedMail[];
 	readonly excluded: Readonly<Record<ExclusionReason, number>>;
+	/** The excluded contacts by reason as the browser gets them (ruling R10). */
+	readonly shownExcluded: Readonly<Record<ShownExclusion, number>>;
 	readonly attachments: readonly WaveAttachment[];
 	readonly sender: WaveSender;
 	readonly problem: WaveProblem | null;
@@ -291,6 +294,7 @@ async function planWave(
 		occasion,
 		problem: template.problem ?? (mails.length === 0 ? 'noRecipients' : null),
 		sender: await senderOf(db, occasion.senderId),
+		shownExcluded: recipients.shownExcluded,
 		template,
 	};
 }
@@ -436,7 +440,7 @@ async function summarizeWave(
 	return {
 		attachmentsBytes: plan.attachments.reduce((sum, { size }) => sum + size, 0),
 		estimatedDays: await estimateFor(db, plan, now),
-		excluded: { ...plan.excluded },
+		excluded: { ...plan.shownExcluded },
 		graphTooLarge: graphTooLarge(plan, appOrigin, now),
 		mails: plan.mails.length,
 		merged: plan.mails.filter(({ contacts }) => contacts.length > 1).length,

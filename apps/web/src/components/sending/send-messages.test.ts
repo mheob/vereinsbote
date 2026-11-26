@@ -26,6 +26,7 @@ const SUMMARY: WaveSummary = {
 		optedOutArea: 0,
 		optedOutOccasion: 3,
 		suppressed: 0,
+		unavailable: 0,
 	},
 	graphTooLarge: false,
 	mails: 12,
@@ -45,6 +46,11 @@ describe(summaryRows, () => {
 			{ label: 'send.excluded.invalidEmail', value: 2 },
 			{ label: 'send.excluded.optedOutOccasion', value: 3 },
 		]);
+	});
+
+	it('names an exit the user may not see as unavailable', () => {
+		const rows = summaryRows({ ...SUMMARY, excluded: { ...SUMMARY.excluded, unavailable: 2 } });
+		expect(rows).toContainEqual({ label: 'send.excluded.unavailable', value: 2 });
 	});
 
 	it('leaves out shared addresses when there are none', () => {

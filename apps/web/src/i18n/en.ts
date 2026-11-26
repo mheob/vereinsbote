@@ -1031,6 +1031,7 @@ export const en: Record<keyof typeof de, string> = {
 	'send.excluded.optedOutArea': 'Excluded, opted out of the area',
 	'send.excluded.optedOutOccasion': 'Excluded, opted out of this occasion',
 	'send.excluded.suppressed': 'Excluded, suppressed',
+	'send.excluded.unavailable': 'Excluded, not sendable',
 	'send.graphTooLarge':
 		'With these attachments the mail is too large for Microsoft 365: a mail may be 4 MB at most there, which leaves about 2 MB for attachments. Remove or shrink attachments.',
 	'send.groupAll': 'All groups',
@@ -1072,6 +1073,7 @@ export const en: Record<keyof typeof de, string> = {
 	'send.reason.optedOutArea': 'opted out of the area',
 	'send.reason.optedOutOccasion': 'opted out of this occasion',
 	'send.reason.suppressed': 'suppressed',
+	'send.reason.unavailable': 'not sendable',
 	'send.removed': '{name} is no longer selected.',
 	'send.scheduleOutOfRange': 'Pick a time from now on and at most a year ahead.',
 	'send.searchHelp': 'Name, organization, e-mail address or number',

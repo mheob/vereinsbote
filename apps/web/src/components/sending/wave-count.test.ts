@@ -33,6 +33,7 @@ const SUMMARY: WaveSummary = {
 		optedOutArea: 0,
 		optedOutOccasion: 0,
 		suppressed: 0,
+		unavailable: 0,
 	},
 	graphTooLarge: false,
 	mails: 2,

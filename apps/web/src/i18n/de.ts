@@ -1054,6 +1054,7 @@ export const de = {
 	'send.excluded.optedOutArea': 'Ausgeschlossen, vom Bereich abgemeldet',
 	'send.excluded.optedOutOccasion': 'Ausgeschlossen, von diesem Anlass abgemeldet',
 	'send.excluded.suppressed': 'Ausgeschlossen, gesperrt',
+	'send.excluded.unavailable': 'Ausgeschlossen, nicht versendbar',
 	'send.graphTooLarge':
 		'Mit diesen Anhängen ist die Mail für Microsoft 365 zu groß: Eine Mail darf dort höchstens 4 MB groß sein, für Anhänge bleiben rund 2 MB. Entferne oder verkleinere Anhänge.',
 	'send.groupAll': 'Alle Gruppen',
@@ -1096,6 +1097,7 @@ export const de = {
 	'send.reason.optedOutArea': 'vom Bereich abgemeldet',
 	'send.reason.optedOutOccasion': 'von diesem Anlass abgemeldet',
 	'send.reason.suppressed': 'gesperrt',
+	'send.reason.unavailable': 'nicht versendbar',
 	'send.removed': '{name} ist nicht mehr ausgewählt.',
 	'send.scheduleOutOfRange': 'Wähle einen Zeitpunkt ab jetzt und höchstens ein Jahr im Voraus.',
 	'send.searchHelp': 'Name, Firma, E-Mail-Adresse oder Nummer',

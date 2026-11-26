@@ -22,6 +22,9 @@ import type { OccasionRecord } from '@/server/occasions/occasions';
 import { assertArea } from '@/server/permissions/principal';
 import type { Principal } from '@/server/permissions/principal';
 
+import { exitDateSight, shownExclusions } from './shown-reasons';
+import type { ExitDateSight } from './shown-reasons';
+
 /**
  * Who a wave goes to: a kind (or both), the search and the filters of the contact list, and, for
  * a selection one by one, the contacts' ids. The ids narrow the filters, they never widen them.
@@ -57,7 +60,19 @@ interface ResolvedRecipients {
 	mailable: ContactRow[];
 	/** Every excluded contact counts once, under the first of its reasons. */
 	excluded: Record<ExclusionReason, number>;
+	/** The contacts counted as `exited`, per kind: the browser may get them as `unavailable`. */
+	exitedByKind: Record<ContactKind, number>;
+	/** Whether the user sees the exit date, per kind. */
+	exitDateSight: ExitDateSight;
+	/**
+	 * The counts as the browser gets them (ruling R10): the exits of kinds whose exit date the user
+	 * does not see count as `unavailable`. The wave works with `excluded`.
+	 */
+	shownExcluded: Record<ShownExclusion, number>;
 }
+
+/** A reason as the browser gets it: `unavailable` stands for an exit the user may not see. */
+type ShownExclusion = ExclusionReason | 'unavailable';
 
 /** The marks that may exclude a selected contact. */
 interface ExclusionMarks {
@@ -119,15 +134,20 @@ function exclusionOf(
  * @param today Today in the club's time zone.
  * @returns The recipients.
  */
-function split(rows: readonly SelectedRow[], today: string): ResolvedRecipients {
+function split(
+	rows: readonly SelectedRow[],
+	today: string,
+): Omit<ResolvedRecipients, 'exitDateSight' | 'shownExcluded'> {
 	const excluded = noExclusions();
+	const exitedByKind = { member: 0, partner: 0 };
 	const mailable: ContactRow[] = [];
 	for (const { contact, ...marks } of rows) {
 		const reason = exclusionOf(contact, marks, today);
 		if (reason === null) mailable.push(contact);
 		else excluded[reason] += 1;
+		if (reason === 'exited') exitedByKind[contact.kind] += 1;
 	}
-	return { excluded, mailable };
+	return { excluded, exitedByKind, mailable };
 }
 
 /**
@@ -245,7 +265,8 @@ async function contactsWithMarks(
  * @param occasion The occasion.
  * @param selection The selection.
  * @param now The instant; the exit date compares with today in the club's time zone.
- * @returns The mailable contacts and the excluded ones by reason.
+ * @returns The mailable contacts, the excluded ones by reason (the exits also per kind), whether
+ *   the user sees the exit date per kind, and the counts as the browser gets them.
  * @throws {ForbiddenError} Without `send` in the occasion's area.
  */
 // oxlint-disable-next-line max-params -- the plan's interface fixes these parameters
@@ -257,11 +278,24 @@ async function resolveRecipients(
 	now: Date,
 ): Promise<ResolvedRecipients> {
 	assertArea(actor, occasion.areaId, 'send');
-	assertCanList(await loadContactAccess(db, actor));
-	if (selection.contactIds?.length === 0) return { excluded: noExclusions(), mailable: [] };
+	const access = await loadContactAccess(db, actor);
+	assertCanList(access);
+	const sight = exitDateSight(access);
 	const today = todayInClubZone(now);
-	return split(await rowsWithMarks(db, occasion, { selection, today }), today);
+	const counted =
+		selection.contactIds?.length === 0
+			? { excluded: noExclusions(), exitedByKind: { member: 0, partner: 0 }, mailable: [] }
+			: split(await rowsWithMarks(db, occasion, { selection, today }), today);
+	const shownExcluded = shownExclusions(counted.excluded, counted.exitedByKind, sight);
+	return { ...counted, exitDateSight: sight, shownExcluded };
 }
 
 export { contactsWithMarks, exclusionOf, resolveRecipients, selectionCondition };
-export type { ContactRow, ExclusionReason, RecipientSelection, ResolvedRecipients, SelectedRow };
+export type {
+	ContactRow,
+	ExclusionReason,
+	RecipientSelection,
+	ResolvedRecipients,
+	SelectedRow,
+	ShownExclusion,
+};
