@@ -25,9 +25,21 @@ import { confirmWave } from './waves';
 const NOW = new Date('2026-11-26T09:00:00.000Z');
 /** An hour after `NOW`: the start of a planned wave. */
 const LATER = new Date('2026-11-26T10:00:00.000Z');
+/** A minute after `LATER`: the start of the planned wave has passed. */
+const AFTER_START = new Date('2026-11-26T10:01:00.000Z');
 /** When the provider reported the bounces. */
 const REPORTED_AT = new Date('2026-11-26T09:30:00.000Z');
 const MINUTE_MS = 60_000;
+
+/**
+ * A minute after the real clock: a wave confirmed for at once in a test was made by the database's
+ * clock, so its start has passed by then.
+ *
+ * @returns The instant.
+ */
+function afterNow(): Date {
+	return new Date(Date.now() + MINUTE_MS);
+}
 
 /** No entry in any state. */
 const NO_ENTRIES: Readonly<Record<EntryStatus, number>> = {
@@ -117,33 +129,46 @@ describe(waveState, () => {
 	it.each<{
 		title: string;
 		counts: Partial<Record<EntryStatus, number>>;
+		notBefore: Date;
 		taken: boolean;
 		stopped: boolean;
 		state: string;
 	}>([
 		{
 			counts: { planned: 3 },
+			notBefore: LATER,
 			state: 'planned',
 			stopped: false,
 			taken: false,
-			title: 'nothing was taken yet',
+			title: 'its start lies ahead and nothing was taken',
 		},
 		{
 			counts: { planned: 3 },
+			notBefore: NOW,
+			state: 'running',
+			stopped: false,
+			taken: false,
+			title: 'its start has passed and no run took an entry yet',
+		},
+		{
+			counts: { planned: 2, sending: 1 },
+			notBefore: LATER,
+			state: 'running',
+			stopped: false,
+			taken: true,
+			title: 'its start lies ahead but a run took an entry',
+		},
+		{
+			counts: { planned: 3 },
+			notBefore: NOW,
 			state: 'running',
 			stopped: false,
 			taken: true,
 			title: 'an entry waits for its retry',
 		},
 		{
-			counts: { planned: 2, sending: 1 },
-			state: 'running',
-			stopped: false,
-			taken: true,
-			title: 'a mail is on its way',
-		},
-		{
 			counts: { failed: 1, planned: 1, sent: 1 },
+			notBefore: NOW,
 			state: 'running',
 			stopped: false,
 			taken: true,
@@ -151,6 +176,7 @@ describe(waveState, () => {
 		},
 		{
 			counts: { sent: 3 },
+			notBefore: NOW,
 			state: 'done',
 			stopped: false,
 			taken: true,
@@ -158,6 +184,7 @@ describe(waveState, () => {
 		},
 		{
 			counts: { skipped: 3 },
+			notBefore: NOW,
 			state: 'done',
 			stopped: false,
 			taken: true,
@@ -165,20 +192,39 @@ describe(waveState, () => {
 		},
 		{
 			counts: { bounced: 1, uncertain: 1 },
+			notBefore: NOW,
 			state: 'done',
 			stopped: false,
 			taken: true,
 			title: 'unclear and bounced entries wait for nobody',
 		},
 		{
+			counts: { cancelled: 2 },
+			notBefore: NOW,
+			state: 'done',
+			stopped: false,
+			taken: true,
+			title: 'every entry is cancelled without a stop',
+		},
+		{
+			counts: {},
+			notBefore: NOW,
+			state: 'done',
+			stopped: false,
+			taken: false,
+			title: 'the wave has no entry',
+		},
+		{
 			counts: { cancelled: 3 },
+			notBefore: LATER,
 			state: 'stopped',
 			stopped: true,
 			taken: false,
-			title: 'every entry was cancelled by a stop',
+			title: 'a planned wave was stopped',
 		},
 		{
 			counts: { cancelled: 2, sending: 1 },
+			notBefore: NOW,
 			state: 'stopped',
 			stopped: true,
 			taken: true,
@@ -186,21 +232,23 @@ describe(waveState, () => {
 		},
 		{
 			counts: { sent: 2 },
+			notBefore: NOW,
 			state: 'stopped',
 			stopped: true,
 			taken: true,
 			title: 'a stopped wave had sent everything',
 		},
-		{
-			counts: { cancelled: 2 },
-			state: 'done',
-			stopped: false,
-			taken: true,
-			title: 'every entry is cancelled without a stop',
-		},
-		{ counts: {}, state: 'done', stopped: false, taken: false, title: 'the wave has no entry' },
-	])('is $state when $title', ({ counts, state, stopped, taken }) => {
-		expect(waveState({ counts: countsOf(counts), stopped, taken })).toBe(state);
+	])('is $state when $title', ({ counts, notBefore, state, stopped, taken }) => {
+		expect(waveState({ counts: countsOf(counts), notBefore, now: NOW, stopped, taken })).toBe(
+			state,
+		);
+	});
+
+	it('takes the start itself as passed', () => {
+		const counts = countsOf({ planned: 1 });
+		expect(waveState({ counts, notBefore: NOW, now: NOW, stopped: false, taken: false })).toBe(
+			'running',
+		);
 	});
 });
 
@@ -218,7 +266,7 @@ describe(listWaves, () => {
 		});
 		const plannedWave = await confirmPlannedWave(c);
 		const reader = await userWith(c.db, { [c.membersAreaId]: 'read' });
-		const listed = await listWaves(c.db, reader, c.membersAreaId, 1);
+		const listed = await listWaves(c.db, reader, c.membersAreaId, 1, NOW);
 		expect(listed).toStrictEqual({
 			items: [
 				{
@@ -240,13 +288,13 @@ describe(listWaves, () => {
 		});
 		const partnersReader = await userWith(c.db, { [c.partnersAreaId]: 'read' });
 		const adminWithoutArea = await userWith(c.db, {}, { isAdmin: true });
-		await expect(listWaves(c.db, partnersReader, c.membersAreaId, 1)).rejects.toBeInstanceOf(
+		await expect(listWaves(c.db, partnersReader, c.membersAreaId, 1, NOW)).rejects.toBeInstanceOf(
 			ForbiddenError,
 		);
-		await expect(listWaves(c.db, adminWithoutArea, c.membersAreaId, 1)).rejects.toBeInstanceOf(
+		await expect(listWaves(c.db, adminWithoutArea, c.membersAreaId, 1, NOW)).rejects.toBeInstanceOf(
 			ForbiddenError,
 		);
-		await expect(listWaves(c.db, partnersReader, c.partnersAreaId, 1)).resolves.toStrictEqual({
+		await expect(listWaves(c.db, partnersReader, c.partnersAreaId, 1, NOW)).resolves.toStrictEqual({
 			items: [],
 			total: 0,
 		});
@@ -261,34 +309,37 @@ describe(listWaves, () => {
 			ids.push(await insertWave(c.db, c.occasionId, { createdAt }));
 		}
 		const newestFirst = ids.toReversed();
-		const first = await listWaves(c.db, c.sender, c.membersAreaId, 1);
+		const first = await listWaves(c.db, c.sender, c.membersAreaId, 1, NOW);
 		expect(first.total).toBe(CONTACTS_PAGE_SIZE + 1);
 		expect(first.items.map(({ id }) => id)).toStrictEqual(newestFirst.slice(0, CONTACTS_PAGE_SIZE));
-		const second = await listWaves(c.db, c.sender, c.membersAreaId, 2);
+		const second = await listWaves(c.db, c.sender, c.membersAreaId, 2, NOW);
 		expect(second.items.map(({ id }) => id)).toStrictEqual([ids[0]]);
-		await expect(listWaves(c.db, c.sender, c.membersAreaId, 0)).rejects.toThrow(Error);
+		await expect(listWaves(c.db, c.sender, c.membersAreaId, 0, NOW)).rejects.toThrow(Error);
 	});
 
-	it('derives the wave state from entries and stop time', async () => {
+	it('derives the wave state from entries, start and stop time', async () => {
 		const c = await setUpWaveClub();
 		await insertMembers(c.db, 2);
-		const waveId = await confirmTestWave(c, NOW);
-		const stateOf = async (): Promise<string | undefined> => {
-			const { items } = await listWaves(c.db, c.sender, c.membersAreaId, 1);
-			return new Map(items.map(({ id, state }) => [id, state])).get(waveId);
+		const waveId = await confirmPlannedWave(c);
+		const states: (string | undefined)[] = [];
+		const record = async (now: Date): Promise<void> => {
+			const { items } = await listWaves(c.db, c.sender, c.membersAreaId, 1, now);
+			states.push(new Map(items.map(({ id, state }) => [id, state])).get(waveId));
 		};
-		// Sent at once, but no run took an entry yet.
-		await expect(stateOf()).resolves.toBe('planned');
+		// Its start lies ahead and no run took an entry; then its start has passed, no run came yet.
+		await record(NOW);
+		await record(AFTER_START);
 		const [first = '', second = ''] = await waveEntryIds(c.db, waveId);
-		// A run took the first entry, which waits for its retry.
+		// A run took the first entry, which waits for its retry: no longer planned.
 		await setEntries(c.db, [first], { attempts: 1, messageId: '<a@example.org>' });
-		await expect(stateOf()).resolves.toBe('running');
+		await record(NOW);
 		await setEntries(c.db, [first], { status: 'sent' });
 		await setEntries(c.db, [second], { messageId: '<b@example.org>', status: 'uncertain' });
-		await expect(stateOf()).resolves.toBe('done');
+		await record(AFTER_START);
 		await stopWave(c.db, c.sender, waveId);
-		await expect(stateOf()).resolves.toBe('stopped');
-		await expect(loadWave(c.db, c.sender, waveId)).resolves.toMatchObject({
+		await record(AFTER_START);
+		expect(states).toStrictEqual(['planned', 'running', 'running', 'done', 'stopped']);
+		await expect(loadWave(c.db, c.sender, waveId, AFTER_START)).resolves.toMatchObject({
 			areaName: 'Mitglieder',
 			canSend: true,
 			counts: countsOf({ sent: 1, uncertain: 1 }),
@@ -297,16 +348,28 @@ describe(listWaves, () => {
 			state: 'stopped',
 		});
 	});
+
+	it('shows a wave sent at once as running before a run took an entry', async () => {
+		const c = await setUpWaveClub();
+		await insertMembers(c.db, 1);
+		const waveId = await confirmTestWave(c, NOW);
+		const { items } = await listWaves(c.db, c.sender, c.membersAreaId, 1, afterNow());
+		expect(items).toMatchObject([{ id: waveId, state: 'running' }]);
+	});
 });
 
 describe(loadWave, () => {
 	it('needs read in the area of the wave and tells whether the user may send', async () => {
 		const c = await setUpWaveClub();
 		const waveId = await insertWave(c.db, c.occasionId);
-		await expect(loadWave(c.db, c.editor, waveId)).resolves.toMatchObject({ canSend: false });
+		await expect(loadWave(c.db, c.editor, waveId, NOW)).resolves.toMatchObject({ canSend: false });
 		const partnersReader = await userWith(c.db, { [c.partnersAreaId]: 'send' });
-		await expect(loadWave(c.db, partnersReader, waveId)).rejects.toBeInstanceOf(ForbiddenError);
-		await expect(loadWave(c.db, c.sender, randomUUID())).rejects.toBeInstanceOf(WaveNotFoundError);
+		await expect(loadWave(c.db, partnersReader, waveId, NOW)).rejects.toBeInstanceOf(
+			ForbiddenError,
+		);
+		await expect(loadWave(c.db, c.sender, randomUUID(), NOW)).rejects.toBeInstanceOf(
+			WaveNotFoundError,
+		);
 	});
 });
 

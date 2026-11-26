@@ -332,7 +332,9 @@ const loadSendingOverview = createServerFn({ method: 'GET' }).handler(
 		const areas = await overviewAreas(context.db, principal);
 		const [first] = areas;
 		const overview =
-			first === undefined ? null : await areaOverview(context.db, principal, first.id, 1);
+			first === undefined
+				? null
+				: await areaOverview(context.db, principal, first.id, 1, new Date());
 		return { areas, overview };
 	},
 );
@@ -346,7 +348,7 @@ const loadAreaOverview = createServerFn({ method: 'GET' })
 			import('@/server/waves/overview'),
 		]);
 		const { context, principal } = await requireRequestPrincipal();
-		return areaOverview(context.db, principal, data.areaId, data.page);
+		return areaOverview(context.db, principal, data.areaId, data.page, new Date());
 	});
 
 /**
@@ -367,7 +369,7 @@ const loadWavePage = createServerFn({ method: 'GET' })
 		// oxlint-disable-next-line typescript/only-throw-error -- the router shows its not-found page
 		if (!z.uuid().safeParse(data.id).success) throw notFound();
 		try {
-			return await wavePage(context.db, principal, data.id, 1);
+			return await wavePage(context.db, principal, data.id, 1, new Date());
 		} catch (error) {
 			const hidden = error instanceof WaveNotFoundError || error instanceof ForbiddenError;
 			// oxlint-disable-next-line typescript/only-throw-error -- see above
@@ -387,7 +389,8 @@ const loadWaveEntries = createServerFn({ method: 'GET' })
 		]);
 		const { context, principal } = await requireRequestPrincipal();
 		try {
-			return { ok: true, page: await wavePage(context.db, principal, data.waveId, data.page) };
+			const page = await wavePage(context.db, principal, data.waveId, data.page, new Date());
+			return { ok: true, page };
 		} catch (error) {
 			if (error instanceof WaveNotFoundError) return { failure: 'gone', ok: false };
 			throw error;

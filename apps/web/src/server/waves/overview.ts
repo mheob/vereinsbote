@@ -157,15 +157,19 @@ function noEntries(): Record<EntryStatus, number> {
 }
 
 /**
- * The state of a wave (Design 16). A stopped wave is `stopped`, whatever its entries; one whose
- * entries all have a final status (none `planned` or `sending`; an `uncertain` one waits for a
- * person, not for the outbox) is `done`; one whose entries all wait without any having been taken
- * by a run (its start lies ahead, or no run came yet) is `planned`; anything else is `running`.
+ * The state of a wave (Design 16, ruling R17). A stopped wave is `stopped`, whatever its entries;
+ * one whose start lies ahead and of which no run has taken an entry yet is `planned`; one with an
+ * entry `planned` or `sending` is `running` (also when its start has passed and no run came yet);
+ * anything else is `done`: every entry has a final status (an `uncertain` one waits for a person,
+ * not for the outbox).
  *
- * @param wave Its entries per status, whether a run took one of them and whether it was stopped.
+ * @param wave Its entries per status, whether a run took one of them, whether it was stopped, its
+ *   start and the instant to judge it at.
  * @param wave.counts The entries per status.
  * @param wave.taken Whether a run took one of them.
  * @param wave.stopped Whether the wave was stopped.
+ * @param wave.notBefore When the wave starts.
+ * @param wave.now The instant of the request.
  * @returns The state.
  */
 function waveState(
@@ -173,13 +177,14 @@ function waveState(
 		counts: Readonly<Record<EntryStatus, number>>;
 		taken: boolean;
 		stopped: boolean;
+		notBefore: Date;
+		now: Date;
 	}>,
 ): WaveState {
-	const { counts, stopped, taken } = wave;
+	const { counts, notBefore, now, stopped, taken } = wave;
 	if (stopped) return 'stopped';
-	if (counts.planned + counts.sending === 0) return 'done';
-	const total = Object.values(counts).reduce((sum, value) => sum + value, 0);
-	return !taken && counts.planned === total ? 'planned' : 'running';
+	if (!taken && notBefore.getTime() > now.getTime()) return 'planned';
+	return counts.planned + counts.sending > 0 ? 'running' : 'done';
 }
 
 /**
@@ -231,6 +236,7 @@ async function entryTallies(
  *
  * @param wave Its row with the occasion's name.
  * @param tally Its entries; undefined for a wave without entries.
+ * @param now The instant of the request, which the state is judged at.
  * @returns The listed wave.
  */
 function waveRowOf(
@@ -242,14 +248,17 @@ function waveRowOf(
 		stoppedAt: Date | null;
 	}>,
 	tally: Readonly<WaveTally> | undefined,
+	now: Date,
 ): WaveRow {
 	const counts = tally?.counts ?? noEntries();
+	const notBefore = wave.notBefore ?? wave.createdAt;
+	const stopped = wave.stoppedAt !== null;
 	return {
 		counts,
 		id: wave.id,
-		notBefore: wave.notBefore ?? wave.createdAt,
+		notBefore,
 		occasionName: wave.occasionName,
-		state: waveState({ counts, stopped: wave.stoppedAt !== null, taken: tally?.taken ?? false }),
+		state: waveState({ counts, notBefore, now, stopped, taken: tally?.taken ?? false }),
 	};
 }
 
@@ -269,16 +278,18 @@ const WAVE_COLUMNS = {
  * @param actor Who asks; needs `read` in the area.
  * @param areaId The area.
  * @param page The page, from 1.
+ * @param now The instant of the request, which the states are judged at.
  * @returns The waves of the page and the number of all.
  * @throws {ForbiddenError} Without `read` in the area.
  * @throws {Error} When the page is no whole number from 1.
  */
-// oxlint-disable-next-line max-params -- the plan's interface fixes these parameters
+// oxlint-disable-next-line max-params -- the plan's interface and the instant of the state
 async function listWaves(
 	db: Db,
 	actor: Principal,
 	areaId: string,
 	page: number,
+	now: Date,
 ): Promise<OverviewPage<WaveRow>> {
 	assertArea(actor, areaId, 'read');
 	assertPage(page);
@@ -297,7 +308,7 @@ async function listWaves(
 		rows.map(({ id }) => id),
 	);
 	return {
-		items: rows.map((row) => waveRowOf(row, tallies.get(row.id))),
+		items: rows.map((row) => waveRowOf(row, tallies.get(row.id), now)),
 		total: counted?.total ?? 0,
 	};
 }
@@ -308,11 +319,13 @@ async function listWaves(
  * @param db The database.
  * @param actor Who asks; needs `read` in the wave's area.
  * @param waveId The wave.
+ * @param now The instant of the request, which the state is judged at.
  * @returns The wave.
  * @throws {WaveNotFoundError} When no wave has the id.
  * @throws {ForbiddenError} Without `read` in the wave's area.
  */
-async function loadWave(db: Db, actor: Principal, waveId: string): Promise<WaveDetail> {
+// oxlint-disable-next-line max-params -- the database, the user, the wave and the instant
+async function loadWave(db: Db, actor: Principal, waveId: string, now: Date): Promise<WaveDetail> {
 	const [row] = await db
 		.select({
 			...WAVE_COLUMNS,
@@ -328,7 +341,7 @@ async function loadWave(db: Db, actor: Principal, waveId: string): Promise<WaveD
 	assertArea(actor, row.areaId, 'read');
 	const tallies = await entryTallies(db, [waveId]);
 	return {
-		...waveRowOf(row, tallies.get(waveId)),
+		...waveRowOf(row, tallies.get(waveId), now),
 		areaId: row.areaId,
 		areaName: row.areaName,
 		canSend: canAccessArea(actor, row.areaId, 'send'),
@@ -603,21 +616,23 @@ async function overviewAreas(db: Db, actor: Principal): Promise<OverviewArea[]> 
  * @param actor Who asks; needs `read` in the area.
  * @param areaId The area.
  * @param page The page of the waves, from 1.
+ * @param now The instant of the request, which the states are judged at.
  * @returns The overview.
  * @throws {ForbiddenError} Without `read` in the area.
  */
-// oxlint-disable-next-line max-params -- the database, the user, the area and the page
+// oxlint-disable-next-line max-params -- the database, the user, the area, the page and the instant
 async function areaOverview(
 	db: Db,
 	actor: Principal,
 	areaId: string,
 	page: number,
+	now: Date,
 ): Promise<AreaOverview> {
 	return {
 		areaId,
 		bounces: await listBounces(db, actor, areaId),
 		page,
-		waves: await listWaves(db, actor, areaId, page),
+		waves: await listWaves(db, actor, areaId, page, now),
 	};
 }
 
@@ -628,13 +643,20 @@ async function areaOverview(
  * @param actor Who asks; needs `read` in the wave's area.
  * @param waveId The wave.
  * @param page The page of the entries, from 1.
+ * @param now The instant of the request, which the state is judged at.
  * @returns The page.
  * @throws {WaveNotFoundError} When no wave has the id.
  * @throws {ForbiddenError} Without `read` in the wave's area.
  */
-// oxlint-disable-next-line max-params -- the database, the user, the wave and the page
-async function wavePage(db: Db, actor: Principal, waveId: string, page: number): Promise<WavePage> {
-	const wave = await loadWave(db, actor, waveId);
+// oxlint-disable-next-line max-params -- the database, the user, the wave, the page and the instant
+async function wavePage(
+	db: Db,
+	actor: Principal,
+	waveId: string,
+	page: number,
+	now: Date,
+): Promise<WavePage> {
+	const wave = await loadWave(db, actor, waveId, now);
 	return { entries: await listEntries(db, actor, waveId, page), page, wave };
 }
 
