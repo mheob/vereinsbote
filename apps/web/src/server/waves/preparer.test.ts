@@ -15,13 +15,14 @@ import {
 	outboxEntries,
 	waveContacts,
 } from '@/server/db/schema';
+import { createOccasion } from '@/server/occasions/occasions';
 import type {
 	ClaimedEntry,
 	PrepareContext,
 	PrepareEntry,
 	PreparedMail,
 } from '@/server/sending/outbox';
-import { testEnv } from '@/server/sending/testing';
+import { senderOn, testEnv } from '@/server/sending/testing';
 import type { OutgoingMail } from '@/server/sending/transport';
 import { createMemoryStorage } from '@/server/storage/memory';
 import type { ObjectStorage } from '@/server/storage/storage';
@@ -29,7 +30,7 @@ import { deriveUnsubscribeKey, openUnsubscribe } from '@/server/unsubscribe/toke
 import type { UnsubscribePayload } from '@/server/unsubscribe/token';
 
 import { wavePreparer } from './preparer';
-import { confirmTestWave, setUpWaveClub } from './testing';
+import { confirmTestWave, setUpWaveClub, waveEntryIds } from './testing';
 import type { WaveClub } from './testing';
 
 /** 10:00 in Berlin. */
@@ -102,6 +103,7 @@ async function entryOf(db: Db, contactId: string): Promise<ClaimedEntry> {
 	if (row === undefined) throw new Error('No entry holds the contact.');
 	return {
 		...row,
+		firstAttemptAt: null,
 		messageId: `<${row.id}@example.org>`,
 		senderId: row.senderId ?? '',
 		source: 'wave',
@@ -157,23 +159,71 @@ function linkOf(mail: Readonly<OutgoingMail>): string {
 }
 
 /**
- * A storage that counts the objects read from it.
+ * A storage that records the keys read from it.
  *
  * @param storage The storage.
- * @returns The counting storage and the count.
+ * @returns The recording storage and the keys it read, in order.
  */
-function countingReads(storage: ObjectStorage): { storage: ObjectStorage; reads: () => number } {
-	let reads = 0;
+function countingReads(storage: ObjectStorage): {
+	storage: ObjectStorage;
+	reads: () => readonly string[];
+} {
+	const reads: string[] = [];
 	return {
 		reads: () => reads,
 		storage: {
 			...storage,
 			async get(key) {
-				reads += 1;
+				reads.push(key);
 				return storage.get(key);
 			},
 		},
 	};
+}
+
+/**
+ * The entries of a wave as the outbox hands them to the preparer, ordered by id.
+ *
+ * @param db The database.
+ * @param waveId The wave.
+ * @returns The entries.
+ */
+async function entriesOfWave(db: Db, waveId: string): Promise<ClaimedEntry[]> {
+	const ids = await waveEntryIds(db, waveId);
+	const rows = await db
+		.select({ id: outboxEntries.id, senderId: outboxEntries.senderId })
+		.from(outboxEntries)
+		.where(eq(outboxEntries.waveId, waveId));
+	return ids.map((id) => ({
+		attempts: 0,
+		firstAttemptAt: null,
+		id,
+		messageId: `<${id}@example.org>`,
+		priority: 'group',
+		senderId: rows.find((row) => row.id === id)?.senderId ?? '',
+		source: 'wave',
+		sourceId: waveId,
+	}));
+}
+
+/**
+ * A second occasion of the club's area with a sender of its own on the same connection.
+ *
+ * @param c The club.
+ * @returns The occasion.
+ */
+async function secondOccasion(c: WaveClub): Promise<string> {
+	const senderId = await senderOn(c.db, c.admin, c.connectionId, 'vorstand@example.org', [
+		c.membersAreaId,
+	]);
+	const { id } = await createOccasion(c.db, c.editor, c.membersAreaId, {
+		kind: 'circular',
+		name: 'Rundbriefe',
+		senderId,
+		templateId: c.templateId,
+		unsubscribe: true,
+	});
+	return id;
 }
 
 /**
@@ -260,6 +310,49 @@ async function exclude(
 		suppressed: async () => c.db.insert(contactSuppressions).values({ contactKey, kind }),
 	};
 	await make[reason]();
+}
+
+/**
+ * Prepares entries one after another with the prepare function of one run.
+ *
+ * @param c The club.
+ * @param prepare The run's prepare function.
+ * @param entries The entries, in the order the lanes take turns.
+ * @param storage The storage.
+ * @returns The file names of each mail.
+ */
+// oxlint-disable-next-line max-params -- the club, the function, the entries and the storage
+async function filesInTurn(
+	c: WaveClub,
+	prepare: PrepareEntry,
+	entries: readonly ClaimedEntry[],
+	storage: ObjectStorage,
+): Promise<string[][]> {
+	const files: string[][] = [];
+	for (const entry of entries) {
+		// oxlint-disable-next-line no-await-in-loop -- the lanes take turns, one mail after another
+		const prepared = await prepare(c.db, entry, { env: testEnv(), now: NOW, storage });
+		files.push(sent(prepared).mail.attachments.map(({ filename }) => filename));
+	}
+	return files;
+}
+
+/**
+ * The entries of two lanes in the order their turns come: one of each, then the next.
+ *
+ * @param first The entries of one lane.
+ * @param second The entries of the other.
+ * @returns The entries in turn.
+ */
+function takingTurns(
+	first: readonly ClaimedEntry[],
+	second: readonly ClaimedEntry[],
+): ClaimedEntry[] {
+	const turns: ClaimedEntry[] = [];
+	for (let index = 0; index < Math.max(first.length, second.length); index += 1) {
+		turns.push(...first.slice(index, index + 1), ...second.slice(index, index + 1));
+	}
+	return turns;
 }
 
 describe('the wave preparer', () => {
@@ -406,7 +499,35 @@ describe('the wave preparer', () => {
 		});
 		const other = sent(await prepareFor(c, second, { storage }, run)).mail;
 		expect(other.attachments).toStrictEqual(mail.attachments);
-		expect(reads()).toBe(1);
+		expect(reads()).toHaveLength(1);
+	});
+
+	it('reads the files of the wave of each sender once per run while the lanes take turns', async () => {
+		const c = await setUpWaveClub({ provider: 'resend' });
+		await member(c.db, '1');
+		await member(c.db, '2');
+		const otherOccasion = await secondOccasion(c);
+		const memory = createMemoryStorage();
+		const flyer = await storeAttachment(c.db, memory, c.sender, c.occasionId, {
+			bytes: pdfBytes(1000),
+			name: 'einladung.pdf',
+		});
+		const program = await storeAttachment(c.db, memory, c.sender, otherOccasion, {
+			bytes: pdfBytes(2000),
+			name: 'programm.pdf',
+		});
+		const first = await entriesOfWave(c.db, await confirmTestWave(c, NOW, [flyer.id]));
+		const other = { ...c, occasionId: otherOccasion };
+		const second = await entriesOfWave(c.db, await confirmTestWave(other, NOW, [program.id]));
+		const { reads, storage } = countingReads(memory);
+		const turns = takingTurns(first, second);
+		await expect(filesInTurn(c, startRun(), turns, storage)).resolves.toStrictEqual([
+			['einladung.pdf'],
+			['programm.pdf'],
+			['einladung.pdf'],
+			['programm.pdf'],
+		]);
+		expect(reads()).toHaveLength(2);
 	});
 
 	it('fails an entry whose file is gone and waits for a storage', async () => {

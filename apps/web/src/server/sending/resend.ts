@@ -6,8 +6,8 @@
  * tries one due entry per run instead. There is no bounce query either (`fetchBounces: null`);
  * bounces arrive by webhook (`resend-webhook.ts`). A send carries an idempotency key, so every
  * retryable outcome is `transient`: Resend never returns `uncertain`. Resend keeps a key for 24
- * hours only; the transport tells the outbox so (`idempotency`), which stops retrying a mail that
- * may have gone once its key could be forgotten (ruling R7).
+ * hours only; the transport tells the outbox so (`idempotencyTrustedMs`), which sends a mail that
+ * went out before no more by itself once its key could be forgotten (ruling R7).
  *
  * Failures carry fixed codes only: no key, address or message text ever enters a code.
  */
@@ -60,8 +60,6 @@ const MAX_KEY_LENGTH = 256;
  * meets a key Resend has just forgotten (ruling R7).
  */
 const KEY_TRUSTED_MS = 82_800_000;
-/** The codes of answers that leave open whether Resend took the mail: no answer, a server error. */
-const MAY_HAVE_SENT_CODES: ReadonlySet<string> = new Set(['resend.network', 'resend.server']);
 
 /*
  * The `name` of an error body decides the class (checked against
@@ -289,15 +287,7 @@ function createResendTransport(apiKey: string, deps: ResendDeps): Transport {
 		return classifyResendResponse(response.status, body, response.headers, deps.now());
 	}
 
-	return {
-		fetchBounces: null,
-		idempotency: {
-			mayHaveSent: (code) => MAY_HAVE_SENT_CODES.has(code),
-			trustedMs: KEY_TRUSTED_MS,
-		},
-		probe: null,
-		send,
-	};
+	return { fetchBounces: null, idempotencyTrustedMs: KEY_TRUSTED_MS, probe: null, send };
 }
 
 export { classifyResendResponse, createResendTransport, resendEndpoint };

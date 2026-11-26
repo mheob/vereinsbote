@@ -60,6 +60,16 @@ const preparer: EntryPreparer = {
 };
 
 /**
+ * The entry a claim took.
+ *
+ * @param claim What `claimEntry` gave.
+ * @returns The id, or undefined when it took none.
+ */
+function takenId(claim: Awaited<ReturnType<typeof claimEntry>>): string | undefined {
+	return claim === null || claim === 'cancelled' ? undefined : claim.entry.id;
+}
+
+/**
  * The clock of the runs: the real one.
  *
  * @returns Now.
@@ -201,7 +211,7 @@ describe.skipIf(serverUrl === '')(
 					}),
 				),
 			);
-			const ids = claims.map((claim) => claim?.entry.id);
+			const ids = claims.map((claim) => takenId(claim));
 			expect(ids.filter((id) => id !== undefined)).toHaveLength(CLAIMS);
 			expect(new Set(ids).size).toBe(CLAIMS);
 		});

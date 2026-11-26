@@ -16,7 +16,7 @@ import type { ObjectStorage } from '@/server/storage/storage';
 
 import type { QuotaScope } from './open-transport';
 import { inScope } from './quota';
-import type { IdempotencyWindow, OutgoingMail, SendResult } from './transport';
+import type { OutgoingMail, SendResult } from './transport';
 
 type EntryStatus =
 	| 'bounced'
@@ -40,6 +40,8 @@ const MAX_ATTEMPTS = 5;
 const RETRY_DELAYS_MS = [FIVE_MINUTES_MS, HALF_AN_HOUR_MS, TWO_HOURS_MS, EIGHT_HOURS_MS] as const;
 /** An entry `sending` for longer than this turns `uncertain` (Design 8.5). */
 const UNCERTAIN_AFTER_MS = 600_000;
+/** The code of an entry whose idempotency key may be gone before its retry (ruling R7). */
+const KEY_EXPIRED_CODE = 'outbox.keyExpired';
 /** A provider's `Retry-After` counts up to a day; a longer one is a provider's mistake. */
 const MAX_RETRY_AFTER_MS = 86_400_000;
 /** The shortest pause of a scope after a quota refusal (ruling R5). */
@@ -56,6 +58,8 @@ interface ClaimedEntry {
 	/** The attempts before this one. */
 	readonly attempts: number;
 	readonly messageId: string;
+	/** When the first counted attempt went out; null before it (ruling R7). */
+	readonly firstAttemptAt: Date | null;
 }
 
 /**
@@ -104,7 +108,12 @@ type EntryOutcome =
 	/** Back to `planned` without an attempt, and the scope pauses until `until` (ruling R5). */
 	| { kind: 'pause'; code: string; until: Date }
 	/** Back to `planned` without an attempt: the request never left (a Worker's subrequests). */
-	| { kind: 'requeue'; code: string };
+	| { kind: 'requeue'; code: string }
+	/**
+	 * `uncertain` without a request and without an attempt: the provider may have forgotten the
+	 * idempotency key of an earlier attempt, so a retry could send the mail twice (ruling R7).
+	 */
+	| { kind: 'expired'; code: string };
 
 /** A taken entry and the time of the take, which every later write names. */
 interface Claim {
@@ -201,31 +210,64 @@ function outcomeOf(
 }
 
 /**
- * Ruling R7: a retry is safe only while the provider still keeps the entry's idempotency key. Once
- * the first attempt is older than the key is trusted, a refusal that may have sent the mail makes
- * the entry `uncertain` instead of a retry, as an unclear send does (Design 8.5): only a person
- * sends it again.
+ * Ruling R7, before a request: an entry that went to the provider before is retried only while the
+ * provider still keeps its idempotency key (Resend: 24 hours, trusted for 23). Once its first
+ * counted attempt is older, it goes out no more by itself: it becomes `uncertain` without a request
+ * (`expired`), and a person decides. A provider without keys (Graph) is not limited so.
+ *
+ * @param entry The attempts before this one and the time of the first counted one.
+ * @param trustedMs How long the provider's key is trusted, or null for a provider without keys.
+ * @param now The instant.
+ * @returns True when the entry may not be sent again by itself.
+ */
+function keyOutlived(
+	entry: Readonly<Pick<ClaimedEntry, 'attempts' | 'firstAttemptAt'>>,
+	trustedMs: number | null,
+	now: Date,
+): boolean {
+	const { attempts, firstAttemptAt } = entry;
+	if (trustedMs === null || attempts === 0 || firstAttemptAt === null) return false;
+	return now.getTime() - firstAttemptAt.getTime() > trustedMs;
+}
+
+/**
+ * Ruling R7, after an answer: a retry that would come only after the provider's key of the entry
+ * is no longer trusted becomes `uncertain` at once, rather than waiting to be stopped before its
+ * request (`keyOutlived`).
  *
  * @param outcome What the answer makes of the entry (`outcomeOf`).
- * @param at The answer, the first attempt of the entry, the instant and the provider's key window
- *   (null for a provider without keys).
- * @returns The outcome, `uncertain` instead of a retry the key no longer protects.
+ * @param key When the entry's first counted attempt went out (this one, for the first) and how
+ *   long the provider's key is trusted (null for a provider without keys).
+ * @param key.firstAttemptAt The first counted attempt.
+ * @param key.trustedMs How long the key is trusted.
+ * @returns The outcome, `uncertain` instead of a retry the key would no longer protect.
  */
 function guardKeyLifetime(
 	outcome: Readonly<EntryOutcome>,
-	at: Readonly<{
-		result: Readonly<SendResult>;
-		firstAttemptAt: Date;
-		now: Date;
-		idempotency: Readonly<IdempotencyWindow> | null;
-	}>,
+	key: Readonly<{ firstAttemptAt: Date; trustedMs: number | null }>,
 ): EntryOutcome {
-	const { idempotency, result } = at;
-	if (outcome.kind !== 'retry' || idempotency === null || result.ok) return outcome;
-	const age = at.now.getTime() - at.firstAttemptAt.getTime();
-	if (age <= idempotency.trustedMs || !idempotency.mayHaveSent(result.code)) return outcome;
-	return { code: result.code, kind: 'uncertain' };
+	const { firstAttemptAt, trustedMs } = key;
+	if (outcome.kind !== 'retry' || trustedMs === null) return outcome;
+	if (outcome.at.getTime() - firstAttemptAt.getTime() <= trustedMs) return outcome;
+	return { code: outcome.code, kind: 'uncertain' };
 }
+
+/**
+ * Whether the entry's wave was stopped. The wave's row is read with a share lock: a stop in progress
+ * (it updates the row) is waited for and then seen, so neither a take nor a stored outcome can slip
+ * between a stop's cancellation and its end. Lock order: the entry first, then its wave; `stopWave`
+ * cancels the entries before it marks the wave, so the two never wait for each other in a circle.
+ */
+const waveStopped = sql`(select ${waves.stoppedAt} from ${waves} where ${waves.id} = ${outboxEntries.waveId} for share) is not null`;
+
+/**
+ * The status of an entry that waits again: `planned`, unless its wave was stopped while its mail
+ * was on the way. Then `cancelled`, as the stop cancelled every other planned entry of the wave
+ * (Design 11.4): the send that ran finished, no further attempt follows.
+ */
+const plannedUnlessStopped = sql<
+	'cancelled' | 'planned'
+>`case when ${waveStopped} then 'cancelled' else 'planned' end`;
 
 /**
  * Planned entries whose time has come.
@@ -340,17 +382,18 @@ async function hasDueEntry(
  * first take (ruling R4). One statement: the subquery locks one planned row and skips rows other
  * runs hold, the update takes it, so no two runs get the same entry. The subquery is a scalar
  * one (`id = (…)`), which PostgreSQL runs once; within `id in (…)` it may run again for further
- * rows and take more than one.
+ * rows and take more than one. An entry of a stopped wave is cancelled instead of taken: the stop
+ * decides at the take, whatever planned the entry again while the stop ran (Design 11.4).
  *
  * @param db The database.
  * @param input The sender, a fresh Message-ID (kept only on the first take), the instant and
  *   whether only personal entries may start (decision 5).
- * @returns The take, or null when no entry is due.
+ * @returns The take; `cancelled` when the entry's wave was stopped; null when no entry is due.
  */
 async function claimEntry(
 	db: Db,
 	input: Readonly<{ senderId: string; messageId: string; now: Date; personalOnly: boolean }>,
-): Promise<Claim | null> {
+): Promise<Claim | 'cancelled' | null> {
 	const { messageId, now, senderId } = input;
 	const next = db
 		.select({ id: outboxEntries.id })
@@ -375,61 +418,53 @@ async function claimEntry(
 		.set({
 			claimedAt: now,
 			messageId: sql`coalesce(${outboxEntries.messageId}, ${messageId})`,
-			status: 'sending',
+			status: sql`case when ${waveStopped} then 'cancelled' else 'sending' end`,
 		})
 		.where(and(sql`${outboxEntries.id} = (${next})`, eq(outboxEntries.status, 'planned')))
 		.returning({
 			attempts: outboxEntries.attempts,
+			firstAttemptAt: outboxEntries.firstAttemptAt,
 			id: outboxEntries.id,
 			messageId: outboxEntries.messageId,
 			priority: outboxEntries.priority,
 			source: outboxEntries.source,
 			sourceId: outboxEntries.sourceId,
+			status: outboxEntries.status,
 		});
 	if (row === undefined) return null;
+	const { status, ...entry } = row;
+	if (status === 'cancelled') return 'cancelled';
 	return {
 		claimedAt: now,
-		entry: { ...row, messageId: row.messageId ?? messageId, senderId },
+		entry: { ...entry, messageId: entry.messageId ?? messageId, senderId },
 	};
 }
 
 /**
- * Stores the address a mail goes to and, on its first attempt, the time of that attempt (the time
- * of the take, a moment earlier), right before it is sent, and checks that the entry is still this
- * run's.
+ * Stores the address a mail goes to, right before it is sent, and checks that the entry is still
+ * this run's.
  *
  * @param db The database.
  * @param claim The take.
  * @param recipient The address.
- * @returns When the entry's mail first went to a provider, or null when the entry is no longer
- *   this run's: then nothing may be sent.
+ * @returns False when the entry is no longer this run's: then nothing may be sent.
  */
 async function recordRecipient(
 	db: Db,
 	claim: Readonly<Claim>,
 	recipient: string,
-): Promise<Date | null> {
-	const [updated] = await db
+): Promise<boolean> {
+	const updated = await db
 		.update(outboxEntries)
-		.set({
-			firstAttemptAt: sql`coalesce(${outboxEntries.firstAttemptAt}, ${claim.claimedAt.toISOString()}::timestamptz)`,
-			recipient,
-		})
+		.set({ recipient })
 		.where(stillTaken(claim))
-		.returning({ firstAttemptAt: outboxEntries.firstAttemptAt });
-	return updated?.firstAttemptAt ?? null;
+		.returning({ id: outboxEntries.id });
+	return updated.length > 0;
 }
 
 const nextAttempt = sql`${outboxEntries.attempts} + 1`;
-
-/**
- * The status of an entry that waits again: `planned`, unless its wave was stopped while its mail
- * was on the way. Then `cancelled`, as the stop cancelled every other planned entry of the wave
- * (Design 11.4): the send that ran finished, no further attempt follows.
- */
-const plannedUnlessStopped = sql<
-	'cancelled' | 'planned'
->`case when exists (select 1 from ${waves} where ${waves.id} = ${outboxEntries.waveId} and ${waves.stoppedAt} is not null) then 'cancelled' else 'planned' end`;
+/** The first counted attempt keeps its time: the take of the entry that made it (ruling R7). */
+const firstAttempt = sql`coalesce(${outboxEntries.firstAttemptAt}, ${outboxEntries.claimedAt})`;
 
 /**
  * The columns of an outcome that counts as an attempt.
@@ -442,20 +477,16 @@ function attemptChanges(
 	outcome: Readonly<Extract<EntryOutcome, { kind: 'retry' | 'sent' | 'uncertain' }>>,
 	now: Date,
 ): PgUpdateSetSource<typeof outboxEntries> {
+	const counted = { attempts: nextAttempt, firstAttemptAt: firstAttempt };
 	if (outcome.kind === 'sent') {
 		const { providerId } = outcome;
-		return { attempts: nextAttempt, lastErrorCode: null, providerId, sentAt: now, status: 'sent' };
+		return { ...counted, lastErrorCode: null, providerId, sentAt: now, status: 'sent' };
 	}
 	if (outcome.kind === 'retry') {
 		const { at, code } = outcome;
-		return {
-			attempts: nextAttempt,
-			lastErrorCode: code,
-			nextAttemptAt: at,
-			status: plannedUnlessStopped,
-		};
+		return { ...counted, lastErrorCode: code, nextAttemptAt: at, status: plannedUnlessStopped };
 	}
-	return { attempts: nextAttempt, lastErrorCode: outcome.code, status: 'uncertain' };
+	return { ...counted, lastErrorCode: outcome.code, status: 'uncertain' };
 }
 
 /**
@@ -474,10 +505,11 @@ function changesOf(
 		return attemptChanges(outcome, now);
 	}
 	if (kind === 'failed') {
-		const counted = outcome.attempt ? { attempts: nextAttempt } : {};
+		const counted = outcome.attempt ? { attempts: nextAttempt, firstAttemptAt: firstAttempt } : {};
 		return { ...counted, lastErrorCode: outcome.code, status: 'failed' };
 	}
 	if (kind === 'skipped') return { lastErrorCode: outcome.reason, status: 'skipped' };
+	if (kind === 'expired') return { lastErrorCode: outcome.code, status: 'uncertain' };
 	// `release`, `pause` and `requeue`: the entry waits for its connection, its scope or the next
 	// invocation, without an attempt.
 	return { lastErrorCode: outcome.code, status: plannedUnlessStopped };
@@ -588,6 +620,7 @@ async function clearDisturbance(
 }
 
 export {
+	KEY_EXPIRED_CODE,
 	MAX_ATTEMPTS,
 	RETRY_DELAYS_MS,
 	UNCERTAIN_AFTER_MS,
@@ -599,6 +632,7 @@ export {
 	failOrphans,
 	guardKeyLifetime,
 	hasDueEntry,
+	keyOutlived,
 	markUncertain,
 	nextAttemptDelay,
 	outcomeOf,

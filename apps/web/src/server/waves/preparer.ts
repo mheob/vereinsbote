@@ -9,8 +9,8 @@
  *
  * Nothing here is random: the same entry and the same data give the same mail, so a retry repeats
  * the payload its idempotency key stands for (ruling R4). The wave, its sender, the values' context
- * and the wave's files are read once per run of the outbox (`startRun`), not per mail: on
- * Cloudflare every read of a file counts against the invocation's subrequests.
+ * and the wave's files are read once per run of the outbox and sender (`startRun`), not per mail:
+ * on Cloudflare every read of a file counts against the invocation's subrequests.
  */
 import { asc, eq } from 'drizzle-orm';
 
@@ -368,18 +368,24 @@ async function prepareWith(
 }
 
 /**
- * Starts a run of the outbox: the setup of the wave last met (its sender, values, files and key)
- * stays for the following entries of the run, so a wave's files are read once per run, not per
- * mail. Another wave replaces it, so the run holds the files of one wave at a time.
+ * Starts a run of the outbox. Each sender's lane keeps the setup of the wave it last sent (its
+ * sender, values, files and key) for its following entries, so a wave's files are read once per
+ * run, not per mail, also while the lanes of several senders take turns. Another wave of the same
+ * sender replaces its lane's setup: the run holds at most one wave's files per sender, that is at
+ * most the number of senders with due entries times 5 files of 4 MiB.
  *
  * @returns The prepare function of the run.
  */
 function startWaveRun(): PrepareEntry {
-	let held: { readonly waveId: string; readonly setup: Promise<WaveSetup | null> } | null = null;
+	const held = new Map<
+		string,
+		{ readonly waveId: string; readonly setup: Promise<WaveSetup | null> }
+	>();
 	return async (db, entry, ctx) => {
-		const waveId = entry.sourceId;
-		const setup = held?.waveId === waveId ? held.setup : loadSetup(db, entry, ctx);
-		held = { setup, waveId };
+		const { senderId, sourceId: waveId } = entry;
+		const kept = held.get(senderId);
+		const setup = kept?.waveId === waveId ? kept.setup : loadSetup(db, entry, ctx);
+		held.set(senderId, { setup, waveId });
 		return prepareWith(await setup, db, entry, ctx);
 	};
 }

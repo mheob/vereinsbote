@@ -404,8 +404,8 @@ async function runUntilSettled(
 	}
 }
 
-/** A Resend club with a wave of one member's mail. */
-interface ResendWaveEntry {
+/** A club with a wave of one member's mail. */
+interface WaveEntry {
 	readonly c: WaveClub;
 	readonly db: Db;
 	readonly waveId: string;
@@ -413,12 +413,13 @@ interface ResendWaveEntry {
 }
 
 /**
- * A club whose occasion sends through Resend, with a wave to one member confirmed at `START`.
+ * A club whose occasion sends through a provider, with a wave to one member confirmed at `START`.
  *
+ * @param provider The provider of the occasion's sender.
  * @returns The club, the wave and the id of its one entry.
  */
-async function resendWaveEntry(): Promise<ResendWaveEntry> {
-	const c = await setUpWaveClub({ provider: 'resend' });
+async function waveEntryOn(provider: 'graph' | 'resend'): Promise<WaveEntry> {
+	const c = await setUpWaveClub({ provider });
 	await insertContact(c.db, { email: 'mitglied-1@example.org', kind: 'member', memberNumber: '1' });
 	const waveId = await confirmTestWave(c, new Date(START));
 	const [id = ''] = await waveEntryIds(c.db, waveId);
@@ -438,6 +439,16 @@ function waveStep(fetchFn: typeof fetch, clock: TestClock): TickStep {
 		preparers: { wave: wavePreparer },
 		sleep: clock.sleep,
 	});
+}
+
+/**
+ * How many mails went to a provider: Graph's `sendMail` and Resend's `/emails`.
+ *
+ * @param calls What the fake providers saw.
+ * @returns The number of mail requests.
+ */
+function mailRequests(calls: readonly FakeCall[]): number {
+	return calls.filter(({ url }) => url.endsWith('/emails') || url.endsWith('/sendMail')).length;
 }
 
 /**
@@ -630,6 +641,7 @@ describe(createOutboxStep, () => {
 				.toSorted((a, b) => compareCodePoints(a.id, b.id))
 				.map((row) => ({
 					attempts: 0,
+					firstAttemptAt: null,
 					id: row.id,
 					messageId: row.messageId,
 					priority: 'group',
@@ -649,6 +661,7 @@ describe(createOutboxStep, () => {
 		const [id = ''] = await planEntries(harness.db, senderId, 1);
 		const claim = {
 			attempts: 0,
+			firstAttemptAt: null,
 			id,
 			messageId: '<x@example.org>',
 			priority: 'group',
@@ -1389,7 +1402,7 @@ describe(createOutboxStep, () => {
 	});
 
 	it('retries a resend mail of a wave with the same message id, key and content, uncertain after 23 hours', async () => {
-		const { db, id } = await resendWaveEntry();
+		const { db, id } = await waveEntryOn('resend');
 		const providers = fakeProviders({ send: 500 });
 		const clock = testClock();
 		const harness = { clock, db };
@@ -1417,15 +1430,58 @@ describe(createOutboxStep, () => {
 		clock.advance(DAY_MS);
 		await runStep(harness, step);
 		await expect(readEntry(db, id)).resolves.toMatchObject({
-			attempts: 3,
-			lastErrorCode: 'resend.server',
+			attempts: 2,
+			lastErrorCode: 'outbox.keyExpired',
 			status: 'uncertain',
 		});
-		expect(resendRequests(providers.calls)).toMatchObject({ keys: [id, id, id], versions: 1 });
+		expect(resendRequests(providers.calls)).toMatchObject({ keys: [id, id], versions: 1 });
+	});
+
+	it.each([
+		{
+			provider: 'resend',
+			requests: 0,
+			state: { attempts: 1, lastErrorCode: 'outbox.keyExpired', status: 'uncertain' },
+		},
+		{ provider: 'graph', requests: 1, state: { attempts: 2, status: 'sent' } },
+	] as const)(
+		'stops a retry due 30 hours after the first attempt before any request: $provider',
+		async ({ provider, requests, state }) => {
+			const { db, id } = await waveEntryOn(provider);
+			// Planned 22 hours after its first attempt, due 8 hours later.
+			await db
+				.update(outboxEntries)
+				.set({
+					attempts: 1,
+					firstAttemptAt: new Date(START),
+					lastErrorCode: 'resend.server',
+					messageId: '<retry@example.org>',
+					nextAttemptAt: new Date(START + 30 * HOUR_MS),
+				})
+				.where(eq(outboxEntries.id, id));
+			const providers = fakeProviders();
+			const clock = testClock();
+			clock.advance(30 * HOUR_MS);
+			await runStep({ clock, db }, waveStep(providers.fetch, clock));
+			await expect(readEntry(db, id)).resolves.toMatchObject(state);
+			expect(mailRequests(providers.calls)).toBe(requests);
+		},
+	);
+
+	it('never sends an entry planned again after its wave was stopped', async () => {
+		const { c, db, id, waveId } = await waveEntryOn('resend');
+		await expect(stopWave(db, c.sender, waveId)).resolves.toStrictEqual({ cancelled: 1 });
+		// What an outcome stored while the stop was still being made could leave behind.
+		await db.update(outboxEntries).set({ status: 'planned' }).where(eq(outboxEntries.id, id));
+		const providers = fakeProviders();
+		const clock = testClock();
+		await runStep({ clock, db }, waveStep(providers.fetch, clock));
+		await expect(readEntry(db, id)).resolves.toMatchObject({ attempts: 0, status: 'cancelled' });
+		expect(mailRequests(providers.calls)).toBe(0);
 	});
 
 	it('cancels an entry of a wave stopped while its mail was on the way instead of retrying it', async () => {
-		const { c, db, waveId } = await resendWaveEntry();
+		const { c, db, waveId } = await waveEntryOn('resend');
 		const providers = fakeProviders({ send: 500 });
 		const stops: { cancelled: number }[] = [];
 		const stopWhileSending: typeof fetch = async (input, init) => {

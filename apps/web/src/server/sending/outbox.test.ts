@@ -12,6 +12,7 @@ import {
 	clearDisturbance,
 	disturbConnection,
 	guardKeyLifetime,
+	keyOutlived,
 	markUncertain,
 	nextAttemptDelay,
 	outcomeOf,
@@ -90,59 +91,54 @@ describe(outcomeOf, () => {
 	});
 });
 
+describe(keyOutlived, () => {
+	const trustedMs = 23 * HOUR_MS;
+	const sentAt = new Date(NOW.getTime() - trustedMs);
+
+	it('lets an entry go while the key of its first counted attempt is trusted', () => {
+		expect(keyOutlived({ attempts: 2, firstAttemptAt: sentAt }, trustedMs, NOW)).toBe(false);
+	});
+
+	it('stops an entry whose first counted attempt is older than the key is trusted', () => {
+		const later = new Date(NOW.getTime() + 1);
+		expect(keyOutlived({ attempts: 1, firstAttemptAt: sentAt }, trustedMs, later)).toBe(true);
+	});
+
+	it.each([
+		['a first attempt', { attempts: 0, firstAttemptAt: null }, trustedMs],
+		['an entry from before the column', { attempts: 3, firstAttemptAt: null }, trustedMs],
+		['a provider without keys', { attempts: 3, firstAttemptAt: new Date(0) }, null],
+	] as const)('never stops %s', (_name, entry, trusted) => {
+		expect(keyOutlived(entry, trusted, NOW)).toBe(false);
+	});
+});
+
 describe(guardKeyLifetime, () => {
-	const resendKey = {
-		mayHaveSent: (code: string) => code === 'resend.server',
-		trustedMs: 23 * HOUR_MS,
-	};
-	const retry: EntryOutcome = {
-		at: new Date(NOW.getTime() + MINUTE_MS),
+	const trustedMs = 23 * HOUR_MS;
+	const firstAttemptAt = new Date(NOW.getTime() - 22 * HOUR_MS);
+	const retryAt = (hours: number): EntryOutcome => ({
+		at: new Date(firstAttemptAt.getTime() + hours * HOUR_MS),
 		code: 'resend.server',
 		kind: 'retry',
-	};
-	const serverError: SendResult = {
-		code: 'resend.server',
-		failure: 'transient',
-		ok: false,
-		retryAfterMs: null,
-	};
-
-	it('keeps a retry while the provider keeps the key of the first attempt', () => {
-		const firstAttemptAt = new Date(NOW.getTime() - 23 * HOUR_MS);
-		const at = { firstAttemptAt, idempotency: resendKey, now: NOW, result: serverError };
-		expect(guardKeyLifetime(retry, at)).toStrictEqual(retry);
 	});
 
-	it('makes a retry uncertain once the first attempt is older than the key is trusted', () => {
-		const firstAttemptAt = new Date(NOW.getTime() - 23 * HOUR_MS - 1);
-		const at = { firstAttemptAt, idempotency: resendKey, now: NOW, result: serverError };
-		expect(guardKeyLifetime(retry, at)).toStrictEqual({ code: 'resend.server', kind: 'uncertain' });
+	it('keeps a retry that comes while the key is trusted', () => {
+		expect(guardKeyLifetime(retryAt(23), { firstAttemptAt, trustedMs })).toStrictEqual(retryAt(23));
 	});
 
-	it('keeps retries that cannot have sent, and those of a provider without a key', () => {
-		const firstAttemptAt = new Date(NOW.getTime() - 2 * DAY_MS);
-		const throttled: SendResult = { ...serverError, code: 'resend.throttled' };
-		const throttledRetry: EntryOutcome = { ...retry, code: 'resend.throttled' };
-		expect(
-			guardKeyLifetime(throttledRetry, {
-				firstAttemptAt,
-				idempotency: resendKey,
-				now: NOW,
-				result: throttled,
-			}),
-		).toStrictEqual(throttledRetry);
-		expect(
-			guardKeyLifetime(retry, { firstAttemptAt, idempotency: null, now: NOW, result: serverError }),
-		).toStrictEqual(retry);
+	it('makes a retry uncertain at once when it would come after the key', () => {
+		expect(guardKeyLifetime(retryAt(30), { firstAttemptAt, trustedMs })).toStrictEqual({
+			code: 'resend.server',
+			kind: 'uncertain',
+		});
+	});
+
+	it('keeps the retries of a provider without keys and every other outcome', () => {
+		expect(guardKeyLifetime(retryAt(30), { firstAttemptAt, trustedMs: null })).toStrictEqual(
+			retryAt(30),
+		);
 		const failed: EntryOutcome = { attempt: true, code: 'resend.server', kind: 'failed' };
-		expect(
-			guardKeyLifetime(failed, {
-				firstAttemptAt,
-				idempotency: resendKey,
-				now: NOW,
-				result: serverError,
-			}),
-		).toStrictEqual(failed);
+		expect(guardKeyLifetime(failed, { firstAttemptAt, trustedMs })).toStrictEqual(failed);
 	});
 });
 

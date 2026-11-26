@@ -2,8 +2,10 @@
  * Stopping a wave and sending an uncertain entry of a wave again (Design 8.5, 11.4, 18), both with
  * `send` in the wave's area; the admin role alone gives neither. A stop cancels every planned
  * entry; an entry on its way finishes (the outbox cancels it instead of planning a retry), and sent
- * entries stay. Sending an uncertain entry again is a person's decision after checking it: the
- * entry goes back to `planned` with its id, so its Message-ID and idempotency key stay the same.
+ * entries stay. The outbox reads the wave's stop under a share lock whenever it takes an entry or
+ * plans one again, so an entry that something planned while the stop ran is cancelled at its take.
+ * Sending an uncertain entry again is a person's decision after checking it: the entry goes back
+ * to `planned` with its id, so its Message-ID and idempotency key stay the same.
  */
 import { and, eq, isNull } from 'drizzle-orm';
 
@@ -31,16 +33,18 @@ async function stopWave(db: Db, actor: Principal, waveId: string): Promise<{ can
 	if (wave === undefined) throw new WaveNotFoundError();
 	assertArea(actor, wave.areaId, 'send');
 	return db.transaction(async (tx) => {
-		const stopped = await tx
-			.update(waves)
-			.set({ stoppedAt: new Date(), stoppedByUserId: actor.userId })
-			.where(and(eq(waves.id, waveId), isNull(waves.stoppedAt)))
-			.returning({ id: waves.id });
+		// The entries first, then the wave: the outbox locks an entry before it reads its wave
+		// (`waveStopped` in `outbox.ts`), so the same order keeps the two from deadlocking.
 		const cancelled = await tx
 			.update(outboxEntries)
 			.set({ status: 'cancelled' })
 			.where(and(eq(outboxEntries.waveId, waveId), eq(outboxEntries.status, 'planned')))
 			.returning({ id: outboxEntries.id });
+		const stopped = await tx
+			.update(waves)
+			.set({ stoppedAt: new Date(), stoppedByUserId: actor.userId })
+			.where(and(eq(waves.id, waveId), isNull(waves.stoppedAt)))
+			.returning({ id: waves.id });
 		if (stopped.length > 0 || cancelled.length > 0) {
 			await writeAudit(tx, {
 				action: 'wave.stopped',

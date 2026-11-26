@@ -45,24 +45,14 @@ interface BounceReport {
 	readonly receivedAt: Date;
 }
 
-/**
- * What the idempotency key of a provider protects (ruling R7): a retry with the same key cannot
- * send twice, but only while the provider still keeps the key.
- */
-interface IdempotencyWindow {
-	/** How long after the first attempt of a mail a retry with its key is still safe. */
-	readonly trustedMs: number;
-	/** Whether a refusal with this code leaves open that the provider took the mail. */
-	readonly mayHaveSent: (code: string) => boolean;
-}
-
 interface Transport {
 	readonly send: (mail: Readonly<OutgoingMail>) => Promise<SendResult>;
 	/**
-	 * Resend: the lifetime of its keys. Absent for a provider without keys (Graph), which answers
-	 * `uncertain` instead of `transient` when a mail may have gone.
+	 * How long after the first attempt of a mail a retry with its idempotency key is still safe
+	 * (Resend; ruling R7). Absent for a provider without keys (Graph), which answers `uncertain`
+	 * instead of `transient` when a mail may have gone.
 	 */
-	readonly idempotency?: IdempotencyWindow;
+	readonly idempotencyTrustedMs?: number;
 	/** Graph: fetch a token. Resend: `null`. */
 	readonly probe: (() => Promise<SendResult>) | null;
 	readonly fetchBounces:
@@ -114,7 +104,6 @@ export { newMessageId, retryAfterMs };
 export type {
 	AttachmentType,
 	BounceReport,
-	IdempotencyWindow,
 	MailAttachment,
 	OutgoingMail,
 	SendFailureClass,

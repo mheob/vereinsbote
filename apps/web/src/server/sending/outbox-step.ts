@@ -18,9 +18,9 @@
  * pause, a disturbance nor a spent subrequest budget.
  *
  * Each run starts the run of every preparer it uses (`EntryPreparer.startRun`), so what the
- * entries of a run share (a wave's files) is read once per run. A Resend entry whose first attempt
- * is older than its idempotency key is trusted is not retried after an answer that may have sent
- * it: it becomes `uncertain` (ruling R7).
+ * entries of a run share (a wave's files) is read once per run. A Resend entry whose first counted
+ * attempt is older than its idempotency key is trusted goes out no more by itself: it becomes
+ * `uncertain` before any request (ruling R7). An entry of a stopped wave is cancelled at its take.
  */
 import type { Platform } from '@/platform/platform';
 import { budgetedFetch, isSubrequestLimit, SUBREQUEST_LIMIT_CODE } from '@/platform/subrequests';
@@ -46,6 +46,8 @@ import {
 	failOrphans,
 	guardKeyLifetime,
 	hasDueEntry,
+	KEY_EXPIRED_CODE,
+	keyOutlived,
 	markUncertain,
 	outcomeOf,
 	recentSends,
@@ -154,6 +156,11 @@ interface Delivery {
 type Next = 'continue' | 'done' | 'more';
 
 const EMPTY_WINDOW: SendWindow = { sent: 0, start: Number.NEGATIVE_INFINITY };
+/** An entry the provider's key may no longer protect: `uncertain`, nothing sent (ruling R7). */
+const KEY_EXPIRED: Delivery = {
+	outcome: { code: KEY_EXPIRED_CODE, kind: 'expired' },
+	result: null,
+};
 
 /**
  * When the next mail of a scope may go.
@@ -608,7 +615,8 @@ class OutboxRun {
 
 	/**
 	 * Takes the next entry of a lane that its scope's limit allows. A lane at the limit stops with
-	 * its scope, a lane with nothing due on its own.
+	 * its scope, a lane with nothing due on its own. An entry of a stopped wave was cancelled
+	 * instead of taken; the lane goes on with its next entry in its next turn.
 	 *
 	 * @param lane The lane.
 	 * @returns The take, or null.
@@ -625,18 +633,23 @@ class OutboxRun {
 			personalOnly: admission.personalOnly,
 			senderId: lane.senderId,
 		});
+		if (claim === 'cancelled') return null;
 		if (claim === null) this.dropLane(lane);
 		return claim;
 	}
 
 	/**
-	 * Prepares the entry and, when the preparer hands a mail, sends it.
+	 * Prepares the entry and, when the preparer hands a mail, sends it. An entry whose provider may
+	 * have forgotten the key of its earlier attempt is neither prepared nor sent (ruling R7).
 	 *
 	 * @param lane The lane.
 	 * @param claim The take.
 	 * @returns What became of the entry, or null when it was no longer this run's.
 	 */
 	private async deliver(lane: Readonly<Lane>, claim: Readonly<Claim>): Promise<Delivery | null> {
+		if (keyOutlived(claim.entry, lane.transport.idempotencyTrustedMs ?? null, this.ctx.now())) {
+			return KEY_EXPIRED;
+		}
 		const { attempts, source } = claim.entry;
 		const preparer = this.deps.preparers[source];
 		if (preparer === undefined) {
@@ -705,37 +718,35 @@ class OutboxRun {
 		prepared: Readonly<Extract<PreparedMail, { kind: 'send' }>>,
 	): Promise<Delivery | null> {
 		const { recipient } = prepared;
-		const firstAttemptAt = await recordRecipient(this.ctx.db, claim, recipient);
-		if (firstAttemptAt === null) return null;
+		if (!(await recordRecipient(this.ctx.db, claim, recipient))) return null;
 		this.countSend(lane);
 		const { id, messageId } = claim.entry;
 		const mail = { ...prepared.mail, idempotencyKey: id, messageId, to: recipient };
 		const result = await sendSafely(lane.transport, mail);
-		const { attempts } = claim.entry;
-		return { outcome: await this.answered(lane, result, { attempts, firstAttemptAt }), result };
+		return { outcome: await this.answered(lane, claim, result), result };
 	}
 
 	/**
 	 * What the provider's answer makes of the entry. An accepted mail counts against the daily
-	 * limit (decision 4) before the outcome is stored; a retry the provider's key no longer protects
-	 * becomes `uncertain` (ruling R7).
+	 * limit (decision 4) before the outcome is stored; a retry that would come only after the
+	 * provider's key is no longer trusted becomes `uncertain` at once (ruling R7).
 	 *
 	 * @param lane The lane.
+	 * @param claim The take: the attempts before this one, the first counted one, the time.
 	 * @param result The answer.
-	 * @param entry The attempts before this one and when the entry's mail first went out.
 	 * @returns The outcome.
 	 */
 	private async answered(
 		lane: Readonly<Lane>,
+		claim: Readonly<Claim>,
 		result: Readonly<SendResult>,
-		entry: Readonly<{ attempts: number; firstAttemptAt: Date }>,
 	): Promise<EntryOutcome> {
 		const now = this.ctx.now();
 		if (result.ok) await countSent(this.ctx.db, lane.scope, now);
-		const outcome = outcomeOf(result, { attempts: entry.attempts, now });
-		const idempotency = lane.transport.idempotency ?? null;
-		const { firstAttemptAt } = entry;
-		return guardKeyLifetime(outcome, { firstAttemptAt, idempotency, now, result });
+		const outcome = outcomeOf(result, { attempts: claim.entry.attempts, now });
+		const firstAttemptAt = claim.entry.firstAttemptAt ?? claim.claimedAt;
+		const trustedMs = lane.transport.idempotencyTrustedMs ?? null;
+		return guardKeyLifetime(outcome, { firstAttemptAt, trustedMs });
 	}
 
 	/**
