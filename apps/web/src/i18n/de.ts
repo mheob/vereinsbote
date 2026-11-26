@@ -1348,6 +1348,7 @@ export const de = {
 	'templates.title': 'Vorlagen',
 	'templates.updatedAtColumn': 'Geändert am',
 	'templates.updatedBy': 'Geändert von',
+	'unsubscribe.already': 'Du bist bereits abgemeldet.',
 	'unsubscribe.done.area': 'Du bist von allen Mails aus „{area}“ abgemeldet.',
 	'unsubscribe.done.occasion': 'Du bist von „{occasion}“ abgemeldet.',
 	'unsubscribe.failed': 'Das hat nicht geklappt. Bitte versuche es noch einmal.',

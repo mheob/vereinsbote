@@ -13,7 +13,7 @@ import type { Principal } from '@/server/permissions/principal';
 import { contactsWithMarks } from '@/server/waves/recipients';
 
 import type { UnsubscribePayload } from './token';
-import { deriveUndoKey } from './undo';
+import { deriveUndoKey, sealUndo } from './undo';
 import {
 	describeUnsubscribe,
 	undoUnsubscribe,
@@ -159,6 +159,18 @@ async function memberId(db: Db, memberNumber: string): Promise<string> {
 	return row.id;
 }
 
+/**
+ * The undo value of an unsubscribe that made opt-outs.
+ *
+ * @param result What `unsubscribe` returned.
+ * @param result.undo The undo value, or null.
+ * @returns The undo value.
+ */
+function undoOf({ undo }: Readonly<{ undo: string | null }>): string {
+	if (undo === null) throw new Error('The unsubscribe made no opt-out.');
+	return undo;
+}
+
 describe(unsubscribe, () => {
 	it('opts out every contact of the mail from the occasion', async () => {
 		const h = await household();
@@ -221,6 +233,17 @@ describe(unsubscribe, () => {
 		]);
 	});
 
+	it('gives no undo value when every contact had the opt-out already', async () => {
+		const h = await household();
+		const key = await deriveUndoKey(APP_SECRET);
+		const first = await unsubscribe(h.db, key, h.payload, 'occasion', NOW);
+		expect(first.undo).toBeTypeOf('string');
+		// The mail client's one-click came first: the page then has nothing to undo.
+		await expect(unsubscribe(h.db, key, h.payload, 'occasion', NOW)).resolves.toStrictEqual({
+			undo: null,
+		});
+	});
+
 	it('records the opt-out of a contact that is not in the stock, by its key', async () => {
 		const h = await household();
 		const payload: UnsubscribePayload = {
@@ -260,7 +283,7 @@ describe(undoUnsubscribe, () => {
 	it('undoes within 30 minutes and not later', async () => {
 		const h = await household();
 		const key = await deriveUndoKey(APP_SECRET);
-		const { undo } = await unsubscribe(h.db, key, h.payload, 'occasion', NOW);
+		const undo = undoOf(await unsubscribe(h.db, key, h.payload, 'occasion', NOW));
 		const inTime = new Date(NOW.getTime() + 30 * MINUTE);
 		await expect(undoUnsubscribe(h.db, key, undo, inTime)).resolves.toBe(true);
 		const { anna, ben, firma } = h.ids;
@@ -271,14 +294,14 @@ describe(undoUnsubscribe, () => {
 		]);
 		const again = await unsubscribe(h.db, key, h.payload, 'area', NOW);
 		const tooLate = new Date(NOW.getTime() + 30 * MINUTE + 1);
-		await expect(undoUnsubscribe(h.db, key, again.undo, tooLate)).resolves.toBe(false);
+		await expect(undoUnsubscribe(h.db, key, undoOf(again), tooLate)).resolves.toBe(false);
 		await expect(marks(h, [anna])).resolves.toStrictEqual([[false, true]]);
 	});
 
 	it('logs the undo per contact and changes nothing when repeated', async () => {
 		const h = await household();
 		const key = await deriveUndoKey(APP_SECRET);
-		const { undo } = await unsubscribe(h.db, key, h.payload, 'occasion', NOW);
+		const undo = undoOf(await unsubscribe(h.db, key, h.payload, 'occasion', NOW));
 		const versions = await stockVersions(h.db);
 		await undoUnsubscribe(h.db, key, undo, NOW);
 		await expect(stockVersions(h.db)).resolves.toStrictEqual([versions[0] + 1, versions[1] + 1]);
@@ -306,7 +329,7 @@ describe(undoUnsubscribe, () => {
 			occasionId: h.occasionId,
 			scope: 'occasion',
 		});
-		const { undo } = await unsubscribe(h.db, key, h.payload, 'occasion', NOW);
+		const undo = undoOf(await unsubscribe(h.db, key, h.payload, 'occasion', NOW));
 		await expect(unsubscribeAudit(h.db)).resolves.toHaveLength(2);
 		await expect(undoUnsubscribe(h.db, key, undo, NOW)).resolves.toBe(true);
 		const { anna, ben, firma } = h.ids;
@@ -317,10 +340,22 @@ describe(undoUnsubscribe, () => {
 		]);
 	});
 
+	it('does not report an undo that would change nothing', async () => {
+		const h = await household();
+		const key = await deriveUndoKey(APP_SECRET);
+		const empty = await sealUndo(key, {
+			at: NOW,
+			optOuts: [],
+			scope: 'occasion',
+			targetId: h.occasionId,
+		});
+		await expect(undoUnsubscribe(h.db, key, empty, NOW)).resolves.toBe(false);
+	});
+
 	it('refuses a changed or foreign undo value and changes nothing', async () => {
 		const h = await household();
 		const key = await deriveUndoKey(APP_SECRET);
-		const { undo } = await unsubscribe(h.db, key, h.payload, 'occasion', NOW);
+		const undo = undoOf(await unsubscribe(h.db, key, h.payload, 'occasion', NOW));
 		const cut = undo.slice(0, -1);
 		await expect(undoUnsubscribe(h.db, key, cut, NOW)).resolves.toBe(false);
 		await expect(undoUnsubscribe(h.db, key, 'not an undo value', NOW)).resolves.toBe(false);

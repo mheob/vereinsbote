@@ -1312,6 +1312,7 @@ export const en: Record<keyof typeof de, string> = {
 	'templates.title': 'Templates',
 	'templates.updatedAtColumn': 'Changed on',
 	'templates.updatedBy': 'Changed by',
+	'unsubscribe.already': 'You are already unsubscribed.',
 	'unsubscribe.done.area': 'You are unsubscribed from all mails from “{area}”.',
 	'unsubscribe.done.occasion': 'You are unsubscribed from “{occasion}”.',
 	'unsubscribe.failed': 'That did not work. Please try again.',

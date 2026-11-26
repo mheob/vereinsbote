@@ -146,12 +146,32 @@ describe(handleOneClick, () => {
 		]);
 	});
 
-	it('takes the form content type with a charset', async () => {
+	it.each([
+		[
+			'a content type with a charset',
+			(token: string) =>
+				oneClick(token, { contentType: 'Application/X-WWW-Form-Urlencoded; charset=UTF-8' }),
+		],
+		['other fields as well', (token: string) => oneClick(token, { body: `x=1&${ONE_CLICK}&y=2` })],
+		[
+			'a value with a trailing line break',
+			(token: string) => oneClick(token, { body: `${ONE_CLICK}\r\n` }),
+		],
+		[
+			'multipart with other fields as well',
+			(token: string) =>
+				multipartOneClick(token, [
+					['x', '1'],
+					['List-Unsubscribe', 'One-Click'],
+				]),
+		],
+		[
+			'multipart with a trailing line break',
+			(token: string) => multipartOneClick(token, [['List-Unsubscribe', ' One-Click\r\n']]),
+		],
+	])('takes %s', async (_name, request) => {
 		const { db, token } = await mailed();
-		const request = oneClick(token, {
-			contentType: 'Application/X-WWW-Form-Urlencoded; charset=UTF-8',
-		});
-		const response = await handleOneClick(request, token, services(db).services);
+		const response = await handleOneClick(request(token), token, services(db).services);
 		expect(response.status).toBe(200);
 		await expect(db.select().from(contactOptOuts)).resolves.toHaveLength(1);
 	});
@@ -165,7 +185,7 @@ describe(handleOneClick, () => {
 		],
 		['plain text', { contentType: 'text/plain' }],
 		['another value', { body: 'List-Unsubscribe=Yes' }],
-		['another field as well', { body: `${ONE_CLICK}&x=1` }],
+		['no such field', { body: 'x=1&y=One-Click' }],
 		['an empty body', { body: '' }],
 		// Empty pairs are skipped by the parser: only the bound refuses it.
 		['a body above 1 KiB', { body: `${ONE_CLICK}${'&'.repeat(2000)}` }],
@@ -183,14 +203,7 @@ describe(handleOneClick, () => {
 
 	it.each([
 		['another value', () => multipartOneClick('anything', [['List-Unsubscribe', 'Yes']])],
-		[
-			'another field as well',
-			() =>
-				multipartOneClick('anything', [
-					['List-Unsubscribe', 'One-Click'],
-					['x', '1'],
-				]),
-		],
+		['no such field', () => multipartOneClick('anything', [['x', 'One-Click']])],
 		[
 			'a file for the field',
 			() => multipartOneClick('anything', [['List-Unsubscribe', new Blob(['One-Click'])]]),

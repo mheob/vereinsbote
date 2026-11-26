@@ -31,11 +31,15 @@ import { useT } from '@/i18n/use-t';
 type Scope = 'occasion' | 'area';
 type ChoiceData = Extract<UnsubscribePageData, { kind: 'choice' }>;
 
-/** What the page shows below its choice: nothing yet, the unsubscribe with its undo, or the undo. */
+/**
+ * What the page shows below its choice: nothing yet, the unsubscribe with its undo (null once the
+ * 30 minutes are over), the undo, or that the recipient was unsubscribed already (nothing to undo).
+ */
 type Outcome =
 	| Readonly<{ kind: 'open' }>
 	| Readonly<{ kind: 'done'; scope: Scope; undo: string | null }>
-	| Readonly<{ kind: 'undone' }>;
+	| Readonly<{ kind: 'undone' }>
+	| Readonly<{ kind: 'already' }>;
 
 const pageClass = 'mx-auto flex max-w-md flex-col gap-6 p-6';
 
@@ -124,7 +128,9 @@ function ChoicePage({ page, token }: Readonly<{ page: ChoiceData; token: string 
 				return null;
 			}
 			setFailure(null);
-			setOutcome({ kind: 'done', scope, undo: result.undo });
+			setOutcome(
+				result.undo === null ? { kind: 'already' } : { kind: 'done', scope, undo: result.undo },
+			);
 			return null;
 		},
 		null,
@@ -169,11 +175,11 @@ function ChoicePage({ page, token }: Readonly<{ page: ChoiceData; token: string 
 				</>
 			) : (
 				<>
-					{outcome.kind === 'undone' ? (
+					{outcome.kind === 'open' ? null : (
 						<p className="font-semibold" ref={messageRef} tabIndex={-1}>
-							{t('unsubscribe.undone')}
+							{t(outcome.kind === 'undone' ? 'unsubscribe.undone' : 'unsubscribe.already')}
 						</p>
-					) : null}
+					)}
 					<PostForm aria-describedby={textId} className="flex flex-col gap-4" onSubmit={onSubmit}>
 						<RadioGroup className="flex flex-col gap-2" defaultValue={defaultScope} name="scope">
 							<Label className="font-semibold">{t('unsubscribe.scopeLabel')}</Label>

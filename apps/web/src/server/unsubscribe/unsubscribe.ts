@@ -286,7 +286,9 @@ async function optOutIds(
  * @param payload The opened token of the mail.
  * @param scope The occasion of the mail, or its area.
  * @param now The instant; the undo value holds it.
- * @returns The sealed undo value: it takes back exactly the opt-outs made here, for 30 minutes.
+ * @returns The sealed undo value: it takes back exactly the opt-outs made here, for 30 minutes;
+ *   null when every contact had the opt-out already (e.g. after the mail client's one-click), so
+ *   there is nothing to undo.
  * @throws {UnsubscribeTargetGoneError} When the chosen occasion or area no longer exists.
  */
 // oxlint-disable-next-line max-params -- the plan's interface, and the key of the undo value
@@ -296,7 +298,7 @@ async function unsubscribe(
 	payload: Readonly<UnsubscribePayload>,
 	scope: UnsubscribeScope,
 	now: Date,
-): Promise<{ undo: string }> {
+): Promise<{ undo: string | null }> {
 	const target: Target = {
 		scope,
 		targetId: scope === 'occasion' ? payload.occasionId : payload.areaId,
@@ -309,6 +311,7 @@ async function unsubscribe(
 		await recordChange(tx, 'contact.unsubscribed', made, { ...target, at: now });
 		return optOutIds(tx, made, target);
 	});
+	if (optOuts.length === 0) return { undo: null };
 	return { undo: await sealUndo(key, { ...target, at: now, optOuts }) };
 }
 
@@ -320,15 +323,15 @@ async function unsubscribe(
  * @param key The key of the undo values (`deriveUndoKey`).
  * @param undo The undo value of `unsubscribe`.
  * @param now The instant.
- * @returns True when undone (or undone before); false for a value that does not open or is older
- *   than 30 minutes.
+ * @returns True when undone (or undone before); false for a value that does not open, is older
+ *   than 30 minutes or names no opt-out (it would undo nothing).
  */
 // oxlint-disable-next-line max-params -- the plan's interface fixes these parameters
 async function undoUnsubscribe(db: Db, key: CryptoKey, undo: string, now: Date): Promise<boolean> {
 	const record = await openUndo(key, undo);
 	if (record === null || now.getTime() - record.at.getTime() > UNDO_WINDOW_MS) return false;
 	const { optOuts, scope, targetId } = record;
-	if (optOuts.length === 0) return true;
+	if (optOuts.length === 0) return false;
 	const ids = optOuts.map(({ id }) => id);
 	const order = new Map(ids.map((id, index) => [id, index]));
 	await db.transaction(async (tx) => {

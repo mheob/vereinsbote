@@ -25,9 +25,12 @@ type UnsubscribePageData =
 			areaName: string | null;
 	  }>;
 
-/** An unsubscribe with its undo value, or why nothing changed. */
+/**
+ * An unsubscribe with its undo value (null when every contact was unsubscribed already, so nothing
+ * changed and nothing can be undone), or why it was refused.
+ */
 type SubmitUnsubscribeResult =
-	| Readonly<{ ok: true; undo: string }>
+	| Readonly<{ ok: true; undo: string | null }>
 	| Readonly<{ ok: false; failure: 'gone' | 'invalid' }>;
 
 /** An undone unsubscribe, or why it can no longer be undone. */

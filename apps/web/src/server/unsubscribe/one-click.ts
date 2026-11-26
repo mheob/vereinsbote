@@ -1,8 +1,8 @@
 /*
  * The one-click unsubscribe of RFC 8058 (Design 12): a mail provider posts the field
- * `List-Unsubscribe=One-Click` to the link of the `List-Unsubscribe` header, server to server,
- * without cookies and without `Origin`, as `multipart/form-data` (which the RFC prefers) or as
- * `application/x-www-form-urlencoded`. The route answers it itself, outside the CSRF check of the
+ * `List-Unsubscribe=One-Click` (other fields are ignored) to the link of the `List-Unsubscribe`
+ * header, server to server, without cookies and without `Origin`, as `multipart/form-data` (which
+ * the RFC prefers) or as `application/x-www-form-urlencoded`. The route answers it itself, outside the CSRF check of the
  * server functions (Design 17); the token is its protection. No session is read or made.
  *
  * The request is checked before anything else, the token before any database work, so a flood of
@@ -77,8 +77,9 @@ async function readForm(request: Request): Promise<FormData | null> {
 }
 
 /**
- * Whether a request is RFC 8058's one-click POST: a form with exactly its one field,
- * `List-Unsubscribe` with the value `One-Click` (text, not a file).
+ * Whether a request is RFC 8058's one-click POST (ruling R14): a form whose field
+ * `List-Unsubscribe` has the text value `One-Click`, apart from surrounding whitespace. Other
+ * fields are ignored.
  *
  * @param request The request.
  * @returns True for a one-click request.
@@ -86,8 +87,9 @@ async function readForm(request: Request): Promise<FormData | null> {
 async function isOneClickRequest(request: Request): Promise<boolean> {
 	const form = await readForm(request);
 	if (form === null) return false;
-	const [first, ...others] = form.entries();
-	return others.length === 0 && first?.[0] === ONE_CLICK_FIELD && first[1] === ONE_CLICK_VALUE;
+	return form
+		.getAll(ONE_CLICK_FIELD)
+		.some((value) => typeof value === 'string' && value.trim() === ONE_CLICK_VALUE);
 }
 
 /**
