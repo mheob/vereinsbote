@@ -150,6 +150,12 @@ test('an admin connects graph, adds a sender and makes it the system sender', as
 	);
 	await expect(admin.getByLabel('Client-Secret', { exact: true })).toHaveValue('');
 	await expectNoA11yViolations(admin);
+	// The notice shows once: a reload of the page does not announce the creation again.
+	await admin.reload();
+	await expect(admin.getByRole('heading', { level: 1, name: CONNECTION_NAME })).toBeVisible();
+	await expect(admin.getByRole('button', { name: 'Speichern' })).toBeEnabled();
+	await expect(admin.getByRole('status')).toHaveText('');
+	await expect(admin.getByText('wurde angelegt')).toHaveCount(0);
 
 	await admin.getByRole('link', { name: 'Zurück zum Versand' }).click();
 	await admin.getByRole('link', { name: 'Absender anlegen' }).click();
@@ -291,7 +297,9 @@ test('an admin resends a failed invitation', async () => {
 	// A resend waits a minute after the last invitation mail, failed ones included.
 	await expect(async () => {
 		await lena.getByRole('button', { name: 'Einladung erneut senden' }).click();
-		await expect(admin.getByText('Die Einladung an Lena wurde erneut verschickt.')).toBeVisible({
+		// The list's state decides, not a notice that may fade: the mark goes once the mail went out;
+		// a refusal (too soon) leaves it, and the next round clicks again.
+		await expect(lena.getByText('Einladung nicht verschickt')).toHaveCount(0, {
 			timeout: ANSWER_WAIT_MS,
 		});
 	}).toPass({ intervals: [RESEND_POLL_MS], timeout: INVITE_TIMEOUT_MS });
