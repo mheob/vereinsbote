@@ -11,6 +11,7 @@ type StateKey =
 	| 'sending_disturbance_warned'
 	| 'sending_secret_warned'
 	| 'sending_warning_retry'
+	| 'sending_webhook_secret_warned'
 	| 'setup_completed_at'
 	| 'setup_session_opened_at'
 	| 'stale_import_retry_at'

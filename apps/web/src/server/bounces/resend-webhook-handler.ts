@@ -7,10 +7,11 @@
  * The cheap checks come first (`precheckResendWebhook`, which the route runs before it opens a
  * database): the method (405), the declared size (413), the id and the Svix headers (404, 401).
  * Then the connection (404 unless it is Resend's), its secret (401; a secret that does not decrypt
- * disturbs the connection), the body, read up to 64 KiB (413), the signature and the time (401)
- * and the event (400 for a signed body the app cannot read). Each event is processed once (`webhook_events`): a retry or a replay answers 200
- * and changes nothing. Every answer is empty; a log line names a code, never the body, an address
- * or a secret.
+ * is logged by its code, nothing is written: the tick step `sendingWarnings` tells the admins), the
+ * body, read up to 64 KiB (413), the signature and the time (401) and the event (400 for a signed
+ * body the app cannot read). Nothing is written before the signature is checked. Each event is
+ * processed once (`webhook_events`): a retry or a replay answers 200 and changes nothing. Every
+ * answer is empty; a log line names a code, never the body, an address or a secret.
  */
 import { eq } from 'drizzle-orm';
 
@@ -20,7 +21,6 @@ import type { Db } from '@/server/db/client';
 import { mailConnections, webhookEvents } from '@/server/db/schema';
 import type { Env } from '@/server/env';
 import { errorLabel } from '@/server/error-label';
-import { disturbConnection } from '@/server/sending/outbox';
 import {
 	readResendEvent,
 	verifyResendSignature,
@@ -58,8 +58,6 @@ const HTTP_METHOD_NOT_ALLOWED = 405;
 const HTTP_PAYLOAD_TOO_LARGE = 413;
 const HTTP_SERVER_ERROR = 500;
 
-/** The code a secret that does not decrypt leaves on the connection, as in the outbox. */
-const CREDENTIALS_CODE = 'outbox.credentials';
 const SVIX_HEADERS = ['svix-id', 'svix-signature', 'svix-timestamp'] as const;
 const UUID = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/iu;
 const DIGITS = /^\d+$/u;
@@ -142,7 +140,7 @@ async function readBounded(body: ReadableStream<Uint8Array> | null): Promise<Rea
 /**
  * The webhook secret of a Resend connection.
  *
- * @param deps The database, the key and the clock.
+ * @param deps The database and the key.
  * @param connectionId The connection.
  * @returns The secret; a status when there is no Resend connection with a usable secret.
  */
@@ -165,9 +163,10 @@ async function webhookSecretOf(
 		return { secret: await decryptSecret(row.ciphertext, deps.key, aad) };
 	} catch (error) {
 		if (!(error instanceof SecretDecryptError)) throw error;
+		// Nothing is written before a signature was checked (ruling R16): the connection is not
+		// disturbed (sending uses the API key); `sendingWarnings` tells the admins once.
 		// oxlint-disable-next-line no-console -- the label only
 		console.error('resend webhook secret does not decrypt', errorLabel(error));
-		await disturbConnection(deps.db, row.id, CREDENTIALS_CODE, deps.now());
 		return HTTP_UNAUTHORIZED;
 	}
 }

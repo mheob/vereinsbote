@@ -859,6 +859,11 @@ export const en: Record<keyof typeof de, string> = {
 	'mail.system.staleImport.subject': 'The member data in Vereinsbote is out of date',
 	'mail.system.staleImport.text':
 		'the last member import was on {date}. Please upload a current export.',
+	'mail.system.webhookSecret.button': 'Open the connection',
+	'mail.system.webhookSecret.heading': 'The webhook secret cannot be read',
+	'mail.system.webhookSecret.subject': 'The webhook secret of the connection {name} cannot be read',
+	'mail.system.webhookSecret.text':
+		'the webhook signing secret of the Resend connection {name} cannot be decrypted, for example because APP_SECRET was changed. Until you enter it again on the page of the connection, the app refuses the bounces and complaints Resend reports. Sending goes on.',
 	'nav.admin': 'Administration',
 	'nav.contacts': 'Contacts',
 	'nav.home': 'Home',
@@ -1254,6 +1259,8 @@ export const en: Record<keyof typeof de, string> = {
 	'sending.title': 'Sending',
 	'sending.uncertainColumn': 'Unclear',
 	'sending.valueRequired': 'Please fill in this field.',
+	'sending.webhookSecretBroken':
+		'Webhook secret unreadable: bounces and complaints are refused. Please enter it again.',
 	'sending.webhookSecretHelp': 'Optional. For bounces and complaints by webhook.',
 	'sending.webhookSecretLabel': 'Webhook signing secret',
 	'setup.disabled': 'Setup is not enabled. Set SETUP_TOKEN.',

@@ -35,8 +35,8 @@ interface State {
 
 /**
  * What the overview says about a connection: disturbed (credentials refused, or the mailbox or
- * the domain), secret about to expire or expired, restriction missing or not checkable; „In
- * Ordnung“ when there is nothing to say.
+ * the domain), secret about to expire or expired, a webhook secret that does not decrypt,
+ * restriction missing or not checkable; „In Ordnung“ when there is nothing to say.
  *
  * @param connection The connection.
  * @param t The translation function.
@@ -62,6 +62,9 @@ function connectionStates(
 		else if (days === 0) text = t('sending.secretExpiresToday');
 		else if (days === 1) text = t('sending.secretExpiresTomorrow');
 		states.push({ isWarning: true, text });
+	}
+	if (connection.webhookSecretBroken) {
+		states.push({ isWarning: true, text: t('sending.webhookSecretBroken') });
 	}
 	if (connection.restriction === 'readable') {
 		states.push({ isWarning: true, text: t('sending.restrictionReadable') });

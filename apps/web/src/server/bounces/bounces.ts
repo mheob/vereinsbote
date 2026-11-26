@@ -1,10 +1,11 @@
 /*
  * The mark „E-Mail ungültig“ and the complaints (Design 13). A hard bounce, reported by Graph's
  * inbox (`graph-step.ts`) or Resend's webhook (`resend-webhook-handler.ts`), sets its outbox entry
- * to `bounced` and marks every contact of the entry with the address the mail went to (from
- * `wave_contacts`); a soft one only leaves its code on the entry. A complaint (Resend „marked as
- * spam“) opts every contact of the entry out of the wave's area, without a user. A mark hangs on
- * kind, contact key and address, so it no longer applies once the contact has another address.
+ * to `bounced` and marks every contact of the entry with the address the mail went to (the
+ * entry's recipient, else the address of `wave_contacts`); a soft one only leaves its code on the
+ * entry. A complaint (Resend „marked as spam“) opts every contact of the entry out of the wave's
+ * area, without a user. A mark hangs on kind, contact key and address, so it no longer applies
+ * once the contact has another address.
  * Who has `edit` in the area of the wave the mark came from (without an entry: in the area of the
  * contact's kind) may clear it.
  */
@@ -174,19 +175,28 @@ function entryCondition(entry: BouncedEntry): SQL {
 		: eq(outboxEntries.providerId, entry.providerId);
 }
 
+/** The entry of a report: its id, its wave and the address its mail went to. */
+interface FoundEntry {
+	readonly id: string;
+	readonly waveId: string | null;
+	/** The address the outbox sent the mail to; null when it never recorded one. */
+	readonly recipient: string | null;
+}
+
 /**
  * Finds the entry of a report.
  *
  * @param tx The transaction.
  * @param entry The Message-ID or the provider's id.
- * @returns The entry's id and wave, or undefined for a mail of no entry.
+ * @returns The entry, or undefined for a mail of no entry.
  */
-async function findEntry(
-	tx: Db,
-	entry: BouncedEntry,
-): Promise<{ id: string; waveId: string | null } | undefined> {
+async function findEntry(tx: Db, entry: BouncedEntry): Promise<FoundEntry | undefined> {
 	const [row] = await tx
-		.select({ id: outboxEntries.id, waveId: outboxEntries.waveId })
+		.select({
+			id: outboxEntries.id,
+			recipient: outboxEntries.recipient,
+			waveId: outboxEntries.waveId,
+		})
 		.from(outboxEntries)
 		.where(entryCondition(entry))
 		.limit(1);
@@ -216,24 +226,29 @@ async function contactsOfEntry(
 }
 
 /**
- * Marks the contacts of an entry with the address its mail went to. A mark the address had
- * already now names this entry, its source and its time.
+ * Marks the contacts of an entry with the address its mail went to (ruling R15): the entry's
+ * recipient, which the outbox recorded at the send (a personal mail goes to the contact's address
+ * of that moment, which may differ from the one at the confirmation); the address of
+ * `wave_contacts` only when no recipient was recorded. A mark the address had already now names
+ * this entry, its source and its time.
  *
  * @param tx The transaction.
- * @param entryId The entry that bounced.
+ * @param entry The entry that bounced.
  * @param input The source and the time of the report.
  */
 async function markContacts(
 	tx: Db,
-	entryId: string,
+	entry: Readonly<FoundEntry>,
 	input: Readonly<Pick<BounceInput, 'at' | 'source'>>,
 ): Promise<void> {
-	const mark = { createdAt: input.at, entryId, source: input.source };
-	for (const contact of await contactsOfEntry(tx, entryId)) {
+	const mark = { createdAt: input.at, entryId: entry.id, source: input.source };
+	const sentTo = entry.recipient === null ? null : normalizeEmail(entry.recipient);
+	for (const contact of await contactsOfEntry(tx, entry.id)) {
+		const email = sentTo ?? contact.email;
 		// oxlint-disable-next-line no-await-in-loop -- a transaction runs one statement at a time
 		await tx
 			.insert(contactBounces)
-			.values({ ...contact, ...mark })
+			.values({ ...contact, ...mark, email })
 			.onConflictDoUpdate({
 				set: mark,
 				target: [contactBounces.kind, contactBounces.contactKey, contactBounces.email],
@@ -244,7 +259,8 @@ async function markContacts(
 /**
  * Records a bounce report. A hard bounce sets the entry to `bounced` and marks every contact of
  * the entry (of a circular: all of them, the address is theirs together) with the address the mail
- * went to. A soft bounce only leaves its code on the entry, unless the entry bounced hard before.
+ * went to (`markContacts`). A soft bounce only leaves its code on the entry, unless the entry
+ * bounced hard before.
  *
  * @param db The database.
  * @param input The entry, whether it is hard, the source and the time.
@@ -268,7 +284,7 @@ async function recordBounce(
 			.update(outboxEntries)
 			.set({ lastErrorCode: HARD_BOUNCE_CODE, status: 'bounced' })
 			.where(eq(outboxEntries.id, entry.id));
-		await markContacts(tx, entry.id, input);
+		await markContacts(tx, entry, input);
 		return 'marked';
 	});
 }

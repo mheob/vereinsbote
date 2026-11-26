@@ -7,6 +7,7 @@ import { and, eq } from 'drizzle-orm';
 import { insertContact } from '@/server/contacts/testing';
 import type { Db } from '@/server/db/client';
 import { outboxEntries, waveContacts } from '@/server/db/schema';
+import type { OccasionKind } from '@/server/occasions/limits';
 import { confirmTestWave, setUpWaveClub } from '@/server/waves/testing';
 import type { WaveClub } from '@/server/waves/testing';
 
@@ -84,13 +85,18 @@ async function sendEntry(db: Db, waveId: string, email: string): Promise<SentEnt
 
 /**
  * A club with a circular of "Mitglieder" that went out through Graph (or Resend): one mail to the
- * family address of the members 1 and 2, one to member 3.
+ * family address of the members 1 and 2, one to member 3. As personal mails, the family gets two
+ * mails; `family` is one of them.
  *
  * @param provider The provider of the occasion's sender.
+ * @param kind The kind of the occasion.
  * @returns The club, the wave and its two sent entries.
  */
-async function setUpSentWave(provider: 'graph' | 'resend' = 'graph'): Promise<SentWave> {
-	const club = await setUpWaveClub({ provider });
+async function setUpSentWave(
+	provider: 'graph' | 'resend' = 'graph',
+	kind: OccasionKind = 'circular',
+): Promise<SentWave> {
+	const club = await setUpWaveClub({ kind, provider });
 	const { db } = club;
 	const contactIds = {
 		1: await member(db, '1', FAMILY),

@@ -878,6 +878,11 @@ export const de = {
 	'mail.system.staleImport.subject': 'Die Mitgliederdaten im Vereinsbote sind veraltet',
 	'mail.system.staleImport.text':
 		'der letzte Mitglieder-Import war am {date}. Bitte lade einen aktuellen Export hoch.',
+	'mail.system.webhookSecret.button': 'Anbindung öffnen',
+	'mail.system.webhookSecret.heading': 'Das Webhook-Secret ist nicht lesbar',
+	'mail.system.webhookSecret.subject': 'Das Webhook-Secret der Anbindung {name} ist nicht lesbar',
+	'mail.system.webhookSecret.text':
+		'das Webhook-Signing-Secret der Resend-Anbindung {name} lässt sich nicht entschlüsseln, zum Beispiel weil APP_SECRET geändert wurde. Bis du es auf der Seite der Anbindung neu einträgst, weist die App die Rückläufer und Beschwerden von Resend ab. Der Versand läuft weiter.',
 	'nav.admin': 'Verwaltung',
 	'nav.contacts': 'Kontakte',
 	'nav.home': 'Start',
@@ -1288,6 +1293,8 @@ export const de = {
 	'sending.title': 'Versand',
 	'sending.uncertainColumn': 'Unklar',
 	'sending.valueRequired': 'Bitte fülle dieses Feld aus.',
+	'sending.webhookSecretBroken':
+		'Webhook-Secret nicht lesbar: Rückläufer und Beschwerden werden abgewiesen. Bitte neu eintragen.',
 	'sending.webhookSecretHelp': 'Optional. Für Rückläufer und Beschwerden per Webhook.',
 	'sending.webhookSecretLabel': 'Webhook-Signing-Secret',
 	'setup.disabled': 'Die Einrichtung ist nicht freigeschaltet. Setze SETUP_TOKEN.',

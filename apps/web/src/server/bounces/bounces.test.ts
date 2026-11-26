@@ -213,6 +213,49 @@ describe(recordBounce, () => {
 		).resolves.toStrictEqual([true, true, false]);
 	});
 
+	it('marks the address a personal mail went to, not the one at the confirmation', async () => {
+		const wave = await setUpSentWave('graph', 'personal');
+		const { club, contactIds, single } = wave;
+		const { db } = club;
+		// Member 3 moved after the confirmation: the outbox sent the mail to the new address.
+		const moved = 'clara.neu@example.org';
+		await db.update(contacts).set({ email: moved }).where(eq(contacts.id, contactIds[3]));
+		await db.update(outboxEntries).set({ recipient: moved }).where(eq(outboxEntries.id, single.id));
+
+		await recordBounce(db, {
+			at: REPORTED_AT,
+			entry: { messageId: single.messageId },
+			hard: true,
+			source: 'graph',
+		});
+
+		const marked = await markings(db);
+		expect(marked.map(({ contactKey, email }) => [contactKey, email])).toStrictEqual([
+			['nr:3', moved],
+		]);
+		// The mark applies to the address the contact has now.
+		await expect(markedNow(db, [contactIds[3]])).resolves.toStrictEqual([true]);
+	});
+
+	it('marks the address of the confirmation when the entry recorded no recipient', async () => {
+		const wave = await setUpSentWave();
+		const { club, single } = wave;
+		await club.db
+			.update(outboxEntries)
+			.set({ recipient: null })
+			.where(eq(outboxEntries.id, single.id));
+		await recordBounce(club.db, {
+			at: REPORTED_AT,
+			entry: { messageId: single.messageId },
+			hard: true,
+			source: 'graph',
+		});
+		const marked = await markings(club.db);
+		expect(marked.map(({ contactKey, email }) => [contactKey, email])).toStrictEqual([
+			['nr:3', SINGLE],
+		]);
+	});
+
 	it('keeps the hard bounce of an entry when a soft report follows', async () => {
 		const wave = await setUpSentWave();
 		const { club, family } = wave;

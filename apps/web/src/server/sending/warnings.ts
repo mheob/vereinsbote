@@ -1,9 +1,10 @@
 /*
  * The warnings to the admins about the senders (Spec 6.10, Design 15): a Graph secret that is
  * about to expire (once per stage of 30, 14, 7 and 1 day), a connection the provider refuses
- * (once per disturbance) and at most one digest a club day of new failed or uncertain entries of
- * the outbox. They run as one tick step and go to the active admins in their language. A mail
- * names the connection, the sender and the numbers, never a recipient or a secret.
+ * (once per disturbance), a Resend webhook secret that does not decrypt (once per stored secret,
+ * ruling R16) and at most one digest a club day of new failed or uncertain entries of the outbox.
+ * They run as one tick step and go to the active admins in their language. A mail names the
+ * connection, the sender and the numbers, never a recipient or a secret.
  *
  * Every warning follows the order of the stale-data warning: the marker in `system_state` is set
  * first, so two runs never send it twice, then the mails go, then the activity log. When the log
@@ -27,6 +28,7 @@ import {
 } from '@/server/contacts/calendar';
 import { WARNING_RETRY_MS, activeAdmins, tickMailer } from '@/server/contacts/stale-import';
 import type { Recipient } from '@/server/contacts/stale-import';
+import { deriveSecretsKey } from '@/server/crypto/secrets';
 import type { Db } from '@/server/db/client';
 import { mailConnections, outboxEntries, senders } from '@/server/db/schema';
 import { errorLabel } from '@/server/error-label';
@@ -37,6 +39,7 @@ import type { TickContext, TickStep } from '@/server/tick/tick';
 
 import { disturbanceReason } from './disturbance';
 import { checkSystemSender } from './system-mailer';
+import { brokenWebhookSecrets } from './webhook-secret';
 
 /** The days before the expiry of a secret at which the admins are warned, once each. */
 // oxlint-disable-next-line no-magic-numbers -- the stages are the point of the list
@@ -302,7 +305,10 @@ async function attempt<Result>(warning: () => Promise<Result>): Promise<Result |
 interface Watch<Value extends number | string> {
 	readonly key: StateKey;
 	readonly action: AuditAction;
-	readonly buttonKey: 'mail.system.sendingDisturbed.button' | 'mail.system.sendingSecret.button';
+	readonly buttonKey:
+		| 'mail.system.sendingDisturbed.button'
+		| 'mail.system.sendingSecret.button'
+		| 'mail.system.webhookSecret.button';
 	/** Where the connection stands, or null while there is nothing to warn about. */
 	readonly valueOf: (connection: Readonly<WatchedConnection>, today: string) => Value | null;
 	readonly details: (
@@ -532,6 +538,64 @@ const disturbanceWatch: Watch<string> = {
 	valueOf: ({ disturbedSince }) => disturbedSince?.toISOString() ?? null,
 };
 
+/**
+ * A Resend webhook secret that does not decrypt (ruling R16): one warning per stored secret, told
+ * apart by a fingerprint of its ciphertext. Once it decrypts again or a new one is saved, the
+ * marker forgets the connection; a later broken secret warns afresh.
+ *
+ * @param broken The fingerprint of each broken secret by connection id.
+ * @returns The kind of warning.
+ */
+function webhookSecretWatch(broken: ReadonlyMap<string, string>): Watch<string> {
+	return {
+		action: 'sending.webhook_secret_warned',
+		buttonKey: 'mail.system.webhookSecret.button',
+		details: () => ({}),
+		key: 'sending_webhook_secret_warned',
+		texts: ({ connection, locale }) => ({
+			heading: translate(locale, 'mail.system.webhookSecret.heading'),
+			subject: translate(locale, 'mail.system.webhookSecret.subject', { name: connection.name }),
+			text: translate(locale, 'mail.system.webhookSecret.text', { name: connection.name }),
+		}),
+		valueOf: ({ id }) => broken.get(id) ?? null,
+	};
+}
+
+/**
+ * The Resend webhook secrets that do not decrypt; a failure is logged by its code.
+ *
+ * @param ctx The tick's context.
+ * @returns The fingerprints by connection id, or null when the check failed (the marker then stays
+ *   as it is).
+ */
+async function brokenWebhookSecretsSafely(
+	ctx: TickContext,
+): Promise<ReadonlyMap<string, string> | null> {
+	try {
+		return await brokenWebhookSecrets(ctx.db, await deriveSecretsKey(ctx.env.appSecret));
+	} catch (error) {
+		// oxlint-disable-next-line no-console -- the code only
+		console.error('webhook secret check failed', errorLabel(error));
+		return null;
+	}
+}
+
+/**
+ * Warns about the connections: their secrets, their disturbances and their webhook secrets.
+ *
+ * @param run The run.
+ */
+async function warnAboutConnections(
+	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- see Run
+	run: Readonly<Run>,
+): Promise<void> {
+	const connections = await watchedConnections(run.ctx.db);
+	await warnAbout(run, connections, secretWatch);
+	await warnAbout(run, connections, disturbanceWatch);
+	const broken = await brokenWebhookSecretsSafely(run.ctx);
+	if (broken !== null) await warnAbout(run, connections, webhookSecretWatch(broken));
+}
+
 /** The failed and uncertain entries of one sender since the last digest. */
 interface DigestRow {
 	readonly email: string | null;
@@ -693,9 +757,7 @@ function createSendingWarningsStep(
 				mailer: createMailer(ctx),
 				now: ctx.now(),
 			};
-			const connections = await watchedConnections(ctx.db);
-			await warnAbout(run, connections, secretWatch);
-			await warnAbout(run, connections, disturbanceWatch);
+			await warnAboutConnections(run);
 			if (ctx.now().getTime() >= ctx.deadline) return { moreWork: true };
 			await attempt(async () => sendDigest(run));
 			return { moreWork: false };

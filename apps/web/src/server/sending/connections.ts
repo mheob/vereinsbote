@@ -32,6 +32,7 @@ import { quotaToday } from './quota';
 import type { QuotaState } from './quota';
 import { listSenders } from './senders';
 import type { SenderSummary } from './senders';
+import { brokenWebhookSecrets } from './webhook-secret';
 
 /** The name of the foreign key that keeps a connection with senders from being deleted. */
 const SENDER_CONNECTION_FK = 'senders_connection_id_mail_connections_id_fk';
@@ -511,9 +512,16 @@ interface QueueCounts {
 	readonly failed: number;
 }
 
+/** A connection of the overview, with the days its secret has left and its webhook secret state. */
+type OverviewConnection = ConnectionSummary & {
+	daysToExpiry: number | null;
+	/** A Resend webhook secret that does not decrypt (ruling R16): its webhook refuses every event. */
+	webhookSecretBroken: boolean;
+};
+
 /** What the overview page shows: the connections and the senders with their numbers. */
 interface SendingOverview {
-	readonly connections: readonly (ConnectionSummary & { daysToExpiry: number | null })[];
+	readonly connections: readonly OverviewConnection[];
 	readonly senders: readonly (SenderSummary & QueueCounts & { quota: QuotaState })[];
 }
 
@@ -562,43 +570,59 @@ function scopeOf(
 }
 
 /**
- * Adds the whole days each secret has left, counted in club days.
+ * Adds the whole days each secret has left, counted in club days, and whether a webhook secret
+ * does not decrypt.
  *
  * @param connections The connections.
  * @param now The instant.
- * @returns The connections with `daysToExpiry` (negative once expired; null without a date).
+ * @param broken The connections whose webhook secret does not decrypt.
+ * @returns The connections with `daysToExpiry` (negative once expired; null without a date) and
+ *   `webhookSecretBroken`.
  */
-function withDaysToExpiry(
+function withStates(
 	connections: readonly Readonly<ConnectionSummary>[],
 	now: Date,
-): SendingOverview['connections'][number][] {
+	broken: ReadonlyMap<string, string>,
+): OverviewConnection[] {
 	const today = todayInClubZone(now);
 	const days = (expiresOn: string | null): number | null =>
 		expiresOn === null ? null : daysUntil(today, expiresOn);
-	const result: SendingOverview['connections'][number][] = [];
+	const result: OverviewConnection[] = [];
 	for (const connection of connections) {
-		result.push({ ...connection, daysToExpiry: days(connection.secretExpiresOn) });
+		result.push({
+			...connection,
+			daysToExpiry: days(connection.secretExpiresOn),
+			webhookSecretBroken: broken.has(connection.id),
+		});
 	}
 	return result;
 }
 
 /**
- * The overview of the sending for admins: the connections with the days their secret has left,
- * the senders with their queue and today's count against the limit. It carries no recipient: the
- * admin role alone gives no access to contact data.
+ * The overview of the sending for admins: the connections with the days their secret has left and
+ * whether their webhook secret does not decrypt, the senders with their queue and today's count
+ * against the limit. It carries no recipient: the admin role alone gives no access to contact data.
  *
  * @param db The database.
  * @param actor Who asks; an admin.
  * @param now The instant; its club day counts for the days and the quota.
+ * @param key The key of the secrets (`deriveSecretsKey`), to try the webhook secrets.
  * @returns The connections and the senders.
  * @throws {ForbiddenError} For anybody but an admin.
  */
-async function sendingOverview(db: Db, actor: Principal, now: Date): Promise<SendingOverview> {
+// oxlint-disable-next-line max-params -- the database, the admin, the instant and the key
+async function sendingOverview(
+	db: Db,
+	actor: Principal,
+	now: Date,
+	key: CryptoKey,
+): Promise<SendingOverview> {
 	assertAdmin(actor);
-	const [connections, senderList, counts] = await Promise.all([
+	const [connections, senderList, counts, broken] = await Promise.all([
 		listConnections(db, actor),
 		listSenders(db, actor),
 		queueCounts(db),
+		brokenWebhookSecrets(db, key),
 	]);
 	const noCounts: QueueCounts = { failed: 0, open: 0, uncertain: 0 };
 	// One after the other: the quota queries may share a connection.
@@ -608,7 +632,7 @@ async function sendingOverview(db: Db, actor: Principal, now: Date): Promise<Sen
 		const quota = await quotaToday(db, scopeOf(sender), now);
 		rows.push({ ...sender, ...(counts.get(sender.id) ?? noCounts), quota });
 	}
-	return { connections: withDaysToExpiry(connections, now), senders: rows };
+	return { connections: withStates(connections, now, broken), senders: rows };
 }
 
 export {

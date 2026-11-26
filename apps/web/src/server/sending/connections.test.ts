@@ -260,14 +260,14 @@ async function setUpOverview(): Promise<{
 describe(sendingOverview, () => {
 	it('counts the days a secret has left, none for a key', async () => {
 		const { admin, db, graphId, resendId } = await setUpOverview();
-		const { connections } = await sendingOverview(db, admin, OVERVIEW_NOW);
+		const { connections } = await sendingOverview(db, admin, OVERVIEW_NOW, await testKey());
 		const days = new Map(connections.map(({ daysToExpiry, id }) => [id, daysToExpiry]));
 		expect([days.get(graphId), days.get(resendId)]).toStrictEqual([10, null]);
 	});
 
 	it('counts the queue per sender and today against the limit', async () => {
 		const { admin, db } = await setUpOverview();
-		const { senders } = await sendingOverview(db, admin, OVERVIEW_NOW);
+		const { senders } = await sendingOverview(db, admin, OVERVIEW_NOW, await testKey());
 		expect(
 			senders.map(({ email, failed, open, quota, uncertain }) => [
 				email,
@@ -283,11 +283,36 @@ describe(sendingOverview, () => {
 		]);
 	});
 
+	it('names a Resend connection whose webhook secret does not decrypt', async () => {
+		const { admin, db, graphId, resendId } = await setUpOverview();
+		const other = await resendConnection(db, admin, 'Andere');
+		// The ciphertext of another row does not decrypt here (its associated data differs).
+		const [row] = await db
+			.select({ secret: mailConnections.webhookSecretCiphertext })
+			.from(mailConnections)
+			.where(eq(mailConnections.id, other));
+		await db
+			.update(mailConnections)
+			.set({ webhookSecretCiphertext: row?.secret })
+			.where(eq(mailConnections.id, resendId));
+		const { connections } = await sendingOverview(db, admin, OVERVIEW_NOW, await testKey());
+		const broken = new Map(
+			connections.map(({ id, webhookSecretBroken }) => [id, webhookSecretBroken]),
+		);
+		expect([broken.get(resendId), broken.get(other), broken.get(graphId)]).toStrictEqual([
+			true,
+			false,
+			false,
+		]);
+	});
+
 	it('carries no recipient and is for admins only', async () => {
 		const { admin, db } = await setUpOverview();
-		const overview = await sendingOverview(db, admin, OVERVIEW_NOW);
+		const overview = await sendingOverview(db, admin, OVERVIEW_NOW, await testKey());
 		expect(JSON.stringify(overview)).not.toContain('member@example.org');
 		const outsider = await userWith(db, {});
-		await expect(sendingOverview(db, outsider, OVERVIEW_NOW)).rejects.toThrow(ForbiddenError);
+		await expect(sendingOverview(db, outsider, OVERVIEW_NOW, await testKey())).rejects.toThrow(
+			ForbiddenError,
+		);
 	});
 });

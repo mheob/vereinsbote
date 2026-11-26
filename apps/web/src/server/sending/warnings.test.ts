@@ -2,6 +2,7 @@ import { eq, sql } from 'drizzle-orm';
 import { describe, expect, it } from 'vite-plus/test';
 
 import { setUpClub } from '@/server/contacts/testing';
+import { encryptSecret, secretAad } from '@/server/crypto/secrets';
 import type { Db } from '@/server/db/client';
 import { auditLog, mailConnections, outboxEntries, systemState } from '@/server/db/schema';
 import { createTestDb } from '@/server/db/test-db';
@@ -11,7 +12,14 @@ import { runTick } from '@/server/tick/tick';
 import { insertUser } from '@/server/users/repo';
 
 import { setSystemSender } from './senders';
-import { fakeProviders, graphConnection, resendConnection, senderOn, testEnv } from './testing';
+import {
+	fakeProviders,
+	graphConnection,
+	resendConnection,
+	senderOn,
+	testEnv,
+	testKey,
+} from './testing';
 import { SECRET_WARNING_DAYS, createSendingWarningsStep, secretWarningStage } from './warnings';
 
 const DAY_MS = 86_400_000;
@@ -345,6 +353,101 @@ describe(createSendingWarningsStep, () => {
 		expect(entries.map((entry) => entry.details)).toStrictEqual([
 			{ code: 'graph.unauthorized', failed: 0, sent: 1 },
 		]);
+	});
+});
+
+/**
+ * Gives a connection's webhook secret the ciphertext of another row, which does not decrypt there
+ * (its associated data names the other row), as after a change of `APP_SECRET`.
+ *
+ * @param db The database.
+ * @param connectionId The connection.
+ * @param from The connection whose ciphertext it gets.
+ */
+async function breakWebhookSecret(db: Db, connectionId: string, from: string): Promise<void> {
+	const [row] = await db
+		.select({ secret: mailConnections.webhookSecretCiphertext })
+		.from(mailConnections)
+		.where(eq(mailConnections.id, from));
+	await db
+		.update(mailConnections)
+		.set({ webhookSecretCiphertext: row?.secret })
+		.where(eq(mailConnections.id, connectionId));
+}
+
+/**
+ * Stores a webhook secret that decrypts, as saving it on the connection's page does.
+ *
+ * @param db The database.
+ * @param connectionId The connection.
+ */
+async function fixWebhookSecret(db: Db, connectionId: string): Promise<void> {
+	const aad = secretAad('mail_connections', connectionId, 'webhook_secret_ciphertext');
+	const ciphertext = await encryptSecret('whsec_dGVzdA==', await testKey(), aad);
+	await db
+		.update(mailConnections)
+		.set({ webhookSecretCiphertext: ciphertext })
+		.where(eq(mailConnections.id, connectionId));
+}
+
+describe('the warning about a webhook secret that does not decrypt', () => {
+	it('warns once per broken secret, forgets it once it decrypts and warns about a new one', async () => {
+		const db = await createTestDb();
+		const { admin } = await setUpClub(db);
+		const resendId = await resendConnection(db, admin, 'Resend');
+		const other = await resendConnection(db, admin, 'Andere');
+		const third = await resendConnection(db, admin, 'Dritte');
+		const mailer = new CapturingMailer();
+		await breakWebhookSecret(db, resendId, other);
+
+		const counts = await sentAfterEach(db, mailer, [
+			'2026-11-25T10:00:00Z',
+			'2026-11-25T10:15:00Z',
+		]);
+		await fixWebhookSecret(db, resendId);
+		counts.push(...(await sentAfterEach(db, mailer, ['2026-11-25T10:30:00Z'])));
+		const marker = await db
+			.select({ value: systemState.value })
+			.from(systemState)
+			.where(eq(systemState.key, 'sending_webhook_secret_warned'));
+		await breakWebhookSecret(db, resendId, third);
+		counts.push(...(await sentAfterEach(db, mailer, ['2026-11-25T10:45:00Z'])));
+
+		expect(counts).toStrictEqual([1, 1, 1, 2]);
+		expect(marker).toStrictEqual([{ value: {} }]);
+		expect(mailer.sent.map((mail) => mail.subject)).toStrictEqual([
+			'Das Webhook-Secret der Anbindung Resend ist nicht lesbar',
+			'Das Webhook-Secret der Anbindung Resend ist nicht lesbar',
+		]);
+	});
+
+	it('names the connection, leaves it undisturbed and logs neither secret nor ciphertext', async () => {
+		const db = await createTestDb();
+		const { admin } = await setUpClub(db);
+		const resendId = await resendConnection(db, admin, 'Resend');
+		await breakWebhookSecret(db, resendId, await resendConnection(db, admin, 'Andere'));
+		const mailer = new CapturingMailer();
+
+		await tickAt(db, NOW, mailer);
+
+		expect(textOf(mailer.sent[0])).toContain('Resend-Anbindung Resend');
+		expect(mailer.sent[0]?.content.button?.url).toBe(
+			`https://bote.example.org/admin/sending/connections/${resendId}`,
+		);
+		const entries = await db
+			.select({ details: auditLog.details, target: auditLog.target })
+			.from(auditLog)
+			.where(eq(auditLog.action, 'sending.webhook_secret_warned'));
+		expect(entries).toStrictEqual([
+			{ details: { failed: 0, sent: 1 }, target: `connection:${resendId}` },
+		]);
+		await expect(
+			db
+				.select({ since: mailConnections.disturbedSince })
+				.from(mailConnections)
+				.where(eq(mailConnections.id, resendId)),
+		).resolves.toStrictEqual([{ since: null }]);
+		expect(JSON.stringify([mailer.sent, entries])).not.toMatch(/whsec|v2\./u);
 	});
 });
 

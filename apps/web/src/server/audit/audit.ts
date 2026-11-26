@@ -40,6 +40,7 @@ type AuditAction =
 	| 'sending.digest_sent'
 	| 'sending.disturbance_warned'
 	| 'sending.secret_warned'
+	| 'sending.webhook_secret_warned'
 	| 'setup.completed'
 	| 'template.created'
 	| 'template.deleted'

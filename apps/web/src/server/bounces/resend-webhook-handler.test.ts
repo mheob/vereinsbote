@@ -6,10 +6,12 @@ import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { RESEND_WEBHOOK_PATH } from '@/paths';
 import type { Db } from '@/server/db/client';
 import {
+	auditLog,
 	contactBounces,
 	contactOptOuts,
 	mailConnections,
 	outboxEntries,
+	systemState,
 	webhookEvents,
 } from '@/server/db/schema';
 import { WEBHOOK_MAX_BYTES } from '@/server/sending/resend-webhook';
@@ -209,6 +211,26 @@ async function entryStatus(db: Db, entryId: string): Promise<string | undefined>
 }
 
 /**
+ * What a webhook request could have written: the disturbances of the connections, the state
+ * markers, the activity log and the processed events.
+ *
+ * @param db The database.
+ * @returns A snapshot to compare.
+ */
+async function writtenState(db: Db): Promise<unknown> {
+	return {
+		audit: await db.$count(auditLog),
+		disturbed: await db
+			.select({ code: mailConnections.disturbedCode, since: mailConnections.disturbedSince })
+			.from(mailConnections)
+			.orderBy(mailConnections.id),
+		events: await db.$count(webhookEvents),
+		marks: await db.$count(contactBounces),
+		state: await db.select({ key: systemState.key }).from(systemState).orderBy(systemState.key),
+	};
+}
+
+/**
  * A body stream of many chunks that counts how many were read.
  *
  * @param chunks How many chunks of 16 KiB it has.
@@ -371,7 +393,7 @@ describe(handleResendWebhook, () => {
 		await expect(entryStatus(wave.club.db, wave.family.id)).resolves.toBe('sent');
 	});
 
-	it('answers 401 and disturbs the connection when its secret does not decrypt', async () => {
+	it('answers 401 to a secret that does not decrypt and writes nothing, however often', async () => {
 		const wave = await setUpSentWave('resend');
 		const { connectionId, db } = wave.club;
 		const errors = vi.spyOn(console, 'error').mockReturnValue();
@@ -385,17 +407,19 @@ describe(handleResendWebhook, () => {
 			.update(mailConnections)
 			.set({ webhookSecretCiphertext: moved?.secret })
 			.where(eq(mailConnections.id, connectionId));
+		const before = await writtenState(db);
 
-		await expect(post(wave, bounced(wave.family.providerId))).resolves.toBe(HTTP_UNAUTHORIZED);
-		await expect(
-			db
-				.select({ code: mailConnections.disturbedCode, since: mailConnections.disturbedSince })
-				.from(mailConnections)
-				.where(eq(mailConnections.id, connectionId)),
-		).resolves.toStrictEqual([{ code: 'outbox.credentials', since: NOW }]);
-		expect(errors.mock.calls).toStrictEqual([
-			['resend webhook secret does not decrypt', 'SecretDecryptError'],
-		]);
+		const statuses = await statusesOf(
+			[1, 2, 3].map(() => async () => post(wave, bounced(wave.family.providerId))),
+		);
+
+		expect(statuses).toStrictEqual([HTTP_UNAUTHORIZED, HTTP_UNAUTHORIZED, HTTP_UNAUTHORIZED]);
+		// The connection is not disturbed (sending uses the API key), and nothing else changed: no
+		// warning, no log entry. The tick step `sendingWarnings` tells the admins once.
+		await expect(writtenState(db)).resolves.toStrictEqual(before);
+		expect(errors.mock.calls).toStrictEqual(
+			statuses.map(() => ['resend webhook secret does not decrypt', 'SecretDecryptError']),
+		);
 	});
 
 	it('ignores events it does not handle', async () => {
