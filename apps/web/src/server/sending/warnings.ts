@@ -9,13 +9,19 @@
  * first, so two runs never send it twice, then the mails go, then the activity log. When the log
  * entry fails, the marker is given back and the next tick warns again.
  */
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 
 import type { Locale } from '@/i18n/locale';
 import { translate } from '@/i18n/translate';
 import { writeAudit } from '@/server/audit/audit';
 import type { AuditAction } from '@/server/audit/audit';
-import { formatCalendarDate, formatClubDate, todayInClubZone } from '@/server/contacts/calendar';
+import { compareCodePoints } from '@/server/compare-code-points';
+import {
+	daysUntil,
+	formatCalendarDate,
+	formatClubDate,
+	todayInClubZone,
+} from '@/server/contacts/calendar';
 import { activeAdmins, tickMailer } from '@/server/contacts/stale-import';
 import type { Recipient } from '@/server/contacts/stale-import';
 import type { Db } from '@/server/db/client';
@@ -32,12 +38,12 @@ const SECRET_WARNING_DAYS = [30, 14, 7, 1] as const;
 
 type SecretStage = (typeof SECRET_WARNING_DAYS)[number];
 
-const MS_PER_DAY = 86_400_000;
+/** A warning nobody received waits this long before the next try. */
+const RETRY_AFTER_MS = 3_600_000;
 
-/** The club day of the last digest and the instant up to which it counted. */
+/** The club day of the last digest. */
 interface DigestMarker {
 	readonly day: string;
-	readonly at: string;
 }
 
 /**
@@ -49,7 +55,7 @@ interface DigestMarker {
  * @returns The stage, or null while more than 30 days are left.
  */
 function secretWarningStage(expiresOn: string, today: string): SecretStage | null {
-	const days = Math.round((Date.parse(expiresOn) - Date.parse(today)) / MS_PER_DAY);
+	const days = daysUntil(today, expiresOn);
 	return SECRET_WARNING_DAYS.findLast((stage) => stage >= days) ?? null;
 }
 
@@ -122,6 +128,10 @@ interface Notice {
 	readonly action: AuditAction;
 	readonly target?: string;
 	readonly details: Readonly<Record<string, unknown>>;
+	/** Names the warning in `sending_warning_retry`, e.g. `sending_secret_warned:<id>`. */
+	readonly retryKey: string;
+	/** Undoes what else the claim did (the digest marks its entries); runs with the marker. */
+	readonly undo?: () => Promise<void>;
 }
 
 /**
@@ -154,20 +164,74 @@ async function mailAll(
 	return outcome;
 }
 
+type RetryMap = Record<string, string>;
+
 /**
- * Claims a warning, sends it and logs it. A log entry that fails gives the claim back and throws.
+ * Whether a warning that nobody received still waits for its next try.
  *
  * @param run The run.
- * @param notice The warning.
+ * @param retryKey The warning.
+ * @returns True within an hour of the failed try.
  */
-async function deliver(
+async function isWaiting(
 	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- see Run
 	run: Readonly<Run>,
-	notice: Readonly<Notice>,
+	retryKey: string,
+): Promise<boolean> {
+	const retry = await getState<RetryMap>(run.ctx.db, 'sending_warning_retry');
+	const until = retry?.[retryKey];
+	return until !== undefined && Date.parse(until) > run.now.getTime();
+}
+
+/**
+ * Sets or clears the wait of a warning.
+ *
+ * @param run The run.
+ * @param retryKey The warning.
+ * @param waits True to wait an hour from now, false to forget the wait.
+ */
+async function setWaiting(
+	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- see Run
+	run: Readonly<Run>,
+	retryKey: string,
+	waits: boolean,
 ): Promise<void> {
 	const { db } = run.ctx;
-	await setState(db, notice.key, notice.next);
-	const outcome = await mailAll(run, await run.admins(), notice.mail);
+	const retry = (await getState<RetryMap>(db, 'sending_warning_retry')) ?? {};
+	const { [retryKey]: earlier, ...rest } = retry;
+	if (!waits && earlier === undefined) return;
+	const next = waits
+		? { ...rest, [retryKey]: new Date(run.now.getTime() + RETRY_AFTER_MS).toISOString() }
+		: rest;
+	await setState(db, 'sending_warning_retry', next);
+}
+
+/**
+ * Gives a claim back: the marker returns to what it was, and the claim's other marks go.
+ *
+ * @param db The database.
+ * @param notice The warning.
+ */
+async function giveBack(db: Db, notice: Readonly<Notice>): Promise<void> {
+	await (notice.previous === null
+		? clearState(db, notice.key)
+		: setState(db, notice.key, notice.previous));
+	await notice.undo?.();
+}
+
+/**
+ * Writes the activity log entry of a warning; when that fails the claim goes back and the error
+ * goes on.
+ *
+ * @param db The database.
+ * @param notice The warning.
+ * @param outcome What the mails came to.
+ */
+async function logNotice(
+	db: Db,
+	notice: Readonly<Notice>,
+	outcome: Readonly<Record<string, unknown>>,
+): Promise<void> {
 	try {
 		await writeAudit(db, {
 			action: notice.action,
@@ -177,10 +241,54 @@ async function deliver(
 		});
 	} catch (error) {
 		// Without its log entry the warning does not count: the next tick tries again.
-		await (notice.previous === null
-			? clearState(db, notice.key)
-			: setState(db, notice.key, notice.previous));
+		await giveBack(db, notice);
 		throw error;
+	}
+}
+
+/**
+ * Claims a warning, sends it and logs it. The claim relies on the tick lock: one run at a time
+ * takes the marker. A warning that reached nobody (every mail failed, no active admin, no way to
+ * send) gives the claim back and waits an hour; it writes no log entry. One that reached some
+ * admins stays claimed, so no admin gets it twice. A log entry that fails gives the claim back
+ * and throws.
+ *
+ * @param run The run.
+ * @param notice The warning.
+ * @returns True when the warning stays claimed.
+ */
+async function deliver(
+	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- see Run
+	run: Readonly<Run>,
+	notice: Readonly<Notice>,
+): Promise<boolean> {
+	const { db } = run.ctx;
+	await setState(db, notice.key, notice.next);
+	const outcome = await mailAll(run, await run.admins(), notice.mail);
+	if (outcome.sent === 0) {
+		await giveBack(db, notice);
+		await setWaiting(run, notice.retryKey, true);
+		return false;
+	}
+	await logNotice(db, notice, outcome);
+	await setWaiting(run, notice.retryKey, false);
+	return true;
+}
+
+/**
+ * Runs one warning; a failure (a log entry that cannot be written) is logged by its code and does
+ * not stop the other warnings of the tick.
+ *
+ * @param warning The warning.
+ * @returns What the warning returned, or null when it failed.
+ */
+async function attempt<Result>(warning: () => Promise<Result>): Promise<Result | null> {
+	try {
+		return await warning();
+	} catch (error) {
+		// oxlint-disable-next-line no-console -- the code only, never an address
+		console.error('sending warning not logged', errorLabel(error));
+		return null;
 	}
 }
 
@@ -271,6 +379,48 @@ function connectionMail(
 }
 
 /**
+ * Warns about one connection: not past the end of the tick's time budget, not while an earlier
+ * try that reached nobody still waits. A failure to write the log is logged, not thrown.
+ *
+ * @param run The run.
+ * @param watch The kind of warning.
+ * @param marker The marker so far.
+ * @param item The connection and the value it reached.
+ * @returns The marker including this warning when it stays claimed.
+ */
+// oxlint-disable-next-line max-params -- the run, the kind, the marker so far and the pending warning
+async function warnOne<Value extends number | string>(
+	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- see Run
+	run: Readonly<Run>,
+	watch: Readonly<Watch<Value>>,
+	marker: Readonly<Record<string, Value>>,
+	item: Readonly<Pending<Value>>,
+): Promise<Readonly<Record<string, Value>>> {
+	const { connection, value } = item;
+	const retryKey = `${watch.key}:${connection.id}`;
+	if (run.ctx.now().getTime() >= run.ctx.deadline || (await isWaiting(run, retryKey))) {
+		return marker;
+	}
+	const next = { ...marker, [connection.id]: value };
+	const today = todayInClubZone(run.now);
+	const texts = (locale: Locale): ReturnType<Watch<Value>['texts']> =>
+		watch.texts({ connection, locale, today }, value);
+	const claimed = await attempt(async () =>
+		deliver(run, {
+			action: watch.action,
+			details: watch.details(connection, value),
+			key: watch.key,
+			mail: connectionMail(run, watch, texts, connection),
+			next,
+			previous: marker,
+			retryKey,
+			target: `connection:${connection.id}`,
+		}),
+	);
+	return claimed === true ? next : marker;
+}
+
+/**
  * Warns about the connections that are pending, one warning after the other: each claims its
  * marker before it sends. Stops at the end of the tick's time budget; the rest comes with the
  * next tick.
@@ -287,25 +437,10 @@ async function warnPending<Value extends number | string>(
 	watch: Readonly<Watch<Value>>,
 	state: Readonly<{ marker: Readonly<Record<string, Value>>; pending: readonly Pending<Value>[] }>,
 ): Promise<void> {
-	const today = todayInClubZone(run.now);
 	let { marker } = state;
-	for (const { connection, value } of state.pending) {
-		if (run.ctx.now().getTime() < run.ctx.deadline) {
-			const next = { ...marker, [connection.id]: value };
-			const texts = (locale: Locale): ReturnType<Watch<Value>['texts']> =>
-				watch.texts({ connection, locale, today }, value);
-			// oxlint-disable-next-line no-await-in-loop -- one warning after the other, each claims before it sends
-			await deliver(run, {
-				action: watch.action,
-				details: watch.details(connection, value),
-				key: watch.key,
-				mail: connectionMail(run, watch, texts, connection),
-				next,
-				previous: marker,
-				target: `connection:${connection.id}`,
-			});
-			marker = next;
-		}
+	for (const item of state.pending) {
+		// oxlint-disable-next-line no-await-in-loop -- one warning after the other, each claims before it sends
+		marker = await warnOne(run, watch, marker, item);
 	}
 }
 
@@ -347,7 +482,7 @@ function secretText(
 	today: string,
 ): string {
 	const expiresOn = connection.secretExpiresOn ?? today;
-	const days = Math.round((Date.parse(expiresOn) - Date.parse(today)) / MS_PER_DAY);
+	const days = daysUntil(today, expiresOn);
 	const params = { date: formatCalendarDate(expiresOn, locale), days, name: connection.name };
 	if (days <= 0) return translate(locale, 'mail.system.sendingSecret.textExpired', params);
 	if (days === 1) return translate(locale, 'mail.system.sendingSecret.textTomorrow', params);
@@ -395,35 +530,46 @@ interface DigestRow {
 }
 
 /**
- * Counts the failed and uncertain entries per sender since an instant. An entry counts from the
- * moment a run claimed it (from its creation when none did).
+ * Claims the failed and uncertain entries no digest reported yet, by stamping them with the
+ * instant of the run, and counts them per sender. An entry counts when it is failed or uncertain,
+ * whenever and however it became so (a run, or the sweep of interrupted entries).
  *
  * @param db The database.
- * @param since The end of the last digest, or null for all.
+ * @param at The instant of the run; it marks the claimed entries.
  * @returns One row per sender, by address; entries of a deleted sender share one row.
  */
-async function countProblems(db: Db, since: Date | null): Promise<DigestRow[]> {
-	const stamp = sql`coalesce(${outboxEntries.claimedAt}, ${outboxEntries.createdAt})`;
-	return db
-		.select({
-			email: senders.email,
-			failed: sql<number>`count(*) filter (where ${outboxEntries.status} = 'failed')`.mapWith(
-				Number,
-			),
-			uncertain: sql<number>`count(*) filter (where ${outboxEntries.status} = 'uncertain')`.mapWith(
-				Number,
-			),
-		})
-		.from(outboxEntries)
-		.leftJoin(senders, eq(senders.id, outboxEntries.senderId))
+async function claimProblems(db: Db, at: Date): Promise<DigestRow[]> {
+	const claimed = await db
+		.update(outboxEntries)
+		.set({ digestedAt: at })
 		.where(
-			and(
-				inArray(outboxEntries.status, ['failed', 'uncertain']),
-				since === null ? undefined : sql`${stamp} > ${since.toISOString()}::timestamptz`,
-			),
+			and(inArray(outboxEntries.status, ['failed', 'uncertain']), isNull(outboxEntries.digestedAt)),
 		)
-		.groupBy(senders.email)
-		.orderBy(senders.email);
+		.returning({ senderId: outboxEntries.senderId, status: outboxEntries.status });
+	const known = await db.select({ email: senders.email, id: senders.id }).from(senders);
+	const addresses = new Map(known.map(({ email, id }) => [id, email]));
+	const bySender = new Map<string | null, DigestRow>();
+	for (const { senderId, status } of claimed) {
+		const email = senderId === null ? null : (addresses.get(senderId) ?? null);
+		const row = bySender.get(email) ?? { email, failed: 0, uncertain: 0 };
+		bySender.set(
+			email,
+			status === 'failed'
+				? { ...row, failed: row.failed + 1 }
+				: { ...row, uncertain: row.uncertain + 1 },
+		);
+	}
+	return [...bySender.values()].toSorted((a, b) => compareCodePoints(a.email ?? '', b.email ?? ''));
+}
+
+/**
+ * Takes the stamp back from the entries a run claimed, so the next digest reports them.
+ *
+ * @param db The database.
+ * @param at The instant of the run.
+ */
+async function releaseProblems(db: Db, at: Date): Promise<void> {
+	await db.update(outboxEntries).set({ digestedAt: null }).where(eq(outboxEntries.digestedAt, at));
 }
 
 /**
@@ -475,10 +621,9 @@ async function sendDigest(
 	const { db } = run.ctx;
 	const stored = await getState<DigestMarker>(db, 'sending_digest_day');
 	const today = todayInClubZone(run.now);
-	if (stored?.day === today) return;
-	const rows = await countProblems(db, stored === null ? null : new Date(stored.at));
+	if (stored?.day === today || (await isWaiting(run, 'digest'))) return;
+	const rows = await claimProblems(db, run.now);
 	if (rows.length === 0) return;
-	const next: DigestMarker = { at: run.now.toISOString(), day: today };
 	await deliver(run, {
 		action: 'sending.digest_sent',
 		details: {
@@ -488,8 +633,10 @@ async function sendDigest(
 		},
 		key: 'sending_digest_day',
 		mail: digestMail(rows, new URL('/admin/sending', run.ctx.env.appUrl).toString()),
-		next,
+		next: { day: today },
 		previous: stored,
+		retryKey: 'digest',
+		undo: async () => releaseProblems(db, run.now),
 	});
 }
 
@@ -519,7 +666,7 @@ function createSendingWarningsStep(
 			await warnAbout(run, connections, secretWatch);
 			await warnAbout(run, connections, disturbanceWatch);
 			if (ctx.now().getTime() >= ctx.deadline) return { moreWork: true };
-			await sendDigest(run);
+			await attempt(async () => sendDigest(run));
 			return { moreWork: false };
 		},
 	};

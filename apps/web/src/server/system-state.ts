@@ -8,6 +8,7 @@ type StateKey =
 	| 'sending_digest_day'
 	| 'sending_disturbance_warned'
 	| 'sending_secret_warned'
+	| 'sending_warning_retry'
 	| 'setup_completed_at'
 	| 'setup_session_opened_at'
 	| 'stale_import_warned_at'

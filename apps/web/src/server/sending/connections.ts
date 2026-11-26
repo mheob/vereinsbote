@@ -9,7 +9,7 @@ import { and, count, eq, inArray, sql } from 'drizzle-orm';
 
 import { writeAudit } from '@/server/audit/audit';
 import type { AuditAction } from '@/server/audit/audit';
-import { todayInClubZone } from '@/server/contacts/calendar';
+import { daysUntil, todayInClubZone } from '@/server/contacts/calendar';
 import { encryptSecret, secretAad } from '@/server/crypto/secrets';
 import type { Db } from '@/server/db/client';
 import { isForeignKeyViolationOf, isUniqueViolation } from '@/server/db/errors';
@@ -39,7 +39,6 @@ const SECRET_COLUMN = 'secret_ciphertext';
 const WEBHOOK_SECRET_COLUMN = 'webhook_secret_ciphertext';
 const CALENDAR_DATE = /^(?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2})$/u;
 const DAYS_IN_LONGEST_MONTH = 31;
-const MS_PER_DAY = 86_400_000;
 
 type ConnectionKind = 'graph' | 'resend';
 
@@ -569,9 +568,9 @@ function withDaysToExpiry(
 	connections: readonly Readonly<ConnectionSummary>[],
 	now: Date,
 ): SendingOverview['connections'][number][] {
-	const today = Date.parse(todayInClubZone(now));
+	const today = todayInClubZone(now);
 	const days = (expiresOn: string | null): number | null =>
-		expiresOn === null ? null : Math.round((Date.parse(expiresOn) - today) / MS_PER_DAY);
+		expiresOn === null ? null : daysUntil(today, expiresOn);
 	const result: SendingOverview['connections'][number][] = [];
 	for (const connection of connections) {
 		result.push({ ...connection, daysToExpiry: days(connection.secretExpiresOn) });

@@ -140,6 +140,8 @@ export const outboxEntries = pgTable(
 		attempts: integer('attempts').notNull().default(0),
 		claimedAt: timestamp('claimed_at', { withTimezone: true }),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		/** When the admins' digest reported the entry as failed or uncertain; null until then. */
+		digestedAt: timestamp('digested_at', { withTimezone: true }),
 		id: uuid('id').primaryKey().defaultRandom(),
 		lastErrorCode: text('last_error_code'),
 		messageId: text('message_id'),

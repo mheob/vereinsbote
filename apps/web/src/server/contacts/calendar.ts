@@ -114,5 +114,25 @@ function formatClubDate(at: Date, locale: Locale): string {
 	}).format(at);
 }
 
-export { CLUB_TIME_ZONE, formatCalendarDate, formatClubDate, parseCalendarDate, todayInClubZone };
+const MS_PER_DAY = 86_400_000;
+
+/**
+ * The whole days from one calendar date to another.
+ *
+ * @param from The first day, `YYYY-MM-DD`.
+ * @param to The second day, `YYYY-MM-DD`.
+ * @returns The days; negative when `to` lies before `from`.
+ */
+function daysUntil(from: string, to: string): number {
+	return Math.round((Date.parse(to) - Date.parse(from)) / MS_PER_DAY);
+}
+
+export {
+	CLUB_TIME_ZONE,
+	daysUntil,
+	formatCalendarDate,
+	formatClubDate,
+	parseCalendarDate,
+	todayInClubZone,
+};
 export type { DateParseResult };

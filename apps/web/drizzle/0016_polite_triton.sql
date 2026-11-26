@@ -1,0 +1,1 @@
+ALTER TABLE "outbox_entries" ADD COLUMN "digested_at" timestamp with time zone;

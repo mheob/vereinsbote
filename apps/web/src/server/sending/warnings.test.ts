@@ -129,6 +129,36 @@ async function auditEntries(
 	return db.select().from(auditLog).where(eq(auditLog.action, action));
 }
 
+// A mailer that refuses the mail to one address (or to all, without one) and records the others.
+function refusing(
+	refused: string | null,
+	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- the mailer records into `sent`
+	delivered: CapturingMailer,
+): CapturingMailer {
+	const mailer = new CapturingMailer();
+	mailer.send = async (mail) => {
+		await (refused === null || mail.to === refused
+			? Promise.reject(new Error('The provider refused the mail.'))
+			: delivered.send(mail));
+	};
+	return mailer;
+}
+
+async function tickWith(
+	db: Db,
+	at: string,
+	// oxlint-disable-next-line typescript/prefer-readonly-parameter-types -- the mailer records into `sent`
+	mailer: CapturingMailer,
+): Promise<void> {
+	await runTick({
+		db,
+		env: testEnv(),
+		now: () => new Date(at),
+		steps: [createSendingWarningsStep(() => mailer)],
+		storage: null,
+	});
+}
+
 // A mailer whose mails break the activity log once they are sent.
 function breakingMailer(db: Db): CapturingMailer {
 	const mailer = new CapturingMailer();
@@ -345,7 +375,7 @@ describe('the claim of the sending warnings', () => {
 			steps: [createSendingWarningsStep(() => breakingMailer(db))],
 			storage: null,
 		});
-		expect(report).toMatchObject({ steps: [{ name: 'sending-warnings', outcome: 'error' }] });
+		expect(report).toMatchObject({ steps: [{ name: 'sending-warnings', outcome: 'done' }] });
 		const markers = await db
 			.select({ value: systemState.value })
 			.from(systemState)
@@ -375,5 +405,84 @@ describe('the claim of the sending warnings', () => {
 		const mailer = new CapturingMailer();
 		await tickAt(db, NOW, mailer);
 		expect(mailer.sent).toHaveLength(1);
+	});
+});
+
+describe('a warning nobody received', () => {
+	it('is tried again after an hour, not at every tick', async () => {
+		const db = await createTestDb();
+		const { connectionId } = await setUpGraph(db);
+		await expireOn(db, connectionId, '2026-12-20');
+		const delivered = new CapturingMailer();
+		await tickWith(db, '2026-11-25T10:00:00Z', refusing(null, delivered));
+		const counts: number[] = [];
+		for (const at of ['2026-11-25T10:10:00Z', '2026-11-25T11:30:00Z', '2026-11-25T11:40:00Z']) {
+			// oxlint-disable-next-line no-await-in-loop -- the ticks follow one another
+			await tickWith(db, at, delivered);
+			counts.push(delivered.sent.length);
+		}
+		expect(counts).toStrictEqual([0, 1, 1]);
+	});
+
+	it('writes no log entry while it reached nobody', async () => {
+		const db = await createTestDb();
+		const { connectionId } = await setUpGraph(db);
+		await disturb(db, connectionId, NOW);
+		await tickWith(db, '2026-11-25T10:00:00Z', refusing(null, new CapturingMailer()));
+		await expect(auditEntries(db, 'sending.disturbance_warned')).resolves.toStrictEqual([]);
+	});
+
+	it('keeps the digest entries for the next try', async () => {
+		const db = await createTestDb();
+		const { senderId } = await setUpGraph(db);
+		await failEntries(db, senderId, [
+			{ claimedAt: new Date('2026-11-25T08:00:00Z'), status: 'failed' },
+		]);
+		const delivered = new CapturingMailer();
+		await tickWith(db, '2026-11-25T10:00:00Z', refusing(null, delivered));
+		await tickWith(db, '2026-11-25T12:00:00Z', delivered);
+		expect(delivered.sent).toHaveLength(1);
+	});
+
+	it('stays claimed when only one of two admins missed it', async () => {
+		const db = await createTestDb();
+		const { connectionId } = await setUpGraph(db);
+		await insertUser(db, {
+			email: 'second-admin@example.org',
+			isAdmin: true,
+			name: 'Second Admin',
+			status: 'active',
+		});
+		await expireOn(db, connectionId, '2026-12-20');
+		const delivered = new CapturingMailer();
+		await tickWith(db, '2026-11-25T10:00:00Z', refusing('second-admin@example.org', delivered));
+		await tickWith(db, '2026-11-25T14:00:00Z', delivered);
+		expect(delivered.sent.map((mail) => mail.to)).toStrictEqual(['admin@example.org']);
+	});
+});
+
+describe('the digest and the sweep', () => {
+	it('reports an entry the sweep turned uncertain after an earlier digest', async () => {
+		const db = await createTestDb();
+		const { senderId } = await setUpGraph(db);
+		await failEntries(db, senderId, [
+			{ claimedAt: new Date('2026-11-25T08:00:00Z'), status: 'failed' },
+		]);
+		await db.insert(outboxEntries).values({
+			claimedAt: new Date('2026-11-25T08:30:00Z'),
+			priority: 'group',
+			senderId,
+			source: 'wave',
+			sourceId: WAVE_ID,
+			status: 'sending',
+		});
+		const mailer = new CapturingMailer();
+		await tickAt(db, NOW, mailer);
+		await db
+			.update(outboxEntries)
+			.set({ lastErrorCode: 'outbox.interrupted', status: 'uncertain' })
+			.where(eq(outboxEntries.status, 'sending'));
+		await tickAt(db, new Date('2026-11-26T09:00:00Z'), mailer);
+		expect(textOf(mailer.sent[1])).toContain('verein@example.org: 0 fehlgeschlagen, 1 unsicher');
 	});
 });
