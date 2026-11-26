@@ -10,13 +10,13 @@ import type { PgUpdateSetSource } from 'drizzle-orm/pg-core';
 
 import { SUBREQUEST_LIMIT_CODE } from '@/platform/subrequests';
 import type { Db } from '@/server/db/client';
-import { mailConnections, outboxEntries, senders } from '@/server/db/schema';
+import { mailConnections, outboxEntries, senders, waves } from '@/server/db/schema';
 import type { Env } from '@/server/env';
 import type { ObjectStorage } from '@/server/storage/storage';
 
 import type { QuotaScope } from './open-transport';
 import { inScope } from './quota';
-import type { OutgoingMail, SendResult } from './transport';
+import type { IdempotencyWindow, OutgoingMail, SendResult } from './transport';
 
 type EntryStatus =
 	| 'bounced'
@@ -67,13 +67,29 @@ type PreparedMail =
 	| { kind: 'skip'; reason: string }
 	| { kind: 'fail'; code: string };
 
+/** What a preparer gets besides the database and the entry. */
+interface PrepareContext {
+	readonly now: Date;
+	readonly storage: ObjectStorage | null;
+	readonly env: Env;
+}
+
+/** Prepares one entry. */
+type PrepareEntry = (
+	db: Db,
+	entry: Readonly<ClaimedEntry>,
+	ctx: Readonly<PrepareContext>,
+) => Promise<PreparedMail>;
+
 /** Builds the mail of an entry of one source (4b: the wave). */
 interface EntryPreparer {
-	readonly prepare: (
-		db: Db,
-		entry: Readonly<ClaimedEntry>,
-		ctx: Readonly<{ now: Date; storage: ObjectStorage | null; env: Env }>,
-	) => Promise<PreparedMail>;
+	readonly prepare: PrepareEntry;
+	/**
+	 * Starts a run of the outbox: the function prepares the entries of that run and may keep what
+	 * they share for its length (a wave's files, read once per run). Without it every entry goes
+	 * to `prepare`.
+	 */
+	readonly startRun?: () => PrepareEntry;
 }
 
 /** What becomes of a taken entry. `attempt`: whether it counts as an attempt. */
@@ -182,6 +198,33 @@ function outcomeOf(
 ): EntryOutcome {
 	if (result.ok) return { kind: 'sent', providerId: result.providerId };
 	return refusalOutcome(result, at);
+}
+
+/**
+ * Ruling R7: a retry is safe only while the provider still keeps the entry's idempotency key. Once
+ * the first attempt is older than the key is trusted, a refusal that may have sent the mail makes
+ * the entry `uncertain` instead of a retry, as an unclear send does (Design 8.5): only a person
+ * sends it again.
+ *
+ * @param outcome What the answer makes of the entry (`outcomeOf`).
+ * @param at The answer, the first attempt of the entry, the instant and the provider's key window
+ *   (null for a provider without keys).
+ * @returns The outcome, `uncertain` instead of a retry the key no longer protects.
+ */
+function guardKeyLifetime(
+	outcome: Readonly<EntryOutcome>,
+	at: Readonly<{
+		result: Readonly<SendResult>;
+		firstAttemptAt: Date;
+		now: Date;
+		idempotency: Readonly<IdempotencyWindow> | null;
+	}>,
+): EntryOutcome {
+	const { idempotency, result } = at;
+	if (outcome.kind !== 'retry' || idempotency === null || result.ok) return outcome;
+	const age = at.now.getTime() - at.firstAttemptAt.getTime();
+	if (age <= idempotency.trustedMs || !idempotency.mayHaveSent(result.code)) return outcome;
+	return { code: result.code, kind: 'uncertain' };
 }
 
 /**
@@ -351,28 +394,42 @@ async function claimEntry(
 }
 
 /**
- * Stores the address a mail goes to, right before it is sent, and checks that the entry is still
- * this run's.
+ * Stores the address a mail goes to and, on its first attempt, the time of that attempt (the time
+ * of the take, a moment earlier), right before it is sent, and checks that the entry is still this
+ * run's.
  *
  * @param db The database.
  * @param claim The take.
  * @param recipient The address.
- * @returns False when the entry is no longer this run's: then nothing may be sent.
+ * @returns When the entry's mail first went to a provider, or null when the entry is no longer
+ *   this run's: then nothing may be sent.
  */
 async function recordRecipient(
 	db: Db,
 	claim: Readonly<Claim>,
 	recipient: string,
-): Promise<boolean> {
-	const updated = await db
+): Promise<Date | null> {
+	const [updated] = await db
 		.update(outboxEntries)
-		.set({ recipient })
+		.set({
+			firstAttemptAt: sql`coalesce(${outboxEntries.firstAttemptAt}, ${claim.claimedAt.toISOString()}::timestamptz)`,
+			recipient,
+		})
 		.where(stillTaken(claim))
-		.returning({ id: outboxEntries.id });
-	return updated.length > 0;
+		.returning({ firstAttemptAt: outboxEntries.firstAttemptAt });
+	return updated?.firstAttemptAt ?? null;
 }
 
 const nextAttempt = sql`${outboxEntries.attempts} + 1`;
+
+/**
+ * The status of an entry that waits again: `planned`, unless its wave was stopped while its mail
+ * was on the way. Then `cancelled`, as the stop cancelled every other planned entry of the wave
+ * (Design 11.4): the send that ran finished, no further attempt follows.
+ */
+const plannedUnlessStopped = sql<
+	'cancelled' | 'planned'
+>`case when exists (select 1 from ${waves} where ${waves.id} = ${outboxEntries.waveId} and ${waves.stoppedAt} is not null) then 'cancelled' else 'planned' end`;
 
 /**
  * The columns of an outcome that counts as an attempt.
@@ -391,7 +448,12 @@ function attemptChanges(
 	}
 	if (outcome.kind === 'retry') {
 		const { at, code } = outcome;
-		return { attempts: nextAttempt, lastErrorCode: code, nextAttemptAt: at, status: 'planned' };
+		return {
+			attempts: nextAttempt,
+			lastErrorCode: code,
+			nextAttemptAt: at,
+			status: plannedUnlessStopped,
+		};
 	}
 	return { attempts: nextAttempt, lastErrorCode: outcome.code, status: 'uncertain' };
 }
@@ -418,12 +480,13 @@ function changesOf(
 	if (kind === 'skipped') return { lastErrorCode: outcome.reason, status: 'skipped' };
 	// `release`, `pause` and `requeue`: the entry waits for its connection, its scope or the next
 	// invocation, without an attempt.
-	return { lastErrorCode: outcome.code, status: 'planned' };
+	return { lastErrorCode: outcome.code, status: plannedUnlessStopped };
 }
 
 /**
  * Stores what became of a taken entry, unless it is no longer this run's (a person or another
- * run changed it in the meantime; their state stays).
+ * run changed it in the meantime; their state stays). An entry that would wait again is cancelled
+ * when its wave was stopped meanwhile.
  *
  * @param db The database.
  * @param claim The take.
@@ -534,6 +597,7 @@ export {
 	disturbConnection,
 	dueSenders,
 	failOrphans,
+	guardKeyLifetime,
 	hasDueEntry,
 	markUncertain,
 	nextAttemptDelay,
@@ -551,5 +615,7 @@ export type {
 	EntryPreparer,
 	EntryPriority,
 	EntryStatus,
+	PrepareContext,
+	PrepareEntry,
 	PreparedMail,
 };

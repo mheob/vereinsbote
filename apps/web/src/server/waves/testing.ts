@@ -4,20 +4,22 @@
  */
 import { randomUUID } from 'node:crypto';
 
-import { eq } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 
 import { DEFAULT_SALUTATIONS } from '@/mail/placeholders/salutation';
 import { emptyTemplate } from '@/mail/starters/starters';
 import type { TemplateInput } from '@/mail/templates/template-schema';
 import { setUpClub, userWith } from '@/server/contacts/testing';
 import type { Db } from '@/server/db/client';
-import { occasions, waves } from '@/server/db/schema';
+import { occasions, outboxEntries, waves } from '@/server/db/schema';
 import { createTestDb } from '@/server/db/test-db';
 import type { OccasionKind } from '@/server/occasions/limits';
 import { createOccasion } from '@/server/occasions/occasions';
 import type { Principal } from '@/server/permissions/principal';
 import { graphConnection, resendConnection, senderOn } from '@/server/sending/testing';
-import { createTemplate } from '@/server/templates/testing';
+import { APP_ORIGIN, createTemplate } from '@/server/templates/testing';
+
+import { confirmWave } from './waves';
 
 interface WaveClub {
 	readonly db: Db;
@@ -129,5 +131,52 @@ async function insertWave(
 	return row.id;
 }
 
-export { insertWave, setUpWaveClub, setUpWaveClubOn };
+/**
+ * Confirms a wave of the club's occasion for every member, sent at once.
+ *
+ * @param c The club.
+ * @param now The instant of the confirmation.
+ * @param attachmentIds The files of the flow.
+ * @returns The id of the wave.
+ * @throws {Error} When the confirmation made no wave.
+ */
+async function confirmTestWave(
+	c: WaveClub,
+	now: Date,
+	attachmentIds: readonly string[] = [],
+): Promise<string> {
+	const confirmed = await confirmWave(
+		c.db,
+		c.sender,
+		{
+			attachmentIds,
+			notBefore: null,
+			occasionId: c.occasionId,
+			requestId: randomUUID(),
+			selection: { contactIds: null, filters: {}, kind: 'member', query: '' },
+		},
+		APP_ORIGIN,
+		now,
+	);
+	if (!('waveId' in confirmed)) throw new Error(`The test wave was refused: ${confirmed.refused}`);
+	return confirmed.waveId;
+}
+
+/**
+ * The outbox entries of a wave, ordered by id.
+ *
+ * @param db The database.
+ * @param waveId The wave.
+ * @returns Their ids.
+ */
+async function waveEntryIds(db: Db, waveId: string): Promise<string[]> {
+	const rows = await db
+		.select({ id: outboxEntries.id })
+		.from(outboxEntries)
+		.where(eq(outboxEntries.waveId, waveId))
+		.orderBy(asc(outboxEntries.id));
+	return rows.map(({ id }) => id);
+}
+
+export { confirmTestWave, insertWave, setUpWaveClub, setUpWaveClubOn, waveEntryIds };
 export type { WaveClub };

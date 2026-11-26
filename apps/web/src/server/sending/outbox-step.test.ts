@@ -5,12 +5,16 @@ import type { Platform } from '@/platform/platform';
 import { createSubrequestBudget } from '@/platform/subrequests';
 import type { SubrequestBudget } from '@/platform/subrequests';
 import { compareCodePoints } from '@/server/compare-code-points';
-import { setUpClub } from '@/server/contacts/testing';
+import { insertContact, setUpClub } from '@/server/contacts/testing';
 import { SecretDecryptError } from '@/server/crypto/secrets';
 import type { Db, DbHandle } from '@/server/db/client';
 import { mailConnections, outboxEntries, senders } from '@/server/db/schema';
 import { createTestDb } from '@/server/db/test-db';
 import type { TickStep } from '@/server/tick/tick';
+import { wavePreparer } from '@/server/waves/preparer';
+import { stopWave } from '@/server/waves/stop';
+import { confirmTestWave, setUpWaveClub, waveEntryIds } from '@/server/waves/testing';
+import type { WaveClub } from '@/server/waves/testing';
 
 import { openSenderTransport } from './open-transport';
 import type { ClaimedEntry, EntryPreparer, PreparedMail } from './outbox';
@@ -18,6 +22,7 @@ import { KICK_BUDGET_MS, createOutboxStep, kickOutbox, kickRun } from './outbox-
 import type { OutboxDeps } from './outbox-step';
 import { quotaToday, scopePause } from './quota';
 import { fakeProviders, graphConnection, resendConnection, senderOn, testEnv } from './testing';
+import type { FakeCall } from './testing';
 import type { OutgoingMail, SendFailureClass, SendResult, Transport } from './transport';
 
 const WAVE_ID = '00000000-0000-4000-8000-0000000000aa';
@@ -397,6 +402,62 @@ async function runUntilSettled(
 		waits.push(wait);
 		harness.clock.advance(wait);
 	}
+}
+
+/** A Resend club with a wave of one member's mail. */
+interface ResendWaveEntry {
+	readonly c: WaveClub;
+	readonly db: Db;
+	readonly waveId: string;
+	readonly id: string;
+}
+
+/**
+ * A club whose occasion sends through Resend, with a wave to one member confirmed at `START`.
+ *
+ * @returns The club, the wave and the id of its one entry.
+ */
+async function resendWaveEntry(): Promise<ResendWaveEntry> {
+	const c = await setUpWaveClub({ provider: 'resend' });
+	await insertContact(c.db, { email: 'mitglied-1@example.org', kind: 'member', memberNumber: '1' });
+	const waveId = await confirmTestWave(c, new Date(START));
+	const [id = ''] = await waveEntryIds(c.db, waveId);
+	return { c, db: c.db, id, waveId };
+}
+
+/**
+ * The outbox step with the wave preparer and real transports.
+ *
+ * @param fetchFn The `fetch` of the transports.
+ * @param clock The clock.
+ * @returns The step.
+ */
+function waveStep(fetchFn: typeof fetch, clock: TestClock): TickStep {
+	return createOutboxStep({
+		fetch: fetchFn,
+		preparers: { wave: wavePreparer },
+		sleep: clock.sleep,
+	});
+}
+
+/**
+ * The requests that reached Resend's `/emails`: their idempotency keys, how many bodies differ,
+ * and the first body.
+ *
+ * @param calls What the fake providers saw.
+ * @returns The keys, the number of distinct bodies and the first body.
+ */
+function resendRequests(calls: readonly FakeCall[]): {
+	keys: (string | null)[];
+	versions: number;
+	first: string;
+} {
+	const sends = calls.filter(({ url }) => url.endsWith('/emails'));
+	return {
+		first: sends[0]?.body ?? '',
+		keys: sends.map(({ headers }) => headers.get('idempotency-key')),
+		versions: new Set(sends.map(({ body }) => body)).size,
+	};
 }
 
 /**
@@ -1325,6 +1386,83 @@ describe(createOutboxStep, () => {
 		});
 		expect(log).toHaveBeenCalledWith('outbox entry not prepared', 'Error');
 		log.mockRestore();
+	});
+
+	it('retries a resend mail of a wave with the same message id, key and content, uncertain after 23 hours', async () => {
+		const { db, id } = await resendWaveEntry();
+		const providers = fakeProviders({ send: 500 });
+		const clock = testClock();
+		const harness = { clock, db };
+		const step = waveStep(providers.fetch, clock);
+		await runStep(harness, step);
+		clock.advance(await waitOf(harness, id));
+		await runStep(harness, step);
+		const row = await readEntry(db, id);
+		expect(row).toMatchObject({
+			attempts: 2,
+			firstAttemptAt: new Date(START),
+			lastErrorCode: 'resend.server',
+			status: 'planned',
+		});
+		expect(resendRequests(providers.calls)).toMatchObject({
+			first: expect.stringContaining(`"Message-ID":"${row.messageId}"`) as unknown,
+			keys: [id, id],
+			versions: 1,
+		});
+		expect(resendRequests(providers.calls).first).toMatch(
+			/"List-Unsubscribe":"<https:\/\/bote\.example\.org\/unsubscribe\/[\w-]+>"/u,
+		);
+		clock.advance(DAY_MS);
+		await runStep(harness, step);
+		clock.advance(DAY_MS);
+		await runStep(harness, step);
+		await expect(readEntry(db, id)).resolves.toMatchObject({
+			attempts: 3,
+			lastErrorCode: 'resend.server',
+			status: 'uncertain',
+		});
+		expect(resendRequests(providers.calls)).toMatchObject({ keys: [id, id, id], versions: 1 });
+	});
+
+	it('cancels an entry of a wave stopped while its mail was on the way instead of retrying it', async () => {
+		const { c, db, waveId } = await resendWaveEntry();
+		const providers = fakeProviders({ send: 500 });
+		const stops: { cancelled: number }[] = [];
+		const stopWhileSending: typeof fetch = async (input, init) => {
+			stops.push(await stopWave(db, c.sender, waveId));
+			return providers.fetch(input, init);
+		};
+		const clock = testClock();
+		await runStep({ clock, db }, waveStep(stopWhileSending, clock));
+		expect(stops).toStrictEqual([{ cancelled: 0 }]);
+		const rows = await db.select().from(outboxEntries).where(eq(outboxEntries.waveId, waveId));
+		expect(statesOf(rows)).toStrictEqual([['cancelled', 1, 'resend.server']]);
+	});
+
+	it('starts the run of a preparer once per run of the step', async () => {
+		const db = await createTestDb();
+		const { senderId } = await graphSender(db);
+		await planEntries(db, senderId, 2);
+		const clock = testClock();
+		const preparer = testPreparer();
+		const runs: number[] = [];
+		const startRun = (): EntryPreparer['prepare'] => {
+			runs.push(runs.length);
+			return preparer.prepare;
+		};
+		const transports = new Map([[senderId, testTransport().transport]]);
+		const step = outboxStep({ clock, preparer: { ...preparer, startRun }, transports });
+		await runStep({ clock, db }, step);
+		expect({ prepared: preparer.seen.length, runs: runs.length }).toStrictEqual({
+			prepared: 2,
+			runs: 1,
+		});
+		await planEntries(db, senderId, 1);
+		await runStep({ clock, db }, step);
+		expect({ prepared: preparer.seen.length, runs: runs.length }).toStrictEqual({
+			prepared: 3,
+			runs: 2,
+		});
 	});
 
 	it('fails planned entries whose sender is gone', async () => {

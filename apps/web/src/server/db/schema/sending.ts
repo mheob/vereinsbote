@@ -145,6 +145,11 @@ export const outboxEntries = pgTable(
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 		/** When the admins' digest reported the entry as failed or uncertain; null until then. */
 		digestedAt: timestamp('digested_at', { withTimezone: true }),
+		/**
+		 * When its mail first went to a provider; kept for every retry. A provider keeps an
+		 * idempotency key only for a while (ruling R7).
+		 */
+		firstAttemptAt: timestamp('first_attempt_at', { withTimezone: true }),
 		id: uuid('id').primaryKey().defaultRandom(),
 		lastErrorCode: text('last_error_code'),
 		messageId: text('message_id'),

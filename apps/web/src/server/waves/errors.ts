@@ -1,3 +1,4 @@
+/* oxlint-disable max-classes-per-file -- the typed refusals of the wave modules live together */
 /*
  * The expected refusals of the wave module. The server functions turn them into results; no
  * message names a file, a contact or an occasion. A gone, changed or archived occasion is told by
@@ -15,4 +16,28 @@ class WaveAttachmentsGoneError extends Error {
 	}
 }
 
-export { WaveAttachmentsGoneError };
+/** No wave has the id (any more). */
+class WaveNotFoundError extends Error {
+	public constructor() {
+		super('The wave does not exist.');
+		this.name = 'WaveNotFoundError';
+	}
+}
+
+/** No outbox entry of a wave has the id (any more). */
+class WaveEntryNotFoundError extends Error {
+	public constructor() {
+		super('The entry of the wave does not exist.');
+		this.name = 'WaveEntryNotFoundError';
+	}
+}
+
+/** The entry is not in the state the action needs: only an `uncertain` entry is sent again. */
+class WaveEntryStateError extends Error {
+	public constructor() {
+		super('The entry of the wave is not uncertain.');
+		this.name = 'WaveEntryStateError';
+	}
+}
+
+export { WaveAttachmentsGoneError, WaveEntryNotFoundError, WaveEntryStateError, WaveNotFoundError };

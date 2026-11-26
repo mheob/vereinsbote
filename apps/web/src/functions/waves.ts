@@ -5,14 +5,20 @@ import type { AppContext } from '@/platform/context';
 import type { RemoveAttachmentResult, UploadAttachmentResult } from '@/server/attachments/failures';
 import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from '@/server/attachments/limits';
 import { contactListQuerySchema } from '@/server/contacts/list-query';
-import type { ConfirmWaveResult, SummarizeWaveResult } from '@/server/waves/failures';
+import type {
+	ConfirmWaveResult,
+	ResendUncertainResult,
+	StopWaveResult,
+	SummarizeWaveResult,
+} from '@/server/waves/failures';
 
 /*
  * The server functions of the send flow: the attachments, the summary of a wave and its
- * confirmation. Server modules are imported inside the handlers, so they stay out of the client
- * bundle. Each handler authorizes itself from the session principal. The file goes as form data,
- * so the request body limit answers an oversized upload before the function runs. The selection
- * of the recipients goes by POST, never into a URL.
+ * confirmation, stopping a wave and sending an uncertain entry again. Server modules are imported
+ * inside the handlers, so they stay out of the client bundle. Each handler authorizes itself from
+ * the session principal. The file goes as form data, so the request body limit answers an
+ * oversized upload before the function runs. The selection of the recipients goes by POST, never
+ * into a URL.
  */
 
 /** The longest id of an attachment (22 characters) with room to spare. */
@@ -34,6 +40,8 @@ const summaryRequest = z.object({
 	occasionId: z.uuid(),
 	selection: selectionRequest,
 });
+const stopRequest = z.object({ waveId: z.uuid() });
+const resendRequest = z.object({ entryId: z.uuid() });
 const confirmRequest = summaryRequest.extend({
 	/** Null: at once. */
 	notBefore: z.date().nullable(),
@@ -156,4 +164,38 @@ const confirmWave = createServerFn({ method: 'POST' })
 		return result;
 	});
 
-export { confirmWave, removeAttachment, summarizeWave, uploadAttachment };
+/** Stops a wave: its planned mails are cancelled; mails on their way finish. Needs `send`. */
+const stopWave = createServerFn({ method: 'POST' })
+	.validator(stopRequest)
+	.handler(async ({ data }): Promise<StopWaveResult> => {
+		const [{ requireRequestPrincipal }, { stopWaveResult }] = await Promise.all([
+			import('@/platform/request-principal'),
+			import('@/server/waves/failures'),
+		]);
+		const { context, principal } = await requireRequestPrincipal();
+		return stopWaveResult(context.db, principal, data.waveId);
+	});
+
+/**
+ * Sends an uncertain entry of a wave again, after a person checked it (Design 8.5): the next run
+ * of the outbox takes it. Needs `send`.
+ */
+const resendUncertain = createServerFn({ method: 'POST' })
+	.validator(resendRequest)
+	.handler(async ({ data }): Promise<ResendUncertainResult> => {
+		const [{ requireRequestPrincipal }, { resendUncertainResult }] = await Promise.all([
+			import('@/platform/request-principal'),
+			import('@/server/waves/failures'),
+		]);
+		const { context, principal } = await requireRequestPrincipal();
+		return resendUncertainResult(context.db, principal, data.entryId);
+	});
+
+export {
+	confirmWave,
+	removeAttachment,
+	resendUncertain,
+	stopWave,
+	summarizeWave,
+	uploadAttachment,
+};

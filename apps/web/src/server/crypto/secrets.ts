@@ -121,6 +121,10 @@ export {
 	deriveLoginWindowKey,
 	deriveSecretsKey,
 	encryptSecret,
+	fromBase64Url,
 	hashLoginWindowEmail,
+	hkdfParams,
+	importHkdfKey,
 	secretAad,
+	toBase64Url,
 };

@@ -7,6 +7,7 @@
  */
 import { and, count, eq, inArray, isNull, lte } from 'drizzle-orm';
 
+import { UNSUBSCRIBE_URL_KEY } from '@/mail/placeholders/registry';
 import type { SalutationTexts } from '@/mail/placeholders/salutation';
 import { compileMail } from '@/mail/render/compile';
 import type { CompiledMail } from '@/mail/render/compile';
@@ -36,6 +37,7 @@ import { GRAPH_REQUEST_LIMIT_BYTES, graphRequestBytes } from '@/server/sending/m
 import { estimateDays, inScope, quotaToday } from '@/server/sending/quota';
 import { templateMailSource } from '@/server/templates/sending-values';
 import { getTemplate } from '@/server/templates/templates';
+import { standInUnsubscribeLink } from '@/server/unsubscribe/url';
 
 import { WaveAttachmentsGoneError } from './errors';
 import { planMails } from './merge';
@@ -120,8 +122,6 @@ interface WavePlan {
 
 /** The length of every value in the probe mail: a generous bound for names and texts. */
 const STAND_IN_VALUE_LENGTH = 100;
-/** The length of a stand-in unsubscribe token: enough for several merged contacts. */
-const STAND_IN_TOKEN_LENGTH = 600;
 /** The length of the random part of a Message-ID (`newMessageId`). */
 const MESSAGE_ID_LENGTH = 22;
 /** Rows per insert: well below the 65,535 parameters of a PostgreSQL statement. */
@@ -296,21 +296,36 @@ async function planWave(
 }
 
 /**
+ * The unsubscribe link the probe carries: a stand-in token as long as the longest token a mail of
+ * the plan gets (every merged contact of an address is in it), so that the probe is never smaller
+ * than a real mail.
+ *
+ * @param plan The plan.
+ * @param appOrigin The origin of the app.
+ * @returns The link, or null when the occasion sends none.
+ */
+function standInLink(plan: WavePlan, appOrigin: string): string | null {
+	const { occasion } = plan;
+	if (!occasion.unsubscribe) return null;
+	const target = { areaId: occasion.areaId, occasionId: occasion.id };
+	return standInUnsubscribeLink(appOrigin, target, plan.mails);
+}
+
+/**
  * The compiled mail filled with stand-ins: every value `STAND_IN_VALUE_LENGTH` characters long,
- * the unsubscribe link with a long token.
+ * the unsubscribe link the probe's header carries too.
  *
  * @param mail The compiled mail.
- * @param appOrigin The origin of the app.
+ * @param link The stand-in unsubscribe link, or null.
  * @returns Subject, HTML and text, or none when the stand-ins do not fill it.
  */
 function filledWithStandIns(
 	mail: CompiledMail,
-	appOrigin: string,
+	link: string | null,
 ): Readonly<{ subject: string; html: string; text: string }> {
-	const link = `${appOrigin}/unsubscribe/${'x'.repeat(STAND_IN_TOKEN_LENGTH)}`;
 	const value = 'x'.repeat(STAND_IN_VALUE_LENGTH);
 	const values = new Map(
-		mail.slots.map(({ key }) => [key, key === 'unsubscribe.url' ? link : value]),
+		mail.slots.map(({ key }) => [key, key === UNSUBSCRIBE_URL_KEY ? (link ?? '') : value]),
 	);
 	const filled = fillMail(mail, values);
 	return filled.ok ? filled.mail : NO_CONTENT;
@@ -327,10 +342,10 @@ function filledWithStandIns(
  * @returns True for a Graph sender whose request would be too large.
  */
 function graphTooLarge(plan: WavePlan, appOrigin: string, now: Date): boolean {
-	const { occasion, sender, template } = plan;
+	const { sender, template } = plan;
 	if (sender.provider !== 'graph') return false;
-	const content =
-		template.mail === null ? NO_CONTENT : filledWithStandIns(template.mail, appOrigin);
+	const link = standInLink(plan, appOrigin);
+	const content = template.mail === null ? NO_CONTENT : filledWithStandIns(template.mail, link);
 	const domain = sender.email.slice(sender.email.lastIndexOf('@') + 1);
 	const probe = {
 		...content,
@@ -343,7 +358,7 @@ function graphTooLarge(plan: WavePlan, appOrigin: string, now: Date): boolean {
 		from: { address: sender.email, name: sender.displayName },
 		idempotencyKey: null,
 		kind: 'regular' as const,
-		listUnsubscribe: occasion.unsubscribe ? `${appOrigin}/unsubscribe/x` : null,
+		listUnsubscribe: link,
 		messageId: `<${'x'.repeat(MESSAGE_ID_LENGTH)}@${domain}>`,
 		replyTo: sender.replyTo,
 		to: sender.email,

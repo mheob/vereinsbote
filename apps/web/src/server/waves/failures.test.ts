@@ -1,18 +1,26 @@
 import { randomUUID } from 'node:crypto';
 
+import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vite-plus/test';
 
 import { storeAttachment } from '@/server/attachments/attachments';
 import { pdfBytes } from '@/server/attachments/testing';
 import { insertContact } from '@/server/contacts/testing';
+import { outboxEntries } from '@/server/db/schema';
 import { OccasionChangedError, OccasionInvalidError } from '@/server/occasions/errors';
 import { removeOccasion } from '@/server/occasions/occasions';
 import { ForbiddenError } from '@/server/permissions/principal';
 import { createMemoryStorage } from '@/server/storage/memory';
 import { APP_ORIGIN } from '@/server/templates/testing';
 
-import { confirmWaveResult, summarizeWaveResult, waveFailure } from './failures';
-import { insertWave, setUpWaveClub } from './testing';
+import {
+	confirmWaveResult,
+	resendUncertainResult,
+	stopWaveResult,
+	summarizeWaveResult,
+	waveFailure,
+} from './failures';
+import { confirmTestWave, insertWave, setUpWaveClub, waveEntryIds } from './testing';
 
 const NOW = new Date('2026-11-26T09:00:00.000Z');
 const EVERY_MEMBER = { contactIds: null, filters: {}, kind: 'member', query: '' } as const;
@@ -98,5 +106,44 @@ describe(confirmWaveResult, () => {
 				NOW,
 			),
 		).resolves.toStrictEqual({ failure: 'archived', ok: false });
+	});
+});
+
+describe(stopWaveResult, () => {
+	it('gives the cancelled entries, or that the wave is gone', async () => {
+		const c = await setUpWaveClub();
+		await insertContact(c.db, { email: 'anna@example.org', kind: 'member', memberNumber: '1' });
+		const waveId = await confirmTestWave(c, NOW);
+		await expect(stopWaveResult(c.db, c.sender, waveId)).resolves.toStrictEqual({
+			cancelled: 1,
+			ok: true,
+		});
+		await expect(stopWaveResult(c.db, c.sender, randomUUID())).resolves.toStrictEqual({
+			failure: 'gone',
+			ok: false,
+		});
+		await expect(stopWaveResult(c.db, c.editor, waveId)).rejects.toBeInstanceOf(ForbiddenError);
+	});
+});
+
+describe(resendUncertainResult, () => {
+	it('sends an uncertain entry again, or says why not', async () => {
+		const c = await setUpWaveClub();
+		await insertContact(c.db, { email: 'anna@example.org', kind: 'member', memberNumber: '1' });
+		const [id = ''] = await waveEntryIds(c.db, await confirmTestWave(c, NOW));
+		await expect(resendUncertainResult(c.db, c.sender, id)).resolves.toStrictEqual({
+			failure: 'notUncertain',
+			ok: false,
+		});
+		await c.db
+			.update(outboxEntries)
+			.set({ messageId: '<unklar@example.org>', status: 'uncertain' })
+			.where(eq(outboxEntries.id, id));
+		await expect(resendUncertainResult(c.db, c.sender, id)).resolves.toStrictEqual({ ok: true });
+		await expect(resendUncertainResult(c.db, c.sender, randomUUID())).resolves.toStrictEqual({
+			failure: 'gone',
+			ok: false,
+		});
+		await expect(resendUncertainResult(c.db, c.editor, id)).rejects.toBeInstanceOf(ForbiddenError);
 	});
 });

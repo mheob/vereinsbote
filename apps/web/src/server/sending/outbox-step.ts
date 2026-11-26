@@ -16,6 +16,11 @@
  * The step stops starting sends shortly before its deadline, so that the later steps of the tick
  * still run, and reports `moreWork` while due entries are left that hang neither on a limit, a
  * pause, a disturbance nor a spent subrequest budget.
+ *
+ * Each run starts the run of every preparer it uses (`EntryPreparer.startRun`), so what the
+ * entries of a run share (a wave's files) is read once per run. A Resend entry whose first attempt
+ * is older than its idempotency key is trusted is not retried after an answer that may have sent
+ * it: it becomes `uncertain` (ruling R7).
  */
 import type { Platform } from '@/platform/platform';
 import { budgetedFetch, isSubrequestLimit, SUBREQUEST_LIMIT_CODE } from '@/platform/subrequests';
@@ -39,6 +44,7 @@ import {
 	disturbConnection,
 	dueSenders,
 	failOrphans,
+	guardKeyLifetime,
 	hasDueEntry,
 	markUncertain,
 	outcomeOf,
@@ -53,6 +59,7 @@ import type {
 	DueSender,
 	EntryOutcome,
 	EntryPreparer,
+	PrepareEntry,
 	PreparedMail,
 } from './outbox';
 import { countSent, liftPause, mayStart, pauseScope, quotaToday, scopePause } from './quota';
@@ -294,6 +301,8 @@ class OutboxRun {
 	private readonly windows = new Map<QuotaScope, SendWindow>();
 	private readonly scopes = new Map<QuotaScope, ScopeMode>();
 	private readonly connections = new Map<string, ConnectionState>();
+	/** The prepare function of each source for this run (`EntryPreparer.startRun`). */
+	private readonly prepares = new Map<ClaimedEntry['source'], PrepareEntry>();
 	/** The `fetch` of the transports: it takes every request from the invocation's budget. */
 	private readonly fetch: typeof fetch;
 	/** No send starts at or after this instant, epoch milliseconds. */
@@ -633,7 +642,7 @@ class OutboxRun {
 		if (preparer === undefined) {
 			return { outcome: { attempt: false, code: 'outbox.noSource', kind: 'failed' }, result: null };
 		}
-		const prepared = await this.prepare(preparer, claim);
+		const prepared = await this.prepare(this.preparerOfRun(source, preparer), claim);
 		if (prepared?.kind === 'send') return this.send(lane, claim, prepared);
 		const outcome = unsentOutcome(prepared, { attempts, now: this.ctx.now() });
 		return prepared === null
@@ -642,20 +651,36 @@ class OutboxRun {
 	}
 
 	/**
+	 * The prepare function of a source for this run: started once per run when the preparer keeps
+	 * what its entries share (`startRun`), its plain `prepare` otherwise.
+	 *
+	 * @param source The source.
+	 * @param preparer Its preparer.
+	 * @returns The prepare function.
+	 */
+	private preparerOfRun(source: ClaimedEntry['source'], preparer: EntryPreparer): PrepareEntry {
+		const known = this.prepares.get(source);
+		if (known !== undefined) return known;
+		const prepare = preparer.startRun?.() ?? preparer.prepare;
+		this.prepares.set(source, prepare);
+		return prepare;
+	}
+
+	/**
 	 * Runs the preparer. A preparer that throws is logged by its code or name; the entry is tried
 	 * again later.
 	 *
-	 * @param preparer The preparer of the entry's source.
+	 * @param prepare The prepare function of the entry's source for this run.
 	 * @param claim The take.
 	 * @returns The prepared mail, or null when the preparer threw.
 	 */
 	private async prepare(
-		preparer: EntryPreparer,
+		prepare: PrepareEntry,
 		claim: Readonly<Claim>,
 	): Promise<PreparedMail | null> {
 		const { db, env, storage } = this.ctx;
 		try {
-			return await preparer.prepare(db, claim.entry, { env, now: this.ctx.now(), storage });
+			return await prepare(db, claim.entry, { env, now: this.ctx.now(), storage });
 		} catch (error) {
 			// oxlint-disable-next-line no-console -- name or code only, the message may carry contact data
 			console.error('outbox entry not prepared', errorLabel(error));
@@ -666,7 +691,8 @@ class OutboxRun {
 	/**
 	 * Sends the prepared mail with the entry's Message-ID (ruling R4) and its id as idempotency key
 	 * to the prepared address, after storing that address and checking that the entry is still this
-	 * run's. Both stay the same for every attempt of the entry, whatever the preparer hands.
+	 * run's. Both stay the same for every attempt of the entry, whatever the preparer hands. A retry
+	 * that the provider's key no longer protects becomes `uncertain` (ruling R7).
 	 *
 	 * @param lane The lane.
 	 * @param claim The take.
@@ -679,19 +705,37 @@ class OutboxRun {
 		prepared: Readonly<Extract<PreparedMail, { kind: 'send' }>>,
 	): Promise<Delivery | null> {
 		const { recipient } = prepared;
-		if (!(await recordRecipient(this.ctx.db, claim, recipient))) return null;
+		const firstAttemptAt = await recordRecipient(this.ctx.db, claim, recipient);
+		if (firstAttemptAt === null) return null;
 		this.countSend(lane);
 		const { id, messageId } = claim.entry;
 		const mail = { ...prepared.mail, idempotencyKey: id, messageId, to: recipient };
 		const result = await sendSafely(lane.transport, mail);
-		const now = this.ctx.now();
-		// Counted when the provider accepts it (decision 4), before the outcome is stored.
-		if (result.ok) await countSent(this.ctx.db, lane.scope, now);
 		const { attempts } = claim.entry;
-		return {
-			outcome: outcomeOf(result, { attempts, now }),
-			result,
-		};
+		return { outcome: await this.answered(lane, result, { attempts, firstAttemptAt }), result };
+	}
+
+	/**
+	 * What the provider's answer makes of the entry. An accepted mail counts against the daily
+	 * limit (decision 4) before the outcome is stored; a retry the provider's key no longer protects
+	 * becomes `uncertain` (ruling R7).
+	 *
+	 * @param lane The lane.
+	 * @param result The answer.
+	 * @param entry The attempts before this one and when the entry's mail first went out.
+	 * @returns The outcome.
+	 */
+	private async answered(
+		lane: Readonly<Lane>,
+		result: Readonly<SendResult>,
+		entry: Readonly<{ attempts: number; firstAttemptAt: Date }>,
+	): Promise<EntryOutcome> {
+		const now = this.ctx.now();
+		if (result.ok) await countSent(this.ctx.db, lane.scope, now);
+		const outcome = outcomeOf(result, { attempts: entry.attempts, now });
+		const idempotency = lane.transport.idempotency ?? null;
+		const { firstAttemptAt } = entry;
+		return guardKeyLifetime(outcome, { firstAttemptAt, idempotency, now, result });
 	}
 
 	/**

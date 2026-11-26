@@ -1,7 +1,8 @@
 /*
- * The expected refusals of the wave functions as the results the server functions return. A
- * missing right still throws `ForbiddenError`, as in every server function; anything else that is
- * no expected refusal stays an error.
+ * The expected refusals of the wave functions (summary, confirmation, stop, sending an uncertain
+ * entry again) as the results the server functions return. A missing right still throws
+ * `ForbiddenError`, as in every server function; anything else that is no expected refusal stays
+ * an error.
  */
 import type { Db } from '@/server/db/client';
 import {
@@ -11,7 +12,13 @@ import {
 } from '@/server/occasions/errors';
 import type { Principal } from '@/server/permissions/principal';
 
-import { WaveAttachmentsGoneError } from './errors';
+import {
+	WaveAttachmentsGoneError,
+	WaveEntryNotFoundError,
+	WaveEntryStateError,
+	WaveNotFoundError,
+} from './errors';
+import { resendUncertain, stopWave } from './stop';
 import { confirmWave, summarizeWave } from './waves';
 import type { WaveConfirmation, WaveRefusal, WaveSummary, WaveSummaryInput } from './waves';
 
@@ -30,6 +37,19 @@ type ConfirmWaveResult =
 	| Readonly<{ ok: true; waveId: string; mails: number }>
 	| Readonly<{ ok: false; failure: 'refused'; reason: WaveRefusal }>
 	| WaveFailure;
+
+/** A stop: how many entries it cancelled, or the wave is gone. */
+type StopWaveResult =
+	| Readonly<{ ok: true; cancelled: number }>
+	| Readonly<{ ok: false; failure: 'gone' }>;
+
+/**
+ * Sending an uncertain entry again: done, the entry is gone, or it is no longer uncertain (another
+ * person sent it again already, or its wave was stopped).
+ */
+type ResendUncertainResult =
+	| Readonly<{ ok: true }>
+	| Readonly<{ ok: false; failure: 'gone' | 'notUncertain' }>;
 
 /**
  * The result for an error of a summary or a confirmation.
@@ -103,5 +123,57 @@ async function confirmWaveResult(
 	}
 }
 
-export { confirmWaveResult, summarizeWaveResult, waveFailure };
-export type { ConfirmWaveResult, SummarizeWaveResult, WaveFailure };
+/**
+ * Stops a wave and turns a gone wave into a result.
+ *
+ * @param db The database.
+ * @param actor Who stops.
+ * @param waveId The wave.
+ * @returns How many entries were cancelled, or that the wave is gone.
+ */
+async function stopWaveResult(db: Db, actor: Principal, waveId: string): Promise<StopWaveResult> {
+	try {
+		return { ok: true, ...(await stopWave(db, actor, waveId)) };
+	} catch (error) {
+		if (error instanceof WaveNotFoundError) return { failure: 'gone', ok: false };
+		throw error;
+	}
+}
+
+/**
+ * Sends an uncertain entry again and turns its refusals into results.
+ *
+ * @param db The database.
+ * @param actor Who decides.
+ * @param entryId The entry.
+ * @returns Done, or why not.
+ */
+async function resendUncertainResult(
+	db: Db,
+	actor: Principal,
+	entryId: string,
+): Promise<ResendUncertainResult> {
+	try {
+		await resendUncertain(db, actor, entryId);
+		return { ok: true };
+	} catch (error) {
+		if (error instanceof WaveEntryNotFoundError) return { failure: 'gone', ok: false };
+		if (error instanceof WaveEntryStateError) return { failure: 'notUncertain', ok: false };
+		throw error;
+	}
+}
+
+export {
+	confirmWaveResult,
+	resendUncertainResult,
+	stopWaveResult,
+	summarizeWaveResult,
+	waveFailure,
+};
+export type {
+	ConfirmWaveResult,
+	ResendUncertainResult,
+	StopWaveResult,
+	SummarizeWaveResult,
+	WaveFailure,
+};

@@ -2,7 +2,8 @@
  * The recipients of a wave (Design 10.1): the contacts a user selects with the filters of the
  * contact list (plan decision 15) or one by one, split into those who may get the mail and those
  * who may not, counted by reason. The full contact rows stay on the server: the outbox needs them,
- * the user sees only counts.
+ * the user sees only counts. Before each mail the outbox checks a wave's contacts again by the same
+ * marks and reasons (`contactsWithMarks`, `exclusionOf`; Design 11.3).
  */
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
@@ -151,23 +152,29 @@ function selectionCondition(
 	);
 }
 
+/** Which contacts: those of a selection, or some by id. */
+type Which =
+	| Readonly<{ selection: Readonly<RecipientSelection>; today: string }>
+	| Readonly<{ ids: readonly string[] }>;
+
 /**
- * The selected contacts with their suppression, the mark of their address and their opt-outs of
- * the occasion and its area. Each join finds at most one row: the keys of those tables.
+ * Contacts with their suppression, the mark of their address and their opt-outs of the occasion and
+ * its area. Each join finds at most one row: the keys of those tables.
  *
  * @param db The database.
- * @param occasion The occasion.
- * @param selection The selection.
- * @param today Today in the club's time zone.
- * @returns The contacts.
+ * @param occasion The occasion: its id and its area.
+ * @param which The selection and today, or the ids.
+ * @returns The contacts with their marks.
  */
-// oxlint-disable-next-line max-params -- the database, the occasion, the selection and the day
-async function selectedRows(
+async function rowsWithMarks(
 	db: Db,
 	occasion: Readonly<Pick<OccasionRecord, 'areaId' | 'id'>>,
-	selection: Readonly<RecipientSelection>,
-	today: string,
+	which: Which,
 ): Promise<SelectedRow[]> {
+	const condition =
+		'ids' in which
+			? inArray(contacts.id, [...which.ids])
+			: selectionCondition(which.selection, which.today);
 	return (
 		db
 			.select({
@@ -206,8 +213,26 @@ async function selectedRows(
 					eq(occasionOptOuts.occasionId, occasion.id),
 				),
 			)
-			.where(selectionCondition(selection, today))
+			.where(condition)
 	);
+}
+
+/**
+ * Contacts by id with their marks, as they are now: the outbox checks them again before each
+ * mail (Design 11.3). A deleted contact is not among them.
+ *
+ * @param db The database.
+ * @param occasion The occasion: its id and its area.
+ * @param ids The contacts.
+ * @returns The contacts that still exist, with their marks.
+ */
+async function contactsWithMarks(
+	db: Db,
+	occasion: Readonly<Pick<OccasionRecord, 'areaId' | 'id'>>,
+	ids: readonly string[],
+): Promise<SelectedRow[]> {
+	if (ids.length === 0) return [];
+	return rowsWithMarks(db, occasion, { ids });
 }
 
 /**
@@ -235,8 +260,8 @@ async function resolveRecipients(
 	assertCanList(await loadContactAccess(db, actor));
 	if (selection.contactIds?.length === 0) return { excluded: noExclusions(), mailable: [] };
 	const today = todayInClubZone(now);
-	return split(await selectedRows(db, occasion, selection, today), today);
+	return split(await rowsWithMarks(db, occasion, { selection, today }), today);
 }
 
-export { resolveRecipients };
-export type { ContactRow, ExclusionReason, RecipientSelection, ResolvedRecipients };
+export { contactsWithMarks, exclusionOf, resolveRecipients };
+export type { ContactRow, ExclusionReason, RecipientSelection, ResolvedRecipients, SelectedRow };
