@@ -1,19 +1,24 @@
 import { randomUUID } from 'node:crypto';
 
-import { count, sql } from 'drizzle-orm';
+import { count, eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
 
-import { storeAttachment } from '@/server/attachments/attachments';
+import { removeAttachment, storeAttachment } from '@/server/attachments/attachments';
+import { attachmentCleanup } from '@/server/attachments/cleanup';
 import { pdfBytes } from '@/server/attachments/testing';
 import { insertContact } from '@/server/contacts/testing';
 import type { Db, DbHandle } from '@/server/db/client';
 import { runMigrations } from '@/server/db/migrate';
 import { openPgDb } from '@/server/db/pg-client';
 import { waitForLockWaiters } from '@/server/db/postgres-testing';
-import { outboxEntries, waveContacts, waves } from '@/server/db/schema';
+import { attachments, outboxEntries, waveContacts, waves } from '@/server/db/schema';
+import type { Principal } from '@/server/permissions/principal';
+import { testEnv } from '@/server/sending/testing';
 import { createMemoryStorage } from '@/server/storage/memory';
+import type { ObjectStorage } from '@/server/storage/storage';
 import { APP_ORIGIN } from '@/server/templates/testing';
 
+import { WaveAttachmentsGoneError } from './errors';
 import { insertWave, setUpWaveClubOn } from './testing';
 import type { WaveClub } from './testing';
 import { confirmWave } from './waves';
@@ -30,6 +35,27 @@ import type { ConfirmedWave } from './waves';
 const serverUrl = process.env.TEST_POSTGRES_URL ?? '';
 const SETUP_TIMEOUT_MS = 60_000;
 const MEMBERS = 5;
+const DAY_MS = 86_400_000;
+
+/** What one way of deleting a file without a wave needs. */
+type Removal = Readonly<{ db: Db; storage: ObjectStorage; actor: Principal; id: string }>;
+
+/** The two ways a file without a wave is deleted: by the user, and by the tick's cleanup. */
+const REMOVERS: Readonly<Record<string, (removal: Removal) => Promise<unknown>>> = {
+	async attachmentCleanup({ db, storage }) {
+		return attachmentCleanup.run({
+			db,
+			deadline: Number.MAX_SAFE_INTEGER,
+			env: testEnv(),
+			now: () => new Date(),
+			storage,
+			subrequests: null,
+		});
+	},
+	async removeAttachment({ actor, db, id, storage }) {
+		return removeAttachment(db, storage, actor, id);
+	},
+};
 
 /**
  * How many rows the wave tables hold.
@@ -150,4 +176,55 @@ describe.skipIf(serverUrl === '')('waves on PostgreSQL (skipped without TEST_POS
 		await expect(confirming).resolves.toStrictEqual({ mails: 0, waveId });
 		expect(pgWarnings).toStrictEqual([]);
 	});
+
+	it.each(Object.entries(REMOVERS))(
+		'lets a confirmation wait while %s deletes a file, then refuses the file',
+		async (_remover, remove) => {
+			const { club: c, one, other } = testSetup();
+			const memory = createMemoryStorage();
+			const flyer = await storeAttachment(one, memory, c.sender, c.occasionId, {
+				bytes: pdfBytes(),
+				name: 'flyer.pdf',
+			});
+			// Old enough for the cleanup.
+			await one
+				.update(attachments)
+				.set({ createdAt: new Date(Date.now() - 2 * DAY_MS) })
+				.where(eq(attachments.id, flyer.id));
+			const deleting = Promise.withResolvers<null>();
+			const gate = Promise.withResolvers<null>();
+			// A storage whose deletion waits until the test lets it go on.
+			const storage: ObjectStorage = {
+				...memory,
+				async delete(key) {
+					deleting.resolve(null);
+					await gate.promise;
+					await memory.delete(key);
+				},
+			};
+			const removing = remove({ actor: c.sender, db: one, id: flyer.id, storage });
+			await deleting.promise;
+			const wavesBefore = await countsOf(one);
+			const confirming = confirmWave(
+				other,
+				c.sender,
+				{
+					attachmentIds: [flyer.id],
+					notBefore: null,
+					occasionId: c.occasionId,
+					requestId: randomUUID(),
+					selection: { contactIds: null, filters: {}, kind: 'member', query: '' },
+				},
+				APP_ORIGIN,
+				new Date(),
+			);
+			// The remover holds the row while it deletes the object: the confirmation waits for it.
+			await waitForLockWaiters(one, 1);
+			gate.resolve(null);
+			await removing;
+			await expect(confirming).rejects.toBeInstanceOf(WaveAttachmentsGoneError);
+			await expect(memory.get(`attachments/${flyer.id}`)).resolves.toBeNull();
+			await expect(countsOf(one)).resolves.toStrictEqual(wavesBefore);
+		},
+	);
 });

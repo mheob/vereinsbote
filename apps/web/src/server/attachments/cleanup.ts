@@ -1,11 +1,10 @@
-import { and, asc, eq, isNull, lt, or } from 'drizzle-orm';
+import { and, asc, isNull, lt, or } from 'drizzle-orm';
 
 import type { Db } from '@/server/db/client';
 import { attachments } from '@/server/db/schema';
-import type { ObjectStorage } from '@/server/storage/storage';
 import type { TickStep } from '@/server/tick/tick';
 
-import { attachmentStorageKey } from './attachments';
+import { deleteFreeAttachment } from './attachments';
 
 const DAY_MS = 86_400_000;
 /** Attachments one run looks at; a full batch asks for a follow-up tick. */
@@ -25,16 +24,12 @@ async function staleIds(db: Db, now: Date): Promise<string[]> {
 	return rows.map(({ id }) => id);
 }
 
-// The object first, so a storage failure leaves the row and the next tick tries again.
-async function removeStale(db: Db, storage: ObjectStorage, id: string): Promise<void> {
-	await storage.delete(attachmentStorageKey(id));
-	await db.delete(attachments).where(and(eq(attachments.id, id), isNull(attachments.waveId)));
-}
-
 /**
  * Removes the attachments of an aborted flow: files without a wave that are older than one day, and at once those whose occasion was removed
  * (`occasion_id` is null).
- * A run handles one batch, goes on after a failing file and throws the first failure at the end,
+ * Each file goes through `deleteFreeAttachment`: under the lock of its row, the object first, so a
+ * storage failure leaves the row and the next tick tries again, and a file a wave took meanwhile
+ * stays. A run handles one batch, goes on after a failing file and throws the failures at the end,
  * and stops at the tick's deadline. Without a storage nothing can be deleted.
  */
 const attachmentCleanup: TickStep = {
@@ -47,7 +42,7 @@ const attachmentCleanup: TickStep = {
 			if (now().getTime() >= deadline) return { moreWork: true };
 			try {
 				// oxlint-disable-next-line no-await-in-loop -- one file after another keeps the storage load low
-				await removeStale(db, storage, id);
+				await deleteFreeAttachment(db, storage, id);
 			} catch (error) {
 				failures.push(error);
 			}

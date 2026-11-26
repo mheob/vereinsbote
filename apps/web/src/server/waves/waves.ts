@@ -548,8 +548,10 @@ async function insertEntries(
 }
 
 /**
- * Links the chosen files to the wave, after locking them: `removeAttachment` and the cleanup
- * delete only rows without a wave, so a linked file keeps its object.
+ * Links the chosen files to the wave, after locking them (`for update`). `removeAttachment` and
+ * the cleanup delete a file only under the same lock and only while no wave holds it
+ * (`deleteFreeAttachment`): this waits for a deletion and then finds the file gone, and a file it
+ * linked keeps its object.
  *
  * @param tx The transaction.
  * @param plan The plan.

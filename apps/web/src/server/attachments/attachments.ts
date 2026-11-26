@@ -176,7 +176,39 @@ async function storeAttachment(
 }
 
 /**
- * Removes an attachment that has no wave yet.
+ * Deletes an attachment that no wave holds, the only way its object is deleted: inside a
+ * transaction it locks the row (`for update`), deletes the object, then the row. `confirmWave`
+ * locks the rows it links the same way, so it waits for a deletion and then finds the file gone:
+ * a wave never holds a file without its object. When the storage fails, the transaction rolls back
+ * and the row stays, so the deletion can be repeated.
+ *
+ * @param db The database.
+ * @param storage The object storage.
+ * @param id The attachment.
+ * @returns `deleted`; `gone` when no row has the id; `locked` when a wave holds it (nothing is
+ *   deleted).
+ */
+async function deleteFreeAttachment(
+	db: Db,
+	storage: ObjectStorage,
+	id: string,
+): Promise<'deleted' | 'gone' | 'locked'> {
+	return db.transaction(async (tx) => {
+		const [row] = await tx
+			.select({ waveId: attachments.waveId })
+			.from(attachments)
+			.where(eq(attachments.id, id))
+			.for('update');
+		if (row === undefined) return 'gone';
+		if (row.waveId !== null) return 'locked';
+		await storage.delete(attachmentStorageKey(id));
+		await tx.delete(attachments).where(eq(attachments.id, id));
+		return 'deleted';
+	});
+}
+
+/**
+ * Removes an attachment that has no wave yet (`deleteFreeAttachment`).
  *
  * @param db The database.
  * @param storage The object storage.
@@ -197,9 +229,10 @@ async function removeAttachment(
 	if (row === undefined) throw new AttachmentNotFoundError();
 	assertArea(actor, row.areaId, 'send');
 	if (row.waveId !== null) throw new AttachmentLockedError();
-	// The object first: when the storage fails the row stays and the removal can be repeated.
-	await storage.delete(attachmentStorageKey(id));
-	await db.delete(attachments).where(and(eq(attachments.id, id), isNull(attachments.waveId)));
+	// A wave may take the file, or the cleanup remove it, between the check and the lock.
+	const deletion = await deleteFreeAttachment(db, storage, id);
+	if (deletion === 'gone') throw new AttachmentNotFoundError();
+	if (deletion === 'locked') throw new AttachmentLockedError();
 }
 
 /**
@@ -227,6 +260,7 @@ async function readAttachments(
 export {
 	attachmentStorageKey,
 	checkRoom,
+	deleteFreeAttachment,
 	readAttachments,
 	removeAttachment,
 	storeAttachment,

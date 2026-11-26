@@ -14,6 +14,7 @@ import { insertWave } from '@/server/waves/testing';
 
 import {
 	checkRoom,
+	deleteFreeAttachment,
 	MAX_ATTACHMENT_BYTES,
 	MAX_ATTACHMENTS,
 	MAX_ATTACHMENTS_TOTAL,
@@ -207,6 +208,54 @@ describe(removeAttachment, () => {
 			AttachmentLockedError,
 		);
 		await expect(storage.get(`attachments/${id}`)).resolves.not.toBeNull();
+	});
+
+	it('keeps the row when the object cannot be deleted, so the removal can be repeated', async () => {
+		const { db, occasionId, sender, storage } = await setUpAttachments();
+		const { id } = await storeAttachment(db, storage, sender, occasionId, {
+			bytes: pdfBytes(),
+			name: 'a.pdf',
+		});
+		const failing: ObjectStorage = {
+			...storage,
+			async delete(): Promise<void> {
+				await Promise.reject(new Error('storage down'));
+			},
+		};
+		await expect(removeAttachment(db, failing, sender, id)).rejects.toThrow('storage down');
+		await expect(db.select({ id: attachments.id }).from(attachments)).resolves.toStrictEqual([
+			{ id },
+		]);
+		await removeAttachment(db, storage, sender, id);
+		await expect(db.select().from(attachments)).resolves.toStrictEqual([]);
+	});
+});
+
+describe(deleteFreeAttachment, () => {
+	it('deletes the object and the row of a file without a wave', async () => {
+		const { db, occasionId, sender, storage } = await setUpAttachments();
+		const { id } = await storeAttachment(db, storage, sender, occasionId, {
+			bytes: pdfBytes(),
+			name: 'a.pdf',
+		});
+		await expect(deleteFreeAttachment(db, storage, id)).resolves.toBe('deleted');
+		await expect(storage.get(`attachments/${id}`)).resolves.toBeNull();
+		await expect(deleteFreeAttachment(db, storage, id)).resolves.toBe('gone');
+	});
+
+	it('leaves a file that a wave holds, with its object', async () => {
+		const { db, occasionId, sender, storage } = await setUpAttachments();
+		const { id } = await storeAttachment(db, storage, sender, occasionId, {
+			bytes: pdfBytes(),
+			name: 'a.pdf',
+		});
+		const waveId = await insertWave(db, occasionId);
+		await db.update(attachments).set({ waveId }).where(eq(attachments.id, id));
+		await expect(deleteFreeAttachment(db, storage, id)).resolves.toBe('locked');
+		await expect(storage.get(`attachments/${id}`)).resolves.not.toBeNull();
+		await expect(db.select({ id: attachments.id }).from(attachments)).resolves.toStrictEqual([
+			{ id },
+		]);
 	});
 });
 
