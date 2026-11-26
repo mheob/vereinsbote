@@ -972,7 +972,8 @@ export function resendUncertain(db: Db, actor: Principal, entryId: string): Prom
 - **Geänderte Adresse:** persönlich → aktuelle Adresse; Rundschreiben → Kontakt fällt aus dem Eintrag (der nächste rückt nach), sonst `skip('addressChanged')`.
 - Erster verbleibender Kontakt füllt die Mail mit `sendingValues` und `fillMail`; fehlender Pflichtwert → `fail('missing:<key>')`.
 - `unsubscribe.url` = `unsubscribeUrl` mit allen verbleibenden Kontakten des Eintrags (Design 12); `listUnsubscribe` gleich.
-- Absender, Antwortadresse, Archiv-Kopie aus dem Absender; Anhänge der Welle; `messageId` und `idempotencyKey` (= Eintrags-ID) setzt der Postausgang selbst auf die vorbereitete Mail (Ruling R4, Fix-Runde 4a). Liest der Vorbereiter Anhänge aus R2, zählen diese Zugriffe auf Cloudflare zu den Unteranfragen des Aufrufs: pro Lauf einmal lesen, nicht pro Mail.
+- Absender, Antwortadresse, Archiv-Kopie aus dem Absender; Anhänge der Welle; `messageId` und `idempotencyKey` (= Eintrags-ID) setzt der Postausgang selbst auf die vorbereitete Mail (Ruling R4, Fix-Runde 4a).
+- **Ruling R7:** Resend hält einen Idempotenz-Schlüssel nur 24 Stunden. Liegt der erste Versuch eines Resend-Eintrags mehr als 23 Stunden zurück, wird er nach einer Antwort, die eine Annahme nicht ausschließt (Netzfehler, Zeitüberschreitung, 5xx), nicht mehr automatisch wiederholt, sondern `uncertain`. Test im Postausgang: Vorbereiter → Resend → Wiederholung behält Message-ID, Schlüssel und Inhalt; nach 23 Stunden `uncertain`. Liest der Vorbereiter Anhänge aus R2, zählen diese Zugriffe auf Cloudflare zu den Unteranfragen des Aufrufs: pro Lauf einmal lesen, nicht pro Mail.
 - `stopWave` (`send`): alle `planned` → `cancelled`, `stopped_at`; Protokoll `wave.stopped`.
 
 - [ ] **Step 1: Failing Tests schreiben**
