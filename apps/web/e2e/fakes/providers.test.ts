@@ -224,7 +224,7 @@ describe('fake providers', () => {
 			'readable',
 		);
 		const transport = createGraphTransport(SETTINGS, 'other@example.org', deps);
-		await expect(transport.fetchBounces?.(null, LIMIT)).rejects.toThrow('graph.unauthorized');
+		await expect(transport.fetchBounces?.(null, LIMIT)).rejects.toThrow('graph.mailbox');
 		const direct = await fetch(`${url}/graph/v1.0/users/other%40example.org/messages?$top=1`, {
 			headers: { authorization: 'Bearer fake-token' },
 		});
@@ -266,9 +266,21 @@ describe('fake providers', () => {
 		expect(events).toMatchObject([{ emailId: 'email-1', hard: true, type: 'bounce' }]);
 	});
 
-	it('answers 413 for a body above 1 MiB', async () => {
+	it('takes a graph mail up to the request limit of graph', async () => {
+		const { delivered, url } = await start();
+		const transport = createGraphTransport(SETTINGS, MAILBOX, graphDeps(url));
+		// About 3.7 MB as a request: the attachment is base64 in the MIME, the MIME base64 again.
+		const bytes = new Uint8Array(2_000_000).fill(65);
+		const result = await transport.send(
+			mail({ attachments: [{ bytes, contentType: 'application/pdf', filename: 'flyer.pdf' }] }),
+		);
+		expect(result).toStrictEqual({ ok: true, providerId: null });
+		expect(delivered).toHaveLength(1);
+	});
+
+	it('answers 413 for a body above 5 MiB', async () => {
 		const { url } = await start();
-		const response = await control(url, '/senders', { mailboxes: ['x'.repeat(2_000_000)] });
+		const response = await control(url, '/senders', { mailboxes: ['x'.repeat(5_300_000)] });
 		expect(response.status).toBe(HTTP_TOO_LARGE);
 	});
 

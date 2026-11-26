@@ -13,6 +13,7 @@
 import { z } from 'zod';
 
 import { cleanHeaderText } from '@/mail/escape';
+import { isSubrequestLimit, SUBREQUEST_LIMIT_CODE } from '@/platform/subrequests';
 import type { Env } from '@/server/env';
 import { assertMailAddress, MimeAddressError } from '@/server/sending/mime';
 import { retryAfterMs } from '@/server/sending/transport';
@@ -56,8 +57,10 @@ const MAX_KEY_LENGTH = 256;
 
 /*
  * The `name` of an error body decides the class (checked against
- * https://resend.com/docs/api-reference/errors on 2026-11-25). A name not in the table falls
- * back to the status: 401/403 `unauthorized`, 5xx and 429 `transient`, any other 4xx `rejected`.
+ * https://resend.com/docs/api-reference/errors on 2026-11-25 and 2026-11-26). A name not in the
+ * table falls back to the status: 401/403 `unauthorized`, 5xx and 429 `transient`, any other 4xx
+ * `rejected`. A 403 `validation_error` is about the sending domain (not verified, or the testing
+ * restriction to the account's own address), not the key: `resend.domain`.
  */
 const ERROR_NAMES: ReadonlyMap<string, Classified> = new Map<string, Classified>([
 	['application_error', { code: 'resend.server', failure: 'transient' }],
@@ -98,7 +101,10 @@ function resendEndpoint(env: Pick<Env, 'devProvidersUrl'>): string {
 	return `${env.devProvidersUrl.href.replace(TRAILING_SLASHES, '')}/resend`;
 }
 
-function classifyByStatus(status: number): Classified {
+function classifyByStatus(status: number, name: string | null): Classified {
+	if (status === HTTP_FORBIDDEN && name === 'validation_error') {
+		return { code: 'resend.domain', failure: 'unauthorized' };
+	}
 	if (status === HTTP_UNAUTHORIZED || status === HTTP_FORBIDDEN) {
 		return { code: 'resend.unauthorized', failure: 'unauthorized' };
 	}
@@ -129,10 +135,11 @@ function classifyResendResponse(
 		const parsed = successSchema.safeParse(body);
 		return { ok: true, providerId: parsed.success ? parsed.data.id : null };
 	}
-	const name = errorSchema.safeParse(body);
-	const byName = name.success ? ERROR_NAMES.get(name.data.name) : undefined;
+	const parsed = errorSchema.safeParse(body);
+	const name = parsed.success ? parsed.data.name : null;
+	const byName = name === null ? undefined : ERROR_NAMES.get(name);
 	// A 401/403 stays `unauthorized` even under a name such as `validation_error` (restrictions).
-	const byStatus = classifyByStatus(status);
+	const byStatus = classifyByStatus(status, name);
 	const picked = byName ?? byStatus;
 	const wait = picked.failure === 'transient' ? retryAfterMs(headers, now) : null;
 	return fail(picked.failure, picked.code, wait);
@@ -229,7 +236,16 @@ interface Request {
 	readonly headers: Readonly<Record<string, string>>;
 }
 
-async function post(deps: ResendDeps, request: Readonly<Request>): Promise<Response | null> {
+/**
+ * Posts the mail.
+ *
+ * @param deps `fetch` and the endpoint.
+ * @param request The body and the headers.
+ * @returns The response, or the failure when none came: `platform.subrequests` when the platform
+ *   refused to make the request, else `resend.network`. Both are `transient`: the idempotency key
+ *   keeps a repeated request from sending twice.
+ */
+async function post(deps: ResendDeps, request: Readonly<Request>): Promise<Response | Failure> {
 	try {
 		return await deps.fetch(`${deps.endpoint}/emails`, {
 			body: request.body,
@@ -237,8 +253,8 @@ async function post(deps: ResendDeps, request: Readonly<Request>): Promise<Respo
 			method: 'POST',
 			signal: AbortSignal.timeout(TIMEOUT_MS),
 		});
-	} catch {
-		return null;
+	} catch (error) {
+		return fail('transient', isSubrequestLimit(error) ? SUBREQUEST_LIMIT_CODE : 'resend.network');
 	}
 }
 
@@ -254,7 +270,7 @@ function createResendTransport(apiKey: string, deps: ResendDeps): Transport {
 		const built = buildRequest(apiKey, mail);
 		if (!built.ok) return built.failure;
 		const response = await post(deps, built);
-		if (response === null) return fail('transient', 'resend.network');
+		if (!(response instanceof Response)) return response;
 		const body = await readJson(response);
 		return classifyResendResponse(response.status, body, response.headers, deps.now());
 	}

@@ -57,7 +57,8 @@ const HTTP_UNAUTHORIZED = 401;
 const HTTP_FORBIDDEN = 403;
 const HTTP_NOT_FOUND = 404;
 const HTTP_UNAVAILABLE = 503;
-const MAX_BODY_CHARS = 1_048_576;
+// 5 MiB: room above Graph's request limit of 4,000,000 bytes, so the app's own check decides.
+const MAX_BODY_CHARS = 5_242_880;
 const HTTP_TOO_LARGE = 413;
 const LOOPBACK = '127.0.0.1';
 const SNIPPET_LENGTH = 255;

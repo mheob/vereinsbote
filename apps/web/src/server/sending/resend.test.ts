@@ -145,9 +145,32 @@ describe(createResendTransport, () => {
 		});
 		expect(JSON.stringify(result)).not.toContain(KEY);
 	});
+
+	it('names a request the platform refused to make', async () => {
+		const { deps } = setup(() => new Error('Too many subrequests.'));
+		const result = await createResendTransport(KEY, deps).send(MAIL);
+		expect(result).toStrictEqual({
+			code: 'platform.subrequests',
+			failure: 'transient',
+			ok: false,
+			retryAfterMs: null,
+		});
+	});
 });
 
 describe(classifyResendResponse, () => {
+	it.each([
+		['validation_error', 403, 'resend.domain'],
+		['validation_error', 401, 'resend.unauthorized'],
+		['restricted_api_key', 403, 'resend.unauthorized'],
+		['invalid_permission', 403, 'resend.unauthorized'],
+	])('names %s (%i) as %s', (name, status, code) => {
+		expect(classifyResendResponse(status, { name }, NONE, NOW)).toMatchObject({
+			code,
+			failure: 'unauthorized',
+		});
+	});
+
 	it.each([
 		['daily_quota_exceeded', 429, 'quota'],
 		['monthly_quota_exceeded', 429, 'quota'],

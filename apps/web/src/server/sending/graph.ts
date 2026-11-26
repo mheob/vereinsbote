@@ -9,6 +9,7 @@
 
 import { z } from 'zod';
 
+import { isSubrequestLimit, SUBREQUEST_LIMIT_CODE } from '@/platform/subrequests';
 import type { Env } from '@/server/env';
 import {
 	buildMime,
@@ -53,6 +54,13 @@ type TokenResult =
 interface Session {
 	readonly token: () => Promise<TokenResult>;
 }
+
+/**
+ * What a call came to: the response, `unsent` when the platform refused to make the request (the
+ * subrequest limit of a Worker), or `lost` when it went out and broke off (a time-out, a network
+ * error).
+ */
+type Called = Response | 'lost' | 'unsent';
 
 type Prepared =
 	| { readonly body: string; readonly contentType: string }
@@ -141,7 +149,11 @@ function waitAndRetry(status: number, headers: Headers, now: Date): Failure {
 }
 
 function classifyClientError(status: number, body: unknown): Failure {
-	if (status === HTTP_NOT_FOUND) return fail('unauthorized', 'graph.mailbox');
+	// The token came, so a 403 or 404 is about the mailbox: outside the scope the app may use
+	// (RBAC for Applications) or not there at all.
+	if (status === HTTP_FORBIDDEN || status === HTTP_NOT_FOUND) {
+		return fail('unauthorized', 'graph.mailbox');
+	}
 	if (status === HTTP_TOO_LARGE) return fail('rejected', 'graph.tooLarge');
 	const parsed = errorSchema.safeParse(body);
 	const code = parsed.success ? parsed.data.error.code : '';
@@ -150,7 +162,8 @@ function classifyClientError(status: number, body: unknown): Failure {
 
 /**
  * Classifies the answer of `sendMail`. A 5xx other than 503 is `uncertain`: the request went out
- * and Graph may still have sent the mail, so it is never resent automatically.
+ * and Graph may still have sent the mail, so it is never resent automatically. A 401 refuses the
+ * token (`graph.unauthorized`); a 403 or 404 refuses the mailbox (`graph.mailbox`).
  *
  * @param status The HTTP status.
  * @param body The parsed JSON body (any shape; only `error.code` is read).
@@ -166,9 +179,7 @@ function classifyGraphResponse(
 	now: Date,
 ): SendResult {
 	if (status >= HTTP_OK && status < HTTP_MULTIPLE_CHOICES) return { ok: true, providerId: null };
-	if (status === HTTP_UNAUTHORIZED || status === HTTP_FORBIDDEN) {
-		return fail('unauthorized', 'graph.unauthorized');
-	}
+	if (status === HTTP_UNAUTHORIZED) return fail('unauthorized', 'graph.unauthorized');
 	if (WAIT_AND_RETRY.has(status)) return waitAndRetry(status, headers, now);
 	if (status >= HTTP_SERVER_ERROR) return fail('uncertain', 'graph.server');
 	return classifyClientError(status, body);
@@ -254,11 +265,7 @@ async function readJson(response: Response): Promise<unknown> {
 	}
 }
 
-async function callWithTimeout(
-	deps: GraphDeps,
-	url: string,
-	init: CallInit,
-): Promise<Response | null> {
+async function callWithTimeout(deps: GraphDeps, url: string, init: CallInit): Promise<Called> {
 	try {
 		return await deps.fetch(url, {
 			body: init.body ?? undefined,
@@ -266,9 +273,35 @@ async function callWithTimeout(
 			method: init.method,
 			signal: AbortSignal.timeout(TIMEOUT_MS),
 		});
-	} catch {
-		return null;
+	} catch (error) {
+		return isSubrequestLimit(error) ? 'unsent' : 'lost';
 	}
+}
+
+/**
+ * The failure of a call that brought no response.
+ *
+ * @param called What the call came to.
+ * @param lost The class of a request that went out and broke off.
+ * @returns `transient` with `platform.subrequests` when the request never left, else `lost` with
+ *   `graph.network`.
+ */
+function noResponse(called: 'lost' | 'unsent', lost: Failure['failure']): Failure {
+	return called === 'unsent'
+		? fail('transient', SUBREQUEST_LIMIT_CODE)
+		: fail(lost, 'graph.network');
+}
+
+/**
+ * The response of a call that is not about sending, where a call without one is a failure.
+ *
+ * @param called What the call came to.
+ * @returns The response.
+ * @throws {Error} With the code of the call that brought none.
+ */
+function responseOf(called: Called): Response {
+	if (called instanceof Response) return called;
+	throw new Error(noResponse(called, 'transient').code);
 }
 
 // Releases the connection of a response whose body nobody reads.
@@ -306,7 +339,8 @@ async function requestToken(
 			method: 'POST',
 		},
 	);
-	if (response === null) return { failure: fail('transient', 'graph.network'), ok: false };
+	if (typeof response === 'string')
+		return { failure: noResponse(response, 'transient'), ok: false };
 	if (!response.ok) return tokenFailure(response, deps.now());
 	const parsed = tokenSchema.safeParse(await readJson(response));
 	if (!parsed.success) return { failure: fail('transient', 'graph.server'), ok: false };
@@ -429,7 +463,7 @@ function createGraphTransport(
 			method: 'POST',
 		});
 		// The request was issued: after a time-out or a network error the mail may be on its way.
-		if (response === null) return fail('uncertain', 'graph.network');
+		if (typeof response === 'string') return noResponse(response, 'uncertain');
 		if (response.ok) await drain(response);
 		const body = response.ok ? null : await readJson(response);
 		return classifyGraphResponse(response.status, body, response.headers, deps.now());
@@ -446,7 +480,7 @@ function createGraphTransport(
 	): Promise<{ reports: BounceReport[]; until: Date | null }> {
 		const token = await session.token();
 		if (!token.ok) throw new Error(token.failure.code);
-		const response = await callWithTimeout(deps, inboxBouncesUrl(base, since, limit), {
+		const called = await callWithTimeout(deps, inboxBouncesUrl(base, since, limit), {
 			body: null,
 			headers: {
 				authorization: `Bearer ${token.value}`,
@@ -454,7 +488,7 @@ function createGraphTransport(
 			},
 			method: 'GET',
 		});
-		if (response === null) throw new Error('graph.network');
+		const response = responseOf(called);
 		if (!response.ok) {
 			const failure = classifyGraphResponse(response.status, null, response.headers, deps.now());
 			throw new Error(failureCode(failure));
@@ -498,9 +532,10 @@ async function checkMailboxRestriction(
 			method: 'GET',
 		},
 	);
-	if (response !== null) await drain(response);
-	if (response?.status === HTTP_FORBIDDEN) return 'restricted';
-	return response?.status === HTTP_OK ? 'readable' : 'unknown';
+	if (typeof response === 'string') return 'unknown';
+	await drain(response);
+	if (response.status === HTTP_FORBIDDEN) return 'restricted';
+	return response.status === HTTP_OK ? 'readable' : 'unknown';
 }
 
 export {

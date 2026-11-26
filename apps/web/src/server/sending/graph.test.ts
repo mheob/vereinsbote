@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 
+import { budgetedFetch, createSubrequestBudget } from '@/platform/subrequests';
 import {
 	checkMailboxRestriction,
 	classifyGraphResponse,
@@ -287,6 +288,34 @@ describe('graph transport send', () => {
 		});
 	});
 
+	it('maps a sendMail the platform refused to make to transient, never uncertain', async () => {
+		const { deps } = setup(() => {
+			throw new Error('Too many subrequests.');
+		});
+
+		const result = await createGraphTransport(SETTINGS, MAILBOX, deps).send(mail());
+
+		expect(result).toStrictEqual({
+			code: 'platform.subrequests',
+			failure: 'transient',
+			ok: false,
+			retryAfterMs: null,
+		});
+	});
+
+	it('maps a token request the budget refused to transient', async () => {
+		const { deps, requests } = setup(accepted);
+		const limited = {
+			...deps,
+			fetch: budgetedFetch(deps.fetch, createSubrequestBudget(0)),
+		};
+
+		const result = await createGraphTransport(SETTINGS, MAILBOX, limited).send(mail());
+
+		expect(result).toMatchObject({ code: 'platform.subrequests', failure: 'transient' });
+		expect(requests).toHaveLength(0);
+	});
+
 	it.each([500, 502, 504])(
 		'marks %i of sendMail as uncertain without a retry time',
 		async (status) => {
@@ -374,6 +403,8 @@ describe(classifyGraphResponse, () => {
 
 	it.each([
 		[401, {}, 'graph.unauthorized'],
+		// The token came, so the app may not use the mailbox (RBAC for Applications).
+		[403, { error: { code: 'ErrorAccessDenied' } }, 'graph.mailbox'],
 		[429, {}, 'graph.throttled'],
 		[500, {}, 'graph.server'],
 		[408, {}, 'graph.network'],
@@ -516,12 +547,15 @@ describe('graph transport fetchBounces', () => {
 		).resolves.toStrictEqual({ reports: [], until: null });
 	});
 
-	it('throws a code without a secret when graph refuses', async () => {
-		const { deps } = setup(() => json(403, { error: { message: SECRET } }));
+	it.each([
+		[401, 'graph.unauthorized'],
+		[403, 'graph.mailbox'],
+	])('throws a code without a secret when graph refuses with %i', async (status, code) => {
+		const { deps } = setup(() => json(status, { error: { message: SECRET } }));
 
 		await expect(
 			createGraphTransport(SETTINGS, MAILBOX, deps).fetchBounces?.(null, 10),
-		).rejects.toThrow(new Error('graph.unauthorized'));
+		).rejects.toThrow(new Error(code));
 	});
 
 	it('throws a code on a network error', async () => {
