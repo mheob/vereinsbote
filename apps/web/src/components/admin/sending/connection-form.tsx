@@ -181,6 +181,21 @@ interface SaveContext {
 type Save = readonly [FormState, ReturnType<typeof useFormSubmit>, boolean];
 
 /**
+ * What the check of the credentials found, when the page arrives with it.
+ *
+ * @param connection The connection of the form, or null for the form of a new one.
+ * @param stateCheck What the history state carries.
+ * @returns The result (null when the check could not run), or undefined when there is none to show.
+ */
+function initialCheck(
+	connection: ConnectionDetail | null,
+	stateCheck: 'failed' | 'none' | 'ok' | 'unchecked' | undefined,
+): ConnectionCheck | undefined {
+	const found = stateCheck === 'none' ? null : stateCheck;
+	return connection === null ? undefined : found;
+}
+
+/**
  * The action of the form: creates the connection (and goes to the overview) or saves it, and
  * turns a refusal into the messages at the fields.
  *
@@ -323,16 +338,19 @@ export function ConnectionForm({
 	const notice = useLocation({ select: (location) => location.state.sendingNotice });
 	const stateCheck = useLocation({ select: (location) => location.state.sendingCheck });
 	// A just created connection arrives with what its check found (in the history state).
+	// Only the form of a stored connection takes them: the form of the new one is still mounted
+	// while the router already shows the new location, and must leave them for the page that follows.
 	const [checked, setChecked] = useState<ConnectionCheck | undefined>(() =>
-		stateCheck === 'none' ? null : stateCheck,
+		initialCheck(connection, stateCheck),
 	);
 	useEffect(() => {
+		if (connection === null) return;
 		if (notice?.kind === 'connectionCreated') {
 			announce(t('sending.connectionCreated', { name: notice.name }), 'status');
 			clearHistoryNotice(globalThis.history, 'sendingNotice');
 		}
 		clearHistoryNotice(globalThis.history, 'sendingCheck');
-	}, [announce, notice, t]);
+	}, [announce, connection, notice, t]);
 	const clearCheck = useCallback(() => {
 		setChecked(undefined);
 	}, []);
