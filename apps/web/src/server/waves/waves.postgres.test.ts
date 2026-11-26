@@ -146,7 +146,14 @@ describe.skipIf(serverUrl === '')('waves on PostgreSQL (skipped without TEST_POS
 			confirmWave(one, c.sender, confirmation, APP_ORIGIN, now),
 			confirmWave(other, c.sender, confirmation, APP_ORIGIN, now),
 		]);
-		expect(fromOther).toStrictEqual(fromOne);
+		// The same wave: one confirmation made it, the other got it as existing.
+		expect({ ...fromOther, existing: true }).toStrictEqual({ ...fromOne, existing: true });
+		expect([fromOne, fromOther]).toStrictEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ existing: false }),
+				expect.objectContaining({ existing: true }),
+			]),
+		);
 		expect(fromOne).toMatchObject({ mails: MEMBERS });
 		await expect(countsOf(one)).resolves.toStrictEqual({
 			contacts: MEMBERS,
@@ -174,7 +181,12 @@ describe.skipIf(serverUrl === '')('waves on PostgreSQL (skipped without TEST_POS
 			await waitForLockWaiters(one, 1);
 			return id;
 		});
-		await expect(confirming).resolves.toStrictEqual({ mails: 0, waveId });
+		await expect(confirming).resolves.toStrictEqual({
+			existing: true,
+			mails: 0,
+			notBefore: null,
+			waveId,
+		});
 		expect(pgWarnings).toStrictEqual([]);
 	});
 
