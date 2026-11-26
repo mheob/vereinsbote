@@ -15,6 +15,7 @@ import {
 	auditTarget,
 	contactKey,
 	copyContactKey,
+	optOutByKey,
 	rekeyContactKey,
 	setOptOut,
 	setSuppression,
@@ -258,6 +259,51 @@ describe(setOptOut, () => {
 		await expect(
 			setOptOut(db, reader, { areaId: partnersAreaId, contactId: id, optedOut: true }),
 		).rejects.toBeInstanceOf(ForbiddenError);
+	});
+});
+
+describe(optOutByKey, () => {
+	it('records an opt-out by key without a user, once per scope and target', async () => {
+		const db = await createTestDb();
+		const { admin, membersAreaId } = await setUpClub(db);
+		const occasionId = await insertOccasion(db, admin, membersAreaId);
+		const ofOccasion = {
+			areaId: null,
+			contactKey: 'nr:42',
+			kind: 'member',
+			occasionId,
+			scope: 'occasion',
+		} as const;
+		const ofArea = {
+			...ofOccasion,
+			areaId: membersAreaId,
+			occasionId: null,
+			scope: 'area',
+		} as const;
+		const made = [
+			await optOutByKey(db, ofOccasion),
+			await optOutByKey(db, ofOccasion),
+			await optOutByKey(db, ofArea),
+			await optOutByKey(db, ofArea),
+		];
+		expect(made).toStrictEqual([true, false, true, false]);
+		const rows = await db.select().from(contactOptOuts).orderBy(contactOptOuts.scope);
+		expect(
+			rows.map((row) => [
+				row.scope,
+				row.kind,
+				row.contactKey,
+				row.areaId,
+				row.occasionId,
+				row.createdByUserId,
+			]),
+		).toStrictEqual([
+			['area', 'member', 'nr:42', membersAreaId, null, null],
+			['occasion', 'member', 'nr:42', null, occasionId, null],
+		]);
+		// The caller bumps the stock version and writes the log.
+		await expect(contactAudit(db)).resolves.toStrictEqual([]);
+		await expect(stockVersions(db)).resolves.toStrictEqual([0, 0]);
 	});
 });
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vite-plus/test';
 
 import {
 	deriveUnsubscribeKey,
+	MAX_TOKEN_LENGTH,
 	openUnsubscribe,
 	sealUnsubscribe,
 	unsubscribePayload,
@@ -10,6 +11,7 @@ import {
 import type { UnsubscribePayload } from './token';
 
 const APP_SECRET = new Uint8Array(32).fill(9);
+const BASE64URL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 const OTHER_SECRET = new Uint8Array(32).fill(1);
 
 const PAYLOAD: UnsubscribePayload = {
@@ -82,6 +84,22 @@ describe('the unsubscribe token', () => {
 		await expect(sealUnsubscribe(key, fewer)).resolves.not.toBe(token);
 	});
 
+	it('refuses a token whose unused last bits are set, so one payload has one token', async () => {
+		const key = await deriveUnsubscribeKey(APP_SECRET);
+		// Plaintexts one byte apart: at least two of the three tokens do not fill their last group.
+		const tokens = await Promise.all(
+			['1', '22', '333'].map(async (number) =>
+				sealUnsubscribe(key, { ...PAYLOAD, contacts: [{ key: `nr:${number}`, kind: 'member' }] }),
+			),
+		);
+		const token = String(tokens.find((each) => each.length % 4 !== 0));
+		await expect(openUnsubscribe(key, token)).resolves.not.toBeNull();
+		// The last character carries unused low bits, all 0; setting one keeps the bytes.
+		const last = BASE64URL.indexOf(token.slice(-1));
+		const nonCanonical = `${token.slice(0, -1)}${BASE64URL.charAt(last + 1)}`;
+		await expect(openUnsubscribe(key, nonCanonical)).resolves.toBeNull();
+	});
+
 	it.each<Tampering>([
 		'changed',
 		'cut',
@@ -111,5 +129,35 @@ describe('the unsubscribe token', () => {
 		]);
 		const token = await sealUnsubscribe(key, payload);
 		expect(unsubscribeTokenLength(payload)).toBe(token.length);
+	});
+
+	it('names the contacts of a mail as long as the token stays within its bound, and opens it', async () => {
+		const key = await deriveUnsubscribeKey(APP_SECRET);
+		const many = Array.from({ length: 400 }, (_unused, index) => ({
+			contactKey: `nr:${String(index).padStart(8, '0')}`,
+			kind: 'member' as const,
+		}));
+		const payload = unsubscribePayload(
+			{ areaId: PAYLOAD.areaId, occasionId: PAYLOAD.occasionId },
+			many,
+		);
+		const token = await sealUnsubscribe(key, payload);
+		expect(token.length).toBeLessThanOrEqual(MAX_TOKEN_LENGTH);
+		await expect(openUnsubscribe(key, token)).resolves.toStrictEqual(payload);
+		// The first contacts in their order; one more would not fit.
+		expect(payload.contacts).toStrictEqual(
+			many.slice(0, payload.contacts.length).map(({ contactKey }) => ({
+				key: contactKey,
+				kind: 'member',
+			})),
+		);
+		const oneMore = {
+			...payload,
+			contacts: many
+				.slice(0, payload.contacts.length + 1)
+				.map(({ contactKey }) => ({ key: contactKey, kind: 'member' as const })),
+		};
+		expect(unsubscribeTokenLength(oneMore)).toBeGreaterThan(MAX_TOKEN_LENGTH);
+		await expect(sealUnsubscribe(key, oneMore)).rejects.toThrow(RangeError);
 	});
 });

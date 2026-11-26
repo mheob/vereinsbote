@@ -11,6 +11,8 @@ type AuditAction =
 	| 'contact.opt_out_removed'
 	| 'contact.opted_out'
 	| 'contact.suppressed'
+	| 'contact.unsubscribe_undone'
+	| 'contact.unsubscribed'
 	| 'contact.unsuppressed'
 	| 'contacts.settings_changed'
 	| 'layout.created'

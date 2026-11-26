@@ -4,6 +4,7 @@ import {
 	buildMime,
 	GRAPH_REQUEST_LIMIT_BYTES,
 	graphRequestBytes,
+	listUnsubscribeFits,
 	MimeAddressError,
 } from '@/server/sending/mime';
 import type { MailAttachment, OutgoingMail } from '@/server/sending/transport';
@@ -170,6 +171,17 @@ describe(buildMime, () => {
 		expect(headerLines(mime)).toContain('List-Unsubscribe: <https://app.example.org/u/abc>');
 		expect(headerLines(mime)).toContain('List-Unsubscribe-Post: List-Unsubscribe=One-Click');
 		expect(headerNamed(plain(), 'List-Unsubscribe')).toHaveLength(0);
+	});
+
+	it('tells whether the List-Unsubscribe line stays within the 998 characters of RFC 5322', () => {
+		const prefix = 'https://app.example.org/unsubscribe/';
+		// `List-Unsubscribe: <` and `>` take 20 characters of the line.
+		const longest = `${prefix}${'a'.repeat(998 - 20 - prefix.length)}`;
+		expect(listUnsubscribeFits(longest)).toBe(true);
+		const mime = buildMime(mail({ listUnsubscribe: longest }), DATE);
+		expect(headerLines(mime)).toContain(`List-Unsubscribe: <${longest}>`);
+		expect(`List-Unsubscribe: <${longest}>`).toHaveLength(998);
+		expect(listUnsubscribeFits(`${longest}a`)).toBe(false);
 	});
 
 	it('wraps base64 parts at 76 characters', () => {

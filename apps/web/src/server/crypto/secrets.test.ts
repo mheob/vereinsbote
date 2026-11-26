@@ -7,8 +7,10 @@ import {
 	deriveLoginWindowKey,
 	deriveSecretsKey,
 	encryptSecret,
+	fromBase64Url,
 	hashLoginWindowEmail,
 	secretAad,
+	toBase64Url,
 } from './secrets';
 
 const appSecret = new Uint8Array(32).fill(9);
@@ -147,5 +149,22 @@ describe('login window hash', () => {
 		const hash = await hashLoginWindowEmail(key, 'anna@verein.de');
 		expect(hash).toMatch(/^[\w-]{43}$/u);
 		expect(hash).not.toContain('anna');
+	});
+});
+
+describe(fromBase64Url, () => {
+	it.each([
+		['AA', [0]],
+		['AAA', [0, 0]],
+		['_-8', [255, 239]],
+	])('reads the canonical text %s', (text, bytes) => {
+		expect(fromBase64Url(text)).toStrictEqual(Uint8Array.from(bytes));
+		expect(toBase64Url(fromBase64Url(text))).toBe(text);
+	});
+
+	// The last character of a text that does not fill its group carries unused bits: they must be
+	// 0, so some bytes have exactly one text.
+	it.each(['AB', 'AAB', '_-9'])('refuses the non-canonical text %s', (text) => {
+		expect(() => fromBase64Url(text)).toThrow(SecretDecryptError);
 	});
 });

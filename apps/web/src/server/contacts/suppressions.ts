@@ -212,6 +212,38 @@ async function setOptOut(
 	});
 }
 
+/** The scope of an opt-out: one occasion, or every mail of an area. */
+type OptOutScope = (typeof contactOptOuts.$inferInsert)['scope'];
+
+/**
+ * Records a contact's objection by its key, without a user: the recipient of a mail unsubscribes
+ * (Design 12), or a provider reports a complaint. The key needs no contact, so the opt-out also
+ * holds for a contact that an import removed and brings back. A repeated call changes nothing. The
+ * caller holds the import-state lock of the kind (`lockImportState`), bumps the stock version when
+ * something changed and writes the audit entry.
+ *
+ * @param tx The transaction.
+ * @param input The kind and key of the contact, the scope and its occasion or area (the other null).
+ * @returns True when the opt-out is new; false when the contact had it already.
+ */
+async function optOutByKey(
+	tx: Db,
+	input: Readonly<{
+		kind: ContactKind;
+		contactKey: string;
+		scope: OptOutScope;
+		occasionId: string | null;
+		areaId: string | null;
+	}>,
+): Promise<boolean> {
+	const made = await tx
+		.insert(contactOptOuts)
+		.values({ ...input, createdByUserId: null })
+		.onConflictDoNothing()
+		.returning({ id: contactOptOuts.id });
+	return made.length > 0;
+}
+
 /**
  * Copies the suppression and the opt-outs of a key to another key, e.g. when one of two partners
  * with the same address gets a new one: the other partner keeps them under the old key. Entries
@@ -268,4 +300,13 @@ async function rekeyContactKey(tx: Db, kind: ContactKind, from: string, to: stri
 		.where(and(eq(contactOptOuts.kind, kind), eq(contactOptOuts.contactKey, from)));
 }
 
-export { auditTarget, contactKey, copyContactKey, rekeyContactKey, setOptOut, setSuppression };
+export {
+	auditTarget,
+	contactKey,
+	copyContactKey,
+	optOutByKey,
+	rekeyContactKey,
+	setOptOut,
+	setSuppression,
+};
+export type { OptOutScope };

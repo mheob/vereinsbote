@@ -27,6 +27,7 @@ import type { Db } from '@/server/db/client';
 import { attachments, waveContacts, waves } from '@/server/db/schema';
 import type { Env } from '@/server/env';
 import { SenderNotFoundError } from '@/server/sending/errors';
+import { listUnsubscribeFits } from '@/server/sending/mime';
 import type {
 	ClaimedEntry,
 	EntryPreparer,
@@ -279,7 +280,9 @@ function valuesOf(
 
 /**
  * The mail as the outbox sends it: from the sender (its reply address and archive copy), with the
- * entry's Message-ID and its id as idempotency key, which the outbox sets once more anyway.
+ * entry's Message-ID and its id as idempotency key, which the outbox sets once more anyway. A link
+ * too long for the `List-Unsubscribe` line (a circular to many contacts at one address) stays in
+ * the mail only, without the unsubscribe headers.
  *
  * @param sender The sender.
  * @param entry The entry.
@@ -306,7 +309,7 @@ function outgoingMail(
 		html,
 		idempotencyKey: entry.id,
 		kind: 'regular',
-		listUnsubscribe: link,
+		listUnsubscribe: link !== null && listUnsubscribeFits(link) ? link : null,
 		messageId: entry.messageId,
 		replyTo: sender.replyTo,
 		subject,

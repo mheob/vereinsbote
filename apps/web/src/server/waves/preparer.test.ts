@@ -82,6 +82,38 @@ async function member(db: Db, memberNumber: string, email?: string): Promise<str
 }
 
 /**
+ * Members at one address, one after the other.
+ *
+ * @param db The database.
+ * @param numbers Their member numbers.
+ * @param email The address.
+ * @returns The id of the first.
+ */
+async function membersAt(db: Db, numbers: readonly string[], email: string): Promise<string> {
+	const ids: string[] = [];
+	for (const number of numbers) {
+		// oxlint-disable-next-line no-await-in-loop -- the contacts keep their order
+		ids.push(await member(db, number, email));
+	}
+	const [first] = ids;
+	if (first === undefined) throw new Error('No member was made.');
+	return first;
+}
+
+/**
+ * The unsubscribe link in the HTML of a mail.
+ *
+ * @param html The HTML.
+ * @returns The link.
+ */
+function htmlLink(html: string): string {
+	const link = /href="(?<link>https:\/\/bote\.example\.org\/unsubscribe\/[\w-]+)"/u.exec(html)
+		?.groups?.link;
+	if (link === undefined) throw new Error('The mail has no unsubscribe link.');
+	return link;
+}
+
+/**
  * The outbox entry that holds a contact, as the outbox hands it to the preparer.
  *
  * @param db The database.
@@ -466,6 +498,21 @@ describe('the wave preparer', () => {
 			expect.stringContaining(link),
 		]);
 		await expect(payloadOf(link)).resolves.toStrictEqual(membersPayload(c, ['1', '2']));
+	});
+
+	it('leaves out the unsubscribe headers above 998 characters and keeps the link in the mail', async () => {
+		const c = await setUpWaveClub();
+		const numbers = Array.from({ length: 14 }, (_unused, index) =>
+			String(index + 1).padStart(40, '0'),
+		);
+		const first = await membersAt(c.db, numbers, FAMILY);
+		await confirmTestWave(c, NOW);
+		const { mail } = sent(await prepareFor(c, first));
+		expect(mail.listUnsubscribe).toBeNull();
+		const link = htmlLink(mail.html);
+		expect(`List-Unsubscribe: <${link}>`.length).toBeGreaterThan(998);
+		expect(mail.text).toContain(link);
+		await expect(payloadOf(link)).resolves.toStrictEqual(membersPayload(c, numbers));
 	});
 
 	it('prepares the same mail again for a retry', async () => {

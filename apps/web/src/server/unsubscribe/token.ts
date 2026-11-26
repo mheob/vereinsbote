@@ -30,10 +30,19 @@ const AAD = new TextEncoder().encode('unsubscribe');
 const KEY_BITS = 256;
 const IV_BYTES = 12;
 const TAG_BYTES = 16;
-/** Longer tokens are refused unread; a mail's token stays far below (Design 12). */
+/**
+ * Longer tokens are refused unread, and no longer token is sealed: `unsubscribePayload` names only
+ * as many contacts of a mail as fit (about 180 member numbers), well within the URL limits of every
+ * platform.
+ */
 const MAX_TOKEN_LENGTH = 4096;
 const BASE64_GROUP_BYTES = 3;
 const BASE64_GROUP_CHARACTERS = 4;
+/** The longest sealed text whose token stays within `MAX_TOKEN_LENGTH`. */
+const MAX_TEXT_BYTES =
+	Math.floor((MAX_TOKEN_LENGTH * BASE64_GROUP_BYTES) / BASE64_GROUP_CHARACTERS) -
+	IV_BYTES -
+	TAG_BYTES;
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder('utf-8', { fatal: true });
@@ -95,8 +104,32 @@ function deserialize(text: string): UnsubscribePayload | null {
 }
 
 /**
+ * Each contact once, in their order.
+ *
+ * @param contacts The contacts with their kind and key.
+ * @returns The contacts as a payload names them.
+ */
+function uniqueContacts(
+	contacts: readonly Readonly<{ kind: ContactKind; contactKey: string }>[],
+): { kind: ContactKind; key: string }[] {
+	const seen = new Set<string>();
+	const named: { kind: ContactKind; key: string }[] = [];
+	for (const { contactKey, kind } of contacts) {
+		const id = `${kind}/${contactKey}`;
+		if (!seen.has(id)) {
+			seen.add(id);
+			named.push({ key: contactKey, kind });
+		}
+	}
+	return named;
+}
+
+/**
  * The payload of a mail: its occasion and area, and each of its contacts once, in their order.
- * Partners without a customer number who share an address share their key, too.
+ * Partners without a customer number who share an address share their key, too. It names the
+ * contacts only as long as the token stays within `MAX_TOKEN_LENGTH`, at least the first: a
+ * circular to more contacts at one address than fit (about 180 member numbers) unsubscribes the
+ * first of them.
  *
  * @param target The occasion and the area.
  * @param target.occasionId The occasion.
@@ -108,16 +141,19 @@ function unsubscribePayload(
 	target: Readonly<{ occasionId: string; areaId: string }>,
 	contacts: readonly Readonly<{ kind: ContactKind; contactKey: string }>[],
 ): UnsubscribePayload {
-	const seen = new Set<string>();
+	const { areaId, occasionId } = target;
 	const named: { kind: ContactKind; key: string }[] = [];
-	for (const { contactKey, kind } of contacts) {
-		const id = `${kind}/${contactKey}`;
-		if (!seen.has(id)) {
-			seen.add(id);
-			named.push({ key: contactKey, kind });
-		}
+	let bytes = encoder.encode(serialize({ areaId, contacts: [], occasionId })).length;
+	for (const contact of uniqueContacts(contacts)) {
+		// The serialized contact, and the comma before it.
+		const added =
+			encoder.encode(JSON.stringify([KIND_LETTERS[contact.kind], contact.key])).length +
+			Math.min(named.length, 1);
+		if (named.length > 0 && bytes + added > MAX_TEXT_BYTES) break;
+		named.push(contact);
+		bytes += added;
 	}
-	return { areaId: target.areaId, contacts: named, occasionId: target.occasionId };
+	return { areaId, contacts: named, occasionId };
 }
 
 /**
@@ -168,16 +204,19 @@ async function tokenKeys(key: CryptoKey): Promise<{ encryption: CryptoKey; iv: C
  * then IV and ciphertext together as base64url. The same payload gives the same token.
  *
  * @param key The key of `deriveUnsubscribeKey`.
- * @param payload The contacts, the occasion and the area.
+ * @param payload The contacts, the occasion and the area, as `unsubscribePayload` bounds them.
  * @returns The token: base64url only, never `test`.
+ * @throws {RangeError} When the token would be longer than `MAX_TOKEN_LENGTH`: `openUnsubscribe`
+ *   would refuse it.
  */
 async function sealUnsubscribe(
 	key: CryptoKey,
 	payload: Readonly<UnsubscribePayload>,
 ): Promise<string> {
 	const { subtle } = globalThis.crypto;
-	const keys = await tokenKeys(key);
 	const plaintext = encoder.encode(serialize(payload));
+	if (plaintext.length > MAX_TEXT_BYTES) throw new RangeError('The token would be too long.');
+	const keys = await tokenKeys(key);
 	const iv = new Uint8Array(await subtle.sign('HMAC', keys.iv, plaintext)).slice(0, IV_BYTES);
 	const ciphertext = await subtle.encrypt(
 		{ additionalData: AAD, iv, name: 'AES-GCM' },
@@ -229,6 +268,7 @@ function unsubscribeTokenLength(payload: Readonly<UnsubscribePayload>): number {
 
 export {
 	deriveUnsubscribeKey,
+	MAX_TOKEN_LENGTH,
 	openUnsubscribe,
 	sealUnsubscribe,
 	unsubscribePayload,

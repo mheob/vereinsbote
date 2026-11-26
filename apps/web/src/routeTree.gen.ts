@@ -36,6 +36,7 @@ import { Route as OccasionsNewRouteImport } from './routes/occasions/new'
 import { Route as TemplatesIndexRouteImport } from './routes/templates/index'
 import { Route as TemplatesTemplateIdRouteImport } from './routes/templates/$templateId'
 import { Route as TemplatesNewRouteImport } from './routes/templates/new'
+import { Route as UnsubscribeTokenRouteImport } from './routes/unsubscribe.$token'
 import { Route as AdminLayoutsIndexRouteImport } from './routes/admin/layouts/index'
 import { Route as AdminLayoutsLayoutIdRouteImport } from './routes/admin/layouts/$layoutId'
 import { Route as AdminSendingIndexRouteImport } from './routes/admin/sending/index'
@@ -183,6 +184,11 @@ const TemplatesNewRoute = TemplatesNewRouteImport.update({
   path: '/new',
   getParentRoute: () => TemplatesRouteRoute,
 } as any)
+const UnsubscribeTokenRoute = UnsubscribeTokenRouteImport.update({
+  id: '/unsubscribe/$token',
+  path: '/unsubscribe/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminLayoutsIndexRoute = AdminLayoutsIndexRouteImport.update({
   id: '/layouts/',
   path: '/layouts/',
@@ -266,6 +272,7 @@ export interface FileRoutesByFullPath {
   '/occasions/new': typeof OccasionsNewRoute
   '/templates/$templateId': typeof TemplatesTemplateIdRoute
   '/templates/new': typeof TemplatesNewRoute
+  '/unsubscribe/$token': typeof UnsubscribeTokenRoute
   '/admin/': typeof AdminIndexRoute
   '/contacts/': typeof ContactsIndexRoute
   '/occasions/': typeof OccasionsIndexRoute
@@ -302,6 +309,7 @@ export interface FileRoutesByTo {
   '/occasions/new': typeof OccasionsNewRoute
   '/templates/$templateId': typeof TemplatesTemplateIdRoute
   '/templates/new': typeof TemplatesNewRoute
+  '/unsubscribe/$token': typeof UnsubscribeTokenRoute
   '/admin': typeof AdminIndexRoute
   '/contacts': typeof ContactsIndexRoute
   '/occasions': typeof OccasionsIndexRoute
@@ -343,6 +351,7 @@ export interface FileRoutesById {
   '/occasions/new': typeof OccasionsNewRoute
   '/templates/$templateId': typeof TemplatesTemplateIdRoute
   '/templates/new': typeof TemplatesNewRoute
+  '/unsubscribe/$token': typeof UnsubscribeTokenRoute
   '/admin/': typeof AdminIndexRoute
   '/contacts/': typeof ContactsIndexRoute
   '/occasions/': typeof OccasionsIndexRoute
@@ -385,6 +394,7 @@ export interface FileRouteTypes {
     | '/occasions/new'
     | '/templates/$templateId'
     | '/templates/new'
+    | '/unsubscribe/$token'
     | '/admin/'
     | '/contacts/'
     | '/occasions/'
@@ -421,6 +431,7 @@ export interface FileRouteTypes {
     | '/occasions/new'
     | '/templates/$templateId'
     | '/templates/new'
+    | '/unsubscribe/$token'
     | '/admin'
     | '/contacts'
     | '/occasions'
@@ -461,6 +472,7 @@ export interface FileRouteTypes {
     | '/occasions/new'
     | '/templates/$templateId'
     | '/templates/new'
+    | '/unsubscribe/$token'
     | '/admin/'
     | '/contacts/'
     | '/occasions/'
@@ -492,6 +504,7 @@ export interface RootRouteChildren {
   ApiTickRoute: typeof ApiTickRoute
   LoginConfirmRoute: typeof LoginConfirmRoute
   MediaFileRoute: typeof MediaFileRoute
+  UnsubscribeTokenRoute: typeof UnsubscribeTokenRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
 
@@ -686,6 +699,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TemplatesNewRouteImport
       parentRoute: typeof TemplatesRouteRoute
     }
+    '/unsubscribe/$token': {
+      id: '/unsubscribe/$token'
+      path: '/unsubscribe/$token'
+      fullPath: '/unsubscribe/$token'
+      preLoaderRoute: typeof UnsubscribeTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/layouts/': {
       id: '/admin/layouts/'
       path: '/layouts'
@@ -869,6 +889,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiTickRoute: ApiTickRoute,
   LoginConfirmRoute: LoginConfirmRoute,
   MediaFileRoute: MediaFileRoute,
+  UnsubscribeTokenRoute: UnsubscribeTokenRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
 }
 export const routeTree = rootRouteImport

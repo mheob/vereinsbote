@@ -12,6 +12,8 @@ import type { MailAttachment, OutgoingMail } from '@/server/sending/transport';
 const CRLF = '\r\n';
 const GRAPH_REQUEST_LIMIT_BYTES = 4_000_000;
 const MAX_LINE = 78;
+/** RFC 5322: no line of a message is longer, without its CRLF. */
+const MAX_LINE_HARD = 998;
 /** At most 45 bytes per encoded word: 60 base64 characters plus 12 of framing is 72 characters. */
 const WORD_BYTES = 45;
 const BASE64_LINE = 76;
@@ -239,6 +241,17 @@ function buildMime(mail: Readonly<OutgoingMail>, date: Date): string {
 }
 
 /**
+ * Whether the `List-Unsubscribe` line of a link stays within RFC 5322's 998 characters: the URL
+ * is one token, which no folding can split (Graph and Resend alike).
+ *
+ * @param url The link.
+ * @returns True when `List-Unsubscribe: <url>` has at most 998 characters.
+ */
+function listUnsubscribeFits(url: string): boolean {
+	return `List-Unsubscribe: <${url}>`.length <= MAX_LINE_HARD;
+}
+
+/**
  * The size of a Graph request: the length of the base64 of the MIME text.
  *
  * @param mail The mail.
@@ -254,5 +267,6 @@ export {
 	buildMime,
 	GRAPH_REQUEST_LIMIT_BYTES,
 	graphRequestBytes,
+	listUnsubscribeFits,
 	MimeAddressError,
 };

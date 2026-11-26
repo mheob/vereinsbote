@@ -52,6 +52,17 @@ describe(pageHead, () => {
 		);
 	});
 
+	it('names the own not-found page of a route that has one', () => {
+		const own = { notFound: 'auth.confirmTitle' } as const;
+		expect(pageHead(context('de', { status: 'notFound' }), 'auth.title', own).meta[0].title).toBe(
+			'Anmeldung bestätigen – Vereinsbote',
+		);
+		expect(pageHead(context('de'), 'auth.title', own).meta[0].title).toBe('Anmelden – Vereinsbote');
+		expect(pageHead(context('de', { status: 'error' }), 'auth.title', own).meta[0].title).toBe(
+			'Ein Fehler ist aufgetreten – Vereinsbote',
+		);
+	});
+
 	it('falls back to German when the root loader has no locale', () => {
 		expect(pageHead(context(undefined, { status: 'error' }), null).meta[0].title).toBe(
 			'Ein Fehler ist aufgetreten – Vereinsbote',

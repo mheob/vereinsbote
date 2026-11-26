@@ -173,6 +173,31 @@ describe('csrf protection of server functions', () => {
 			expect(vi.mocked(setResponseHeaders).mock.calls).toStrictEqual([[new Headers(expected)]]);
 		});
 
+		it('lets the one-click POST of an unsubscribe link through without cookies and Origin', async () => {
+			vi.mocked(setResponseHeaders).mockClear();
+			// A mail provider posts server to server (RFC 8058): no Origin, no Sec-Fetch-Site.
+			const request = new Request(`${APP_ORIGIN}/unsubscribe/abc`, {
+				body: 'List-Unsubscribe=One-Click',
+				headers: { 'content-type': 'application/x-www-form-urlencoded' },
+				method: 'POST',
+			});
+			await expect(runApp(request, 'router')).resolves.toStrictEqual({ handled: true, status: OK });
+			const expected = securityHeadersFor('unsubscribe', {
+				https: true,
+				nonce: cspNonceFor(request),
+			});
+			expect(vi.mocked(setResponseHeaders).mock.calls).toStrictEqual([[new Headers(expected)]]);
+		});
+
+		it('still refuses a call of a server function without Origin', async () => {
+			// The form of the unsubscribe page calls server functions: they keep the check.
+			const request = post(SERVER_FN_URL, {});
+			await expect(runApp(request, 'serverFn')).resolves.toStrictEqual({
+				handled: false,
+				status: FORBIDDEN,
+			});
+		});
+
 		it('leaves routes such as Better Auth to their own origin check', async () => {
 			const request = post(`${APP_ORIGIN}/api/auth/sign-in/magic-link`, {
 				origin: 'https://evil.example',

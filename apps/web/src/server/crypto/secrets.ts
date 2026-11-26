@@ -22,13 +22,17 @@ const toBase64Url = (bytes: Uint8Array): string => {
 	return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
 };
 
+// Only the canonical text of the bytes: the unused low bits of a last character that does not
+// fill its group must be 0, so some bytes have exactly one text (an unsubscribe token too).
 const fromBase64Url = (value: string): Uint8Array<ArrayBuffer> => {
 	if (!BASE64URL_PATTERN.test(value) || value.length % 4 === 1) throw new SecretDecryptError();
 	const padded = value
 		.replaceAll('-', '+')
 		.replaceAll('_', '/')
 		.padEnd(Math.ceil(value.length / 4) * 4, '=');
-	return Uint8Array.from(atob(padded), (char) => char.codePointAt(0) ?? 0);
+	const bytes = Uint8Array.from(atob(padded), (char) => char.codePointAt(0) ?? 0);
+	if (toBase64Url(bytes) !== value) throw new SecretDecryptError();
+	return bytes;
 };
 
 // HKDF-SHA256 with an empty salt; `info` separates the derived keys by purpose.
