@@ -67,7 +67,7 @@ Every visible string goes into both `apps/web/src/i18n/de.ts` and `en.ts`, with 
 - The app meets WCAG 2.2 AA. Use React Aria Components, show errors at the field, announce changes in live regions, and add an axe check for every new page in the E2E tests.
 - Forms use `PostForm`. Server functions run behind the CSRF middleware and authorize from the session, never from client input.
 - Keep secrets, e-mail addresses, tokens and contact data out of logs, URLs and error messages; log codes only (`errorLabel`). Search terms and filter values go by POST. Server functions return expected refusals as results; anything they throw reaches the browser only as a generic error. Request middleware is not covered by that: what it throws reaches the browser with its message.
-- On Cloudflare, never share the database or other I/O objects across requests, and keep `nodemailer` and `pg` out of that bundle. The request's database ends with the response: work after it must not use the database (the system mailer prepares a login link inside the request and only delivers it once the request's work is done).
+- On Cloudflare, never share the database or other I/O objects across requests, and keep `nodemailer` and `pg` out of that bundle. The request's database ends with the response: work after it must not use the database (the system mailer prepares a login link inside the request and only delivers it once the request's work is done). A Worker invocation has a limit of subrequests: requests to the mail providers go through the invocation's budget (`TickContext.subrequests`, `budgetedFetch` in `apps/web/src/platform/subrequests.ts`).
 - GitHub Actions are pinned by commit SHA and images by digest. Renovate maintains the pins.
 
 ## Reporting a vulnerability

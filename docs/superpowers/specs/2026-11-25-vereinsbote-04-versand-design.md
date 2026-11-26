@@ -200,7 +200,7 @@ Dazu: Zahl der Versuche, nächster Versuch, letzter Fehlercode, Message-ID, Send
 - Ein neuer Schritt der Zeitsteuerung (`tickSteps`) arbeitet die fälligen Einträge ab, Absender für Absender, innerhalb des Zeitbudgets des Laufs. Zwei gleichzeitige Läufe können denselben Eintrag nicht übernehmen (Übernahme in einer Anweisung, z. B. `FOR UPDATE SKIP LOCKED`; die Tick-Sperre aus Teilplan 1 bleibt zusätzlich).
 - **Drosselung pro Absender:** höchstens N Mails pro Minute; der Lauf wartet zwischen den Paketen.
 - **Selbst-Anstoß** (Spec 6.6): Bleibt Arbeit übrig, meldet der Schritt `moreWork`; `runTickChain` startet den nächsten Lauf direkt.
-- **[Claude]** Der Schritt hält sich an die Grenze der Unteranfragen pro Aufruf auf Cloudflare Workers (Graph braucht mehrere Aufrufe pro Mail); Paketgröße pro Lauf entsprechend.
+- **[Claude]** Der Schritt hält sich an die Grenze der Unteranfragen pro Aufruf auf Cloudflare Workers (Graph braucht mehrere Aufrufe pro Mail); Paketgröße pro Lauf entsprechend. Umsetzung: höchstens 1.000 Anfragen an die Anbieter pro Aufruf, über alle Absender und alle verketteten Läufe (Workers Paid erlaubt 10.000).
 
 ### 8.3 Tageslimit und Vorrang
 
@@ -216,7 +216,7 @@ Dazu: Zahl der Versuche, nächster Versuch, letzter Fehlercode, Message-ID, Send
 
 ### 8.5 Lieber keine Mail als zwei
 
-Bricht ein Lauf zwischen Senden und Speichern ab, weiß die App nicht, ob die Mail raus ist. **[Claude]** Ein Eintrag, der länger als 10 Minuten „in Versand“ steht, wird „unklar“ und nicht automatisch erneut gesendet. In der Versandübersicht kann jemand mit `send` ihn nach Prüfung ausdrücklich erneut senden. Bei Resend verhindert zusätzlich der Idempotenz-Schlüssel Doppelte.
+Bricht ein Lauf zwischen Senden und Speichern ab, weiß die App nicht, ob die Mail raus ist. **[Claude]** Ein Eintrag, der länger als 10 Minuten „in Versand“ steht, wird „unklar“ und nicht automatisch erneut gesendet. Nach einer unklaren Antwort sendet der Lauf über diese Anbindung nichts mehr, und der Absender (Graph) bzw. die Anbindung (Resend) ruht 15 Minuten; danach prüft ein Eintrag. Eine Störung beim Anbieter hinterlässt so einen unklaren Eintrag pro Pause, nicht einen pro Mail. In der Versandübersicht kann jemand mit `send` ihn nach Prüfung ausdrücklich erneut senden. Bei Resend verhindert zusätzlich der Idempotenz-Schlüssel Doppelte.
 
 ### 8.6 Gestörte Anbindung
 
@@ -481,7 +481,7 @@ Im selben Schritt wie dieses Design:
 23. Webhook-Body höchstens 64 KB; Origin-Prüfung für die Formulare der Abmeldeseite.
 24. Warn-Mail bei alten Daten: Nacharbeit aus Teilplan 2 mit aufgegriffen.
 25. Systemmails über Graph als JSON mit `saveToSentItems: false`, bei Resend ohne Archiv-Kopie (Anmeldelinks nicht im Postfach).
-26. Resend: Drosselung und Tageslimit an der Anbindung; erschöpftes Kontingent wartet bis zum nächsten Tag.
+26. Resend: Drosselung und Tageslimit an der Anbindung; erschöpftes Kontingent pausiert die Anbindung mindestens eine Stunde, danach prüft ein Eintrag (Ruling R5).
 27. Anlässe sind auf Dauer angelegt, jede Veranstaltung ist eine Welle.
 28. Geänderte Adresse: persönliche Mail folgt der neuen Adresse, Rundschreiben-Eintrag bleibt bei seiner Adresse.
 29. Abmeldung, harter Rückläufer und Beschwerde gelten für alle Kontakte eines zusammengelegten Eintrags.

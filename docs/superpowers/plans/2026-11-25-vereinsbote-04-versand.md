@@ -500,9 +500,10 @@ interface TickContext { /* … */ readonly storage: ObjectStorage | null }
 **Regeln:**
 - Der Schritt: `markUncertain`, dann für jeden Absender mit fälligen Einträgen (gestörte Anbindungen ausgenommen, außer dem Prüfversuch aus Entscheidung 9) Einträge übernehmen (`update … set status='sending', claimed_at=now() where id in (select … for update skip locked limit n) returning`), vorbereiten, senden, Ergebnis speichern.
 - Ergebnis: `ok` → `sent`, `countSent`, `message_id`/`provider_id`; `uncertain` → sofort `uncertain` (nie automatisch erneut, Design 8.5); `transient` → `planned` mit `next_attempt_at` oder `failed` nach `MAX_ATTEMPTS`; `rejected` → `failed`; `unauthorized` → zurück auf `planned` ohne Versuch, Anbindung `disturbed_since` setzen; `quota` → zurück auf `planned` ohne Versuch, der Bereich pausiert bis `jetzt + max(retryAfterMs, 1 h)`; danach prüft genau ein Eintrag, ob der Anbieter wieder annimmt (Ruling R5; Resend zählt gleitend über 24 Stunden).
-- Vorrang und Reserve nach Entscheidung 5; Drosselung nach Entscheidung 6; Grenze der Unteranfragen: höchstens 40 Sendungen pro Lauf und Absender auf Cloudflare (`platformName() === 'cloudflare'`), sonst durch Budget und Drosselung begrenzt.
+- Vorrang und Reserve nach Entscheidung 5; Drosselung nach Entscheidung 6; Grenze der Unteranfragen (Design 8.2): pro Worker-Aufruf höchstens 1.000 Anfragen an die Anbieter über alle Absender und alle verketteten Läufe (`TickContext.subrequests`, `platform/subrequests.ts`; Workers Paid erlaubt 10.000), sonst durch Budget und Drosselung begrenzt. Ein `fetch`, den Workers wegen der Grenze ablehnt („Too many subrequests“), hat nichts gesendet: `transient` mit `platform.subrequests`, Eintrag ohne Versuch zurück auf `planned`, Lauf endet (Fix-Runde 4a).
+- Zurückhaltung bei Störungen (Fix-Runde 4a): nach `uncertain` hält der Lauf die Anbindung an und pausiert den Bereich 15 Minuten; nach `transient` hält er den Bereich an und pausiert ihn bis zum `Retry-After`; wirft der Vorbereiter, geht der Eintrag mit einem Versuch zurück auf `planned` und der Absender ruht für diesen Lauf.
 - `moreWork`, solange fällige Einträge übrig sind, die nicht am Limit oder an einer Störung hängen.
-- `tickSteps` = `[pruneAuthRecords, staleImportWarning, outbox]`; in 4a ist `preparers` leer (keine Quelle), Task 16 setzt `wave`.
+- `tickSteps` in der Reihenfolge von Entscheidung 20 (`pruneAuthRecords`, `outbox`, …, `staleImportWarning`, `sendingWarnings`); in 4a ist `preparers` leer (keine Quelle), Task 16 setzt `wave`.
 
 - [ ] **Step 1: Failing Tests schreiben**
 
@@ -660,7 +661,7 @@ export function sendingOverview(db: Db, actor: Principal, now: Date): Promise<Se
 **Regeln:**
 - Merker in `system_state` (`sending_secret_warned`: `{ [connectionId]: stage }`, `sending_disturbance_warned`: `{ [connectionId]: disturbedSince }`, `sending_digest_day`); Merker zuerst setzen, dann senden, dann protokollieren – wie die Warn-Mail bei alten Daten, aber mit der Nacharbeit aus Teilplan 2: Schlägt das Protokoll fehl, wird der Merker zurückgenommen.
 - Empfänger: aktive Admins in ihrer Sprache; Inhalt nennt Anbindung, Zahlen pro Bereich und Absender, nie Empfänger.
-- Ist der Systemabsender selbst gestört, gehen die Warnungen über `DEV_SMTP_URL` (lokal) oder gar nicht; die Oberfläche zeigt die Störung trotzdem.
+- Ist der Systemabsender selbst gestört, erreichen die Warnmails meist niemanden (`DEV_SMTP_URL` gilt nur ohne Systemabsender); sie werden stündlich erneut versucht, die Oberfläche zeigt die Störung trotzdem. Lehnt der Anbieter den Systemabsender beim Senden ab, markiert der Systemmailer die Anbindung als gestört; der Schritt holt vorher ein Graph-Token für den Systemabsender (`checkSystemSender`, Fix-Runde 4a).
 
 - [ ] **Step 1: Failing Tests schreiben**
 
@@ -911,6 +912,7 @@ export function confirmWave(db: Db, actor: Principal, input: WaveSummaryInput & 
 - `resolveRecipients` nutzt die Sicht des Benutzers (Teilplan 2: Filter auf geschützte Felder nur, wenn sichtbar) und `loadContactAccess` außerhalb der Transaktion.
 - `confirmWave`: `send` im Bereich; Vorlage mit `compileMail(…, 'de', { unsubscribe: occasion.unsubscribe })` kompilieren; Problem → `refused`; `requestId` doppelt → dieselbe Welle zurück (Entscheidung 18); in einer Transaktion Welle, Einträge (`priority` aus der Art, `not_before`), `wave_contacts` und Verknüpfung der Anhänge; Protokoll `wave.created` (Ziel `wave:<id>`, Details `{ occasionId, mails }`). Bei Graph-Absender `graphTooLarge` prüfen (Design 6.4, mit `graphRequestBytes` einer Probe-Mail mit allen Anhängen).
 - `notBefore`: `null` = sofort (danach `kickOutbox`), sonst nicht in der Vergangenheit und höchstens ein Jahr voraus.
+- Der Lauf von `kickOutbox` nutzt nie die Datenbank der Anfrage (auf Cloudflare endet sie mit der Antwort): Er öffnet eine eigene wie der Cron-Handler, schließt sie danach und bekommt das Budget der Unteranfragen des Aufrufs (`invocationBudget`).
 
 - [ ] **Step 1: Failing Tests schreiben**
 
@@ -970,7 +972,7 @@ export function resendUncertain(db: Db, actor: Principal, entryId: string): Prom
 - **Geänderte Adresse:** persönlich → aktuelle Adresse; Rundschreiben → Kontakt fällt aus dem Eintrag (der nächste rückt nach), sonst `skip('addressChanged')`.
 - Erster verbleibender Kontakt füllt die Mail mit `sendingValues` und `fillMail`; fehlender Pflichtwert → `fail('missing:<key>')`.
 - `unsubscribe.url` = `unsubscribeUrl` mit allen verbleibenden Kontakten des Eintrags (Design 12); `listUnsubscribe` gleich.
-- Absender, Antwortadresse, Archiv-Kopie aus dem Absender; Anhänge der Welle; `messageId` aus dem Eintrag (`ClaimedEntry.messageId`, Ruling R4); `idempotencyKey` = Eintrags-ID.
+- Absender, Antwortadresse, Archiv-Kopie aus dem Absender; Anhänge der Welle; `messageId` und `idempotencyKey` (= Eintrags-ID) setzt der Postausgang selbst auf die vorbereitete Mail (Ruling R4, Fix-Runde 4a). Liest der Vorbereiter Anhänge aus R2, zählen diese Zugriffe auf Cloudflare zu den Unteranfragen des Aufrufs: pro Lauf einmal lesen, nicht pro Mail.
 - `stopWave` (`send`): alle `planned` → `cancelled`, `stopped_at`; Protokoll `wave.stopped`.
 
 - [ ] **Step 1: Failing Tests schreiben**
