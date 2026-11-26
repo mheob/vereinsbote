@@ -124,7 +124,8 @@ const submitSuppression = createServerFn({ method: 'POST' })
 
 /**
  * Clears the mark „E-Mail ungültig“ of a contact's current address; needs `edit` in the area of the
- * wave the mark came from (`clearBounce`). An address without a mark changes nothing.
+ * wave the mark came from or of the contact's kind (`clearBounce`). An address without a mark
+ * changes nothing.
  */
 const submitClearBounce = createServerFn({ method: 'POST' })
 	.validator(contactRequest)

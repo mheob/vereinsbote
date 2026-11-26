@@ -6,8 +6,8 @@
  * entry. A complaint (Resend „marked as spam“) opts every contact of the entry out of the wave's
  * area, without a user. A mark hangs on kind, contact key and address, so it no longer applies
  * once the contact has another address.
- * Who has `edit` in the area of the wave the mark came from (without an entry: in the area of the
- * contact's kind) may clear it.
+ * Who has `edit` in the area of the wave the mark came from or in the area of the contact's kind
+ * (ruling R21) may clear it.
  */
 import { and, eq, ne } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
@@ -46,8 +46,11 @@ interface BounceInput {
 interface BounceMark {
 	readonly at: Date;
 	readonly source: BounceSource;
-	/** Where `edit` clears it: the wave's area, else the area of the contact's kind; null when none. */
-	readonly areaId: string | null;
+	/**
+	 * Where `edit` clears it (ruling R21): the area of the wave it came from (none without an entry)
+	 * and the area of the contact's kind (none when the settings name no area).
+	 */
+	readonly areaIds: readonly string[];
 }
 
 /** A contact's kind, key and current address. */
@@ -136,9 +139,10 @@ async function readMark(db: Db, contact: MarkedContact, lock: boolean): Promise<
 		.limit(1);
 	const [row] = lock ? await query.for('update', { of: contactBounces }) : await query;
 	if (row === undefined) return null;
-	// Without an entry (sub-plan 7 may delete it) the area of the contact's kind decides.
-	const areaId = row.waveAreaId ?? kindAreaId(await getContactSettings(db), contact.kind);
-	return { areaId, at: row.at, source: row.source };
+	// Without an entry (sub-plan 7 may delete it) only the area of the contact's kind is left.
+	const kindArea = kindAreaId(await getContactSettings(db), contact.kind);
+	const areaIds = [row.waveAreaId, kindArea].filter((areaId) => areaId !== null);
+	return { areaIds, at: row.at, source: row.source };
 }
 
 /**
@@ -153,14 +157,15 @@ async function bounceMarkOf(db: Db, contact: MarkedContact): Promise<BounceMark 
 }
 
 /**
- * Whether a user may clear a mark: `edit` in its area. The admin role alone gives nothing.
+ * Whether a user may clear a mark: `edit` in the area of its wave or of the contact's kind. The
+ * admin role alone gives nothing.
  *
  * @param principal Who asks.
  * @param mark The mark.
  * @returns True when the user may clear it.
  */
 function canClearBounce(principal: Principal, mark: Readonly<BounceMark>): boolean {
-	return mark.areaId !== null && canAccessArea(principal, mark.areaId, 'edit');
+	return mark.areaIds.some((areaId) => canAccessArea(principal, areaId, 'edit'));
 }
 
 /**
@@ -395,13 +400,13 @@ async function recordComplaint(db: Db, providerId: string, at: Date): Promise<bo
 
 /**
  * Clears the mark of a contact's current address. Needs `edit` in the area of the wave the mark
- * came from, or, without an entry, in the area of the contact's kind; the admin role alone gives
- * nothing. Clearing an address without a mark changes nothing and logs nothing.
+ * came from or in the area of the contact's kind (ruling R21); the admin role alone gives nothing.
+ * Clearing an address without a mark changes nothing and logs nothing.
  *
  * @param db The database.
  * @param actor Who clears.
  * @param contactId The contact.
- * @throws {ForbiddenError} Without `read` in any area, or without `edit` in the mark's area.
+ * @throws {ForbiddenError} Without `read` in any area, or without `edit` in an area of the mark.
  * @throws {ContactNotFoundError} For an unknown contact.
  */
 async function clearBounce(db: Db, actor: Principal, contactId: string): Promise<void> {

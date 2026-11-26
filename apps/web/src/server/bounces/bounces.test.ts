@@ -406,7 +406,7 @@ describe(clearBounce, () => {
 		});
 	});
 
-	it('asks for edit in the area of the wave, or of the kind without an entry', async () => {
+	it('asks for edit in the area of the wave or of the kind', async () => {
 		const db = await createTestDb();
 		const { admin, membersAreaId } = await setUpClub(db);
 		const { areaId: youthAreaId } = await createArea(db, admin, 'Jugend');
@@ -443,11 +443,54 @@ describe(clearBounce, () => {
 		]);
 		const youthEditor = await userWith(db, { [youthAreaId]: 'edit' });
 		const membersEditor = await userWith(db, { [membersAreaId]: 'edit' });
+		const youthReader = await userWith(db, { [membersAreaId]: 'read', [youthAreaId]: 'read' });
+		const adminOnly = await userWith(db, {}, { isAdmin: true });
 
-		await expect(refusals(db, [membersEditor], fromWave)).resolves.toStrictEqual([true]);
+		// Without an entry only the area of the kind is left.
 		await expect(refusals(db, [youthEditor], withoutEntry)).resolves.toStrictEqual([true]);
-		await clearBounce(db, youthEditor, fromWave);
+		await expect(refusals(db, [youthReader, adminOnly], fromWave)).resolves.toStrictEqual([
+			true,
+			true,
+		]);
+		// The editors of the members keep their contacts: they clear a mark of the youth's wave.
+		await expect(getContact(db, membersEditor, fromWave)).resolves.toMatchObject({
+			bounce: { canClear: true },
+		});
+		await clearBounce(db, membersEditor, fromWave);
 		await clearBounce(db, membersEditor, withoutEntry);
+		await expect(markings(db)).resolves.toStrictEqual([]);
+	});
+
+	it('lets the editors of the wave area clear a mark too', async () => {
+		const db = await createTestDb();
+		const { admin } = await setUpClub(db);
+		const { areaId: youthAreaId } = await createArea(db, admin, 'Jugend');
+		const youthWave = await insertWave(db, await insertOccasion(db, admin, youthAreaId));
+		const [entry] = await db
+			.insert(outboxEntries)
+			.values({
+				priority: 'group',
+				source: 'wave',
+				sourceId: youthWave,
+				status: 'bounced',
+				waveId: youthWave,
+			})
+			.returning({ id: outboxEntries.id });
+		const fromWave = await insertContact(db, {
+			email: 'neun@example.org',
+			kind: 'member',
+			memberNumber: '9',
+		});
+		await db.insert(contactBounces).values({
+			contactKey: 'nr:9',
+			email: 'neun@example.org',
+			entryId: entry?.id,
+			kind: 'member',
+			source: 'graph',
+		});
+		const youthEditor = await userWith(db, { [youthAreaId]: 'edit' });
+
+		await clearBounce(db, youthEditor, fromWave);
 
 		await expect(markings(db)).resolves.toStrictEqual([]);
 	});
